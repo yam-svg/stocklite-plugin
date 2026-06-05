@@ -4,89 +4,59 @@
     <version>1.0.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
-    <description><![CDATA[
-<p><b>StockLite</b> — 专为摸鱼设计的行情面板 🐟</p>
-<p>无需离开 IDE，在侧边栏实时查看 A 股、基金、期货和全球指数行情，让你在专注工作的同时，随时掌握市场动态。</p>
+    <description><![CDATA[<p><b>StockLite</b> — A real-time market data panel built natively into your JetBrains IDE.
+Monitor A-shares, funds, futures, and global indices without ever leaving your editor.</p>
 
-<br/>
+<h3>Key Features</h3>
 
-<h3>📌 主要功能</h3>
-
-<h4>📈 股票</h4>
+<h4>Stocks (A-shares)</h4>
 <ul>
-  <li>A 股实时行情（上交所 / 深交所），5 秒自动刷新</li>
-  <li>持仓管理：成本价、数量、浮动盈亏、盈亏百分比</li>
-  <li>自定义分组 + 系统虚拟分组（全部 / 我的持有）</li>
-  <li>在线搜索直接添加，支持按名称和代码搜索</li>
+  <li>Real-time quotes from Shanghai and Shenzhen exchanges, auto-refresh every 5 seconds</li>
+  <li>Portfolio tracking: cost price, quantity, floating P&amp;L, P&amp;L percentage</li>
+  <li>Custom groups + virtual groups (All / My Holdings)</li>
+  <li>In-dialog search by name or ticker code</li>
 </ul>
 
-<h4>💰 基金</h4>
+<h4>Funds</h4>
 <ul>
-  <li>天天基金实时估值，30 秒自动刷新</li>
-  <li>双涨跌幅显示：<b>官方涨跌</b>（F10 历史净值）+ <b>今日估算</b>（盘中实时）</li>
-  <li>净值日期列：官方净值更新时日期自动变为今天，一目了然</li>
-  <li>今日估算列：官方净值发布后自动显示 <b>官方✓</b> 标识</li>
-  <li>QDII 基金自动识别，走独立接口保障数据准确性</li>
+  <li>EastMoney real-time NAV estimates, auto-refresh every 30 seconds</li>
+  <li>Dual change columns: <b>Official Change</b> (F10 historical NAV) + <b>Today Estimate</b> (intraday)</li>
+  <li>NAV date column: updates to today automatically once official NAV is published</li>
+  <li>Today Estimate shows <b>Official</b> indicator after official NAV is released</li>
+  <li>Automatic QDII fund detection with dedicated data channel</li>
 </ul>
 
-<h4>📊 期货</h4>
+<h4>Futures</h4>
 <ul>
-  <li>国内期货（股指 + 商品），国际期货（黄金、原油、指数等）</li>
-  <li>纯行情看板，快速了解主力合约走势</li>
-  <li>5 秒自动刷新</li>
+  <li>Domestic futures (index + commodity) and international futures (gold, oil, indices, etc.)</li>
+  <li>Pure market data board, 5-second auto-refresh</li>
 </ul>
 
-<h4>🌏 全球指数</h4>
+<h4>Global Indices</h4>
 <ul>
-  <li>11 大主要指数：沪深 300、上证、深证、创业板、恒生、恒生科技、标普 500、道琼斯、纳斯达克、日经 225、韩国综合</li>
-  <li>开/休市状态支持节假日判断（基于 Yahoo Finance marketState）</li>
-  <li>5 秒自动刷新，遇限流自动退避延长间隔</li>
+  <li>11 major indices: CSI 300, SSE, SZSE, ChiNext, HSI, HSTECH, S&amp;P 500, Dow Jones, NASDAQ, Nikkei 225, KOSPI</li>
+  <li>Holiday-aware open/close status via Yahoo Finance marketState (not just timezone math)</li>
+  <li>5-second auto-refresh with automatic rate-limit backoff on HTTP 429</li>
 </ul>
 
-<h4>⚙️ 自定义设置</h4>
+<h4>Customization (Settings &rarr; Tools &rarr; StockLite)</h4>
 <ul>
-  <li><b>列显示设置</b>：股票/基金默认只显示名称、价格、涨跌幅，其余列按需在设置中开启</li>
-  <li><b>涨跌颜色方案</b>：红涨绿跌（中国惯例）/ 绿涨红跌（欧美惯例）/ 无颜色，三选一</li>
-  <li>所有设置点击 Apply 后立即生效，无需重启</li>
+  <li><b>Column visibility</b>: only Name, Price, and Change shown by default; enable extras as needed</li>
+  <li><b>Color schemes</b>: Red-up/Green-down (Chinese convention) &middot; Green-up/Red-down (Western) &middot; No color</li>
+  <li>All settings apply instantly without restarting the IDE</li>
 </ul>
 
-<h4>🗂️ 通用特性</h4>
+<h4>General</h4>
 <ul>
-  <li>点击列标题排序，↑ / ↓ 按钮调整行顺序，持久化保存</li>
-  <li>数据保存在 IDE 配置目录，重启不丢失</li>
-  <li>纯原生 Kotlin/Swing 实现，无 Electron、无内嵌浏览器，轻量快速</li>
+  <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
+  <li>Data saved in IDE config directory — survives restarts</li>
+  <li>Pure native Kotlin/Swing, no Electron, no embedded browser, lightweight and fast</li>
 </ul>
 
-<br/>
 <hr/>
-<br/>
 
-<p><b>StockLite</b> — A lightweight market-data panel built natively into your JetBrains IDE.</p>
-<p>Monitor A-shares, funds, futures, and global indices without ever leaving your editor.</p>
-
-<h4>Key Features</h4>
-<ul>
-  <li><b>Real-time quotes</b>: A-shares (Sina), funds (EastMoney), futures (Sina), global indices (Yahoo Finance)</li>
-  <li><b>Fund dual change display</b>: official NAV change + intraday estimate, with "official ✓" indicator once updated</li>
-  <li><b>Holiday-aware market status</b>: uses Yahoo Finance <code>marketState</code> for all 11 global indices</li>
-  <li><b>Configurable columns</b>: show only what you need; toggle via <i>Settings → Tools → StockLite</i></li>
-  <li><b>Color schemes</b>: Red-up/Green-down (Chinese) · Green-up/Red-down (Western) · No color</li>
-  <li><b>Auto-refresh with rate-limit backoff</b>: global indices back off automatically on HTTP 429</li>
-  <li><b>Persistent data</b>: stored in IDE config directory, survives restarts</li>
-  <li><b>Zero dependencies</b>: pure native Kotlin/Swing, no Electron, no embedded browser</li>
-</ul>
-
-<h4>Supported Markets</h4>
-<ul>
-  <li>🇨🇳 A-shares (Shanghai sh / Shenzhen sz)</li>
-  <li>🇨🇳 Domestic funds (OTC, including QDII with dedicated channel)</li>
-  <li>🇨🇳 Domestic &amp; international futures contracts</li>
-  <li>🌏 11 global indices: CSI 300, SSE, SZSE, ChiNext, HSI, HSTECH, S&amp;P 500, Dow Jones, NASDAQ, Nikkei 225, KOSPI</li>
-</ul>
-
-<h4>Getting Started</h4>
-<p>After installation, click the <b>StockLite</b> icon in the right tool window bar,
-or open via <i>View → Tool Windows → StockLite</i>.</p>
+<p>&#20013;&#25991;&#31616;&#20171;&#65306;</p>
+<p><b>StockLite</b> &#8212; &#19987;&#20026;&#25665;&#39770;&#35774;&#35745;&#30340;&#34892;&#24773;&#38754;&#26495;&#12290;&#26080;&#39069;&#31163;&#24320; IDE&#65292;&#22312;&#20391;&#36793;&#26639;&#23454;&#26102;&#26597;&#30475; A &#32929;&#12289;&#22522;&#37329;&#12289;&#26399;&#36135;&#21644;&#20840;&#29699;&#25351;&#25968;&#34892;&#24773;&#12290;</p>
     ]]></description>
 
     <change-notes><![CDATA[
