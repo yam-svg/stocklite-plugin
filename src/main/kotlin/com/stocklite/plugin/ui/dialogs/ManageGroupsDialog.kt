@@ -4,6 +4,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -20,12 +21,11 @@ class ManageGroupsDialog(
     private val onDone: () -> Unit
 ) : DialogWrapper(null, true) {
 
-    // 用 Any 是为了支持三种 GroupData 类型（反射读 id/name）
     private val listModel = DefaultListModel<String>()
     private val groupList = JBList(listModel)
 
     init {
-        title = "管理分组"
+        title = L10n.dlgManageGroups
         init()
         reloadList()
     }
@@ -37,16 +37,17 @@ class ManageGroupsDialog(
         groupList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         panel.add(JBScrollPane(groupList), BorderLayout.CENTER)
 
-        val btnPanel = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0))
-        val addBtn    = JButton("新建")
-        val renameBtn = JButton("重命名")
-        val delBtn    = JButton("删除")
+        val btnPanel  = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0))
+        val addBtn    = JButton(L10n.btnCreate)
+        val renameBtn = JButton(L10n.btnRename)
+        val delBtn    = JButton(L10n.btnDelete)
         btnPanel.add(addBtn); btnPanel.add(renameBtn); btnPanel.add(delBtn)
         panel.add(btnPanel, BorderLayout.SOUTH)
 
         addBtn.addActionListener {
-            val name = Messages.showInputDialog("输入分组名称", "新建分组", null)
-                ?.trim()?.takeIf { it.isNotEmpty() } ?: return@addActionListener
+            val name = Messages.showInputDialog(
+                L10n.dlgNewGroupPrompt, L10n.dlgNewGroupTitle, null
+            )?.trim()?.takeIf { it.isNotEmpty() } ?: return@addActionListener
             onCreate(name)
             reloadList()
         }
@@ -55,8 +56,9 @@ class ManageGroupsDialog(
             val idx = groupList.selectedIndex.takeIf { it >= 0 } ?: return@addActionListener
             val g = groups[idx]
             val oldName = nameOf(g)
-            val newName = Messages.showInputDialog("输入新名称", "重命名", null, oldName, null)
-                ?.trim()?.takeIf { it.isNotEmpty() } ?: return@addActionListener
+            val newName = Messages.showInputDialog(
+                L10n.dlgRenamePrompt, L10n.dlgRenameTitle, null, oldName, null
+            )?.trim()?.takeIf { it.isNotEmpty() } ?: return@addActionListener
             onRename(idOf(g), newName)
             reloadList()
         }
@@ -65,8 +67,10 @@ class ManageGroupsDialog(
             val idx = groupList.selectedIndex.takeIf { it >= 0 } ?: return@addActionListener
             val g = groups[idx]
             val confirm = JOptionPane.showConfirmDialog(
-                panel, "删除分组「${nameOf(g)}」？（该分组下的条目将移至其他分组）",
-                "删除确认", JOptionPane.YES_NO_OPTION
+                panel,
+                L10n.dlgConfirmDeleteGroup(nameOf(g)),
+                L10n.dlgConfirmTitle,
+                JOptionPane.YES_NO_OPTION
             )
             if (confirm == JOptionPane.YES_OPTION) {
                 onDelete(idOf(g))

@@ -11,6 +11,7 @@ import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.dialogs.AddFutureDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
+import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
 import java.awt.Cursor
@@ -25,7 +26,7 @@ import javax.swing.table.TableRowSorter
 /**
  * 期货行情看板（纯行情展示，不含持仓/方向/盈亏）
  */
-class FuturePanel : JPanel(BorderLayout()) {
+class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
     private val chartPanel = InlineChartPanel()
     private val state get() = StockliteState.getInstance()
@@ -33,36 +34,44 @@ class FuturePanel : JPanel(BorderLayout()) {
     private var rows: List<Pair<FutureData, FutureQuote?>> = emptyList()
     private val quotes = mutableMapOf<String, FutureQuote>()
 
-    private val COLS      = arrayOf("名称", "代码", "现价", "涨跌幅")
-    private val COL_TYPES = listOf(QuoteColumnType.PLAIN, QuoteColumnType.PLAIN,
-                                   QuoteColumnType.PRICE, QuoteColumnType.PCT)
-    private val COL_CLASS = arrayOf(String::class.java, String::class.java,
-                                    Double::class.java, Double::class.java)
+    private data class ColDef(
+        val key: String, val title: String, val type: QuoteColumnType,
+        val getValue: (FutureData, FutureQuote?) -> Any
+    )
+
+    private val allCols get() = listOf(
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { f, _  -> f.name },
+        ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN) { f, _  -> f.symbol },
+        ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE) { _, q  -> q?.price ?: 0.0 },
+        ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT)   { _, q  -> q?.changePercent ?: 0.0 },
+    )
 
     private val tableModel = object : AbstractTableModel() {
         override fun getRowCount()           = rows.size
-        override fun getColumnCount()        = COLS.size
-        override fun getColumnName(col: Int) = COLS[col]
+        override fun getColumnCount()        = allCols.size
+        override fun getColumnName(col: Int) = allCols[col].title
         override fun isCellEditable(r: Int, c: Int) = false
-        override fun getColumnClass(col: Int): Class<*> = COL_CLASS.getOrElse(col) { String::class.java }
+        override fun getColumnClass(col: Int): Class<*> =
+            if (allCols[col].type != QuoteColumnType.PLAIN) Double::class.java else String::class.java
         override fun getValueAt(row: Int, col: Int): Any {
             val (f, q) = rows[row]
-            return when (col) {
-                0 -> f.name
-                1 -> f.symbol
-                2 -> q?.price ?: 0.0
-                3 -> q?.changePercent ?: 0.0
-                else -> ""
-            }
+            return allCols[col].getValue(f, q)
         }
     }
 
-    private val table       = JBTable(tableModel)
-    private val groupCombo  = JComboBox<String>()
+    private val table      = JBTable(tableModel)
+    private val groupCombo = JComboBox<String>()
     private var updatingCombo = false
     private val statusLabel = JLabel(MarketTimeUtil.getMarketStatusText())
 
+    private lateinit var groupLbl:   JLabel
+    private lateinit var manageBtn:  JButton
+    private lateinit var addBtn:     JButton
+    private lateinit var delBtn:     JButton
+    private lateinit var refreshBtn: JButton
+
     init {
+        state.addLanguageListener(this)
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
         buildUI()
@@ -70,22 +79,42 @@ class FuturePanel : JPanel(BorderLayout()) {
         scheduleRefresh()
     }
 
-    private fun setupTable() {
-        COL_TYPES.forEachIndexed { i, t ->
-            table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(t)
+    override fun onLanguageChanged() {
+        tableModel.fireTableStructureChanged()
+        table.rowSorter = TableRowSorter(tableModel)
+        applyRenderers()
+        refreshGroups()
+        groupLbl.text   = L10n.lblGroup
+        manageBtn.text  = L10n.btnManageGroups
+        addBtn.text     = L10n.btnAddFuture
+        delBtn.text     = L10n.btnDelete
+        refreshBtn.text = L10n.btnRefresh
+        statusLabel.text = MarketTimeUtil.getMarketStatusText()
+        revalidate(); repaint()
+    }
+
+    private fun applyRenderers() {
+        allCols.forEachIndexed { i, col ->
+            if (i < table.columnModel.columnCount)
+                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
         }
-        table.columnModel.getColumn(0).preferredWidth = 120
+        if (table.columnModel.columnCount > 0)
+            table.columnModel.getColumn(0).preferredWidth = 120
+    }
+
+    private fun setupTable() {
+        applyRenderers()
         table.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         table.rowHeight = 24
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
 
-        // 点击"涨跌幅"列弹出日内走势图
+        // 点击"涨跌幅"列展开内嵌走势图
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
-                if (table.getColumnName(viewCol) != "涨跌幅") return
+                if (table.getColumnName(viewCol) != L10n.colChangePct) return
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (f, q) = rows[modelRow]
@@ -101,7 +130,7 @@ class FuturePanel : JPanel(BorderLayout()) {
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
                 val col = table.columnAtPoint(e.point)
-                table.cursor = if (col >= 0 && table.getColumnName(col) == "涨跌幅")
+                table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colChangePct)
                     Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                 else Cursor.getDefaultCursor()
             }
@@ -110,13 +139,15 @@ class FuturePanel : JPanel(BorderLayout()) {
 
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
-        toolbar.add(JLabel("分组:")); toolbar.add(groupCombo)
-        val manageBtn  = JButton("管理分组")
-        val addBtn     = JButton("添加期货")
-        val delBtn     = JButton("删除")
-        val upBtn      = JButton("↑")
-        val downBtn    = JButton("↓")
-        val refreshBtn = JButton("刷新")
+        groupLbl   = JLabel(L10n.lblGroup)
+        manageBtn  = JButton(L10n.btnManageGroups)
+        addBtn     = JButton(L10n.btnAddFuture)
+        delBtn     = JButton(L10n.btnDelete)
+        val upBtn  = JButton("↑")
+        val downBtn= JButton("↓")
+        refreshBtn = JButton(L10n.btnRefresh)
+
+        toolbar.add(groupLbl); toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(delBtn)
         toolbar.add(upBtn);  toolbar.add(downBtn)
@@ -129,9 +160,9 @@ class FuturePanel : JPanel(BorderLayout()) {
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
 
-        add(toolbar, BorderLayout.NORTH)
+        add(toolbar,       BorderLayout.NORTH)
         add(centerWrapper, BorderLayout.CENTER)
-        add(bottomBar, BorderLayout.SOUTH)
+        add(bottomBar,     BorderLayout.SOUTH)
 
         groupCombo.addActionListener {
             if (updatingCombo) return@addActionListener
@@ -164,8 +195,8 @@ class FuturePanel : JPanel(BorderLayout()) {
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
             val (f, _) = rows[row]
-            if (JOptionPane.showConfirmDialog(this, "确定删除「${f.name}」？", "删除确认",
-                    JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(f.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteFuture(f.id); loadRows()
             }
         }
@@ -198,7 +229,7 @@ class FuturePanel : JPanel(BorderLayout()) {
     }
 
     private fun groupIdList() = listOf(SystemGroups.ALL_FUTURE_ID) + state.futureGroups.map { it.id }
-    private fun groupNameList() = listOf(SystemGroups.ALL_FUTURE_NAME) + state.futureGroups.map { it.name }
+    private fun groupNameList() = listOf(L10n.groupAllFutures) + state.futureGroups.map { it.name }
 
     fun refreshGroups() {
         val ids = groupIdList(); val names = groupNameList()

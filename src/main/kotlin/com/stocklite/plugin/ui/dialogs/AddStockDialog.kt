@@ -8,6 +8,7 @@ import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.state.StockGroupData
 import com.stocklite.plugin.state.StockSearchResult
+import com.stocklite.plugin.util.L10n
 import java.awt.*
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -21,22 +22,22 @@ class AddStockDialog(
 ) : DialogWrapper(null, true) {
 
     // 搜索区
-    private val searchField   = JTextField(20)
-    private val searchBtn     = JButton("搜索")
-    private val resultModel   = DefaultListModel<StockSearchResult>()
-    private val resultList    = JBList(resultModel)
+    private val searchField  = JTextField(20)
+    private val searchBtn    = JButton(L10n.btnSearch)
+    private val resultModel  = DefaultListModel<StockSearchResult>()
+    private val resultList   = JBList(resultModel)
 
     // 数据填写区
-    private val symbolLabel   = JLabel("--")
-    private val nameLabel     = JLabel("--")
-    private val costField     = JTextField("0.00", 12)
-    private val qtyField      = JTextField("0", 12)
-    private val groupCombo    = JComboBox<String>()
+    private val symbolLabel  = JLabel("--")
+    private val nameLabel    = JLabel("--")
+    private val costField    = JTextField("0.00", 12)
+    private val qtyField     = JTextField("0", 12)
+    private val groupCombo   = JComboBox<String>()
 
     private var selectedResult: StockSearchResult? = null
 
     init {
-        title = if (existingStock == null) "添加股票" else "编辑股票"
+        title = if (existingStock == null) L10n.dlgAddStock else L10n.dlgEditStock
         init()
         setupGroups()
         if (existingStock != null) prefillExisting()
@@ -50,7 +51,7 @@ class AddStockDialog(
         // 搜索栏（编辑模式下隐藏）
         if (existingStock == null) {
             val searchBar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0))
-            searchBar.add(JLabel("搜索:"))
+            searchBar.add(JLabel(L10n.dlgSearch))
             searchBar.add(searchField)
             searchBar.add(searchBtn)
 
@@ -67,7 +68,6 @@ class AddStockDialog(
             searchPanel.add(JBScrollPane(resultList).apply { preferredSize = Dimension(460, 160) }, BorderLayout.CENTER)
             panel.add(searchPanel, BorderLayout.NORTH)
 
-            // 选中搜索结果后填充
             resultList.addListSelectionListener {
                 resultList.selectedValue?.let { r ->
                     selectedResult = r
@@ -99,11 +99,11 @@ class AddStockDialog(
             gbc.weightx = 0.0
         }
 
-        row("代码:", symbolLabel, 0)
-        row("名称:", nameLabel,   1)
-        row("成本价:", costField,  2)
-        row("持仓数量:", qtyField,  3)
-        row("所属分组:", groupCombo,4)
+        row(L10n.dlgSymbolLbl, symbolLabel, 0)
+        row(L10n.dlgNameLbl,   nameLabel,   1)
+        row(L10n.dlgCostLbl,   costField,   2)
+        row(L10n.dlgQtyLbl,    qtyField,    3)
+        row(L10n.dlgGroupLbl,  groupCombo,  4)
 
         panel.add(form, BorderLayout.CENTER)
         return panel
@@ -118,7 +118,7 @@ class AddStockDialog(
             SwingUtilities.invokeLater {
                 results.forEach { resultModel.addElement(it) }
                 searchBtn.isEnabled = true
-                if (results.isEmpty()) JOptionPane.showMessageDialog(null, "未找到相关股票")
+                if (results.isEmpty()) JOptionPane.showMessageDialog(null, L10n.dlgNoStockFound)
             }
         }
     }

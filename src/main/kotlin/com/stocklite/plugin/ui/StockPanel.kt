@@ -13,6 +13,7 @@ import com.stocklite.plugin.ui.dialogs.AddStockDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
 import java.awt.Cursor
@@ -23,29 +24,31 @@ import java.awt.event.MouseMotionAdapter
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 
-class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener {
+class StockPanel : JPanel(BorderLayout()),
+    StockliteState.ColumnSettingsListener,
+    StockliteState.LanguageListener {
 
     private val chartPanel = InlineChartPanel()
 
-    // ── 列定义 ──
+    // ── 列定义（计算属性，每次访问返回当前语言的列名）──
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
         val alwaysOn: Boolean = false,
         val getValue: (StockData, StockQuote?) -> Any
     )
 
-    private val ALL_COLS = listOf(
-        ColDef("name",        "名称",   QuoteColumnType.PLAIN,  true)  { s, _  -> s.name },
-        ColDef("symbol",      "代码",   QuoteColumnType.PLAIN)         { s, _  -> s.symbol },
-        ColDef("quantity",    "持仓",   QuoteColumnType.QTY)           { s, _  -> s.quantity },
-        ColDef("cost",        "成本价", QuoteColumnType.PRICE)         { s, _  -> s.costPrice },
-        ColDef("price",       "现价",   QuoteColumnType.PRICE,  true)  { _, q  -> q?.price ?: 0.0 },
-        ColDef("changePercent","涨跌幅",QuoteColumnType.PCT,    true)  { _, q  -> q?.changePercent ?: 0.0 },
-        ColDef("marketValue", "市值",   QuoteColumnType.VALUE)         { s, q  -> (q?.price ?: 0.0) * s.quantity },
-        ColDef("pnl",         "盈亏",   QuoteColumnType.PNL)           { s, q  ->
+    private val allCols get() = listOf(
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN, true)  { s, _  -> s.name },
+        ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN)        { s, _  -> s.symbol },
+        ColDef("quantity",     L10n.colQty,       QuoteColumnType.QTY)          { s, _  -> s.quantity },
+        ColDef("cost",         L10n.colCost,      QuoteColumnType.PRICE)        { s, _  -> s.costPrice },
+        ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE, true)  { _, q  -> q?.price ?: 0.0 },
+        ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  -> q?.changePercent ?: 0.0 },
+        ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
+        ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
         },
-        ColDef("pnlPercent",  "盈亏%",  QuoteColumnType.PCT)           { s, q  ->
+        ColDef("pnlPercent",   L10n.colPnlPct,   QuoteColumnType.PCT)          { s, q  ->
             val p = q?.price ?: 0.0
             if (p > 0 && s.costPrice > 0) (p - s.costPrice) / s.costPrice * 100.0 else 0.0
         },
@@ -73,14 +76,23 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         }
     }
 
-    private val table        = JBTable(tableModel)
-    private val groupCombo   = JComboBox<String>()
-    private val summaryLabel = JLabel("总市值: --   总盈亏: --")
+    private val table      = JBTable(tableModel)
+    private val groupCombo = JComboBox<String>()
+    private var updatingCombo = false
+    private val summaryLabel = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --")
     private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
-    private var updatingCombo = false  // 防止 removeAllItems/addItem 误触发 listener
+
+    // ── 需要在语言切换时更新文字的 UI 组件 ──
+    private lateinit var groupLbl:   JLabel
+    private lateinit var manageBtn:  JButton
+    private lateinit var addBtn:     JButton
+    private lateinit var editBtn:    JButton
+    private lateinit var delBtn:     JButton
+    private lateinit var refreshBtn: JButton
 
     init {
         state.addColumnListener(this)
+        state.addLanguageListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
@@ -94,9 +106,22 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         loadRows()
     }
 
+    override fun onLanguageChanged() {
+        rebuildVisibleCols()    // 刷新列名
+        refreshGroups()         // 刷新系统分组名称（"全部股票"/"我的持有"等）
+        groupLbl.text   = L10n.lblGroup
+        manageBtn.text  = L10n.btnManageGroups
+        addBtn.text     = L10n.btnAddStock
+        editBtn.text    = L10n.btnEdit
+        delBtn.text     = L10n.btnDelete
+        refreshBtn.text = L10n.btnRefresh
+        updateSummary()
+        revalidate(); repaint()
+    }
+
     private fun rebuildVisibleCols() {
         val enabled = state.stockVisibleColumns.toSet()
-        visibleCols = ALL_COLS.filter { it.alwaysOn || it.key in enabled }
+        visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
         table.rowSorter = TableRowSorter(tableModel)
         applyRenderers()
@@ -117,12 +142,12 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
 
-        // 点击"涨跌幅"列弹出日内走势图
+        // 点击"涨跌幅"列展开内嵌走势图
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
-                if (table.getColumnName(viewCol) != "涨跌幅") return
+                if (table.getColumnName(viewCol) != L10n.colChangePct) return
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (s, q) = rows[modelRow]
@@ -138,7 +163,7 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
                 val col = table.columnAtPoint(e.point)
-                table.cursor = if (col >= 0 && table.getColumnName(col) == "涨跌幅")
+                table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colChangePct)
                     Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                 else Cursor.getDefaultCursor()
             }
@@ -147,15 +172,16 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
 
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
-        toolbar.add(JLabel("分组:"))
-        toolbar.add(groupCombo)
-        val manageBtn  = JButton("管理分组")
-        val addBtn     = JButton("添加股票")
-        val editBtn    = JButton("编辑")
-        val delBtn     = JButton("删除")
-        val upBtn      = JButton("↑")
-        val downBtn    = JButton("↓")
-        val refreshBtn = JButton("刷新")
+        groupLbl   = JLabel(L10n.lblGroup)
+        manageBtn  = JButton(L10n.btnManageGroups)
+        addBtn     = JButton(L10n.btnAddStock)
+        editBtn    = JButton(L10n.btnEdit)
+        delBtn     = JButton(L10n.btnDelete)
+        val upBtn  = JButton("↑")
+        val downBtn= JButton("↓")
+        refreshBtn = JButton(L10n.btnRefresh)
+
+        toolbar.add(groupLbl);  toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(editBtn);   toolbar.add(delBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
@@ -169,9 +195,9 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
 
-        add(toolbar, BorderLayout.NORTH)
-        add(centerWrapper, BorderLayout.CENTER)
-        add(bottomBar, BorderLayout.SOUTH)
+        add(toolbar,      BorderLayout.NORTH)
+        add(centerWrapper,BorderLayout.CENTER)
+        add(bottomBar,    BorderLayout.SOUTH)
 
         groupCombo.addActionListener {
             if (updatingCombo) return@addActionListener
@@ -214,8 +240,8 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
             val (s, _) = rows[row]
-            if (JOptionPane.showConfirmDialog(this, "确定删除「${s.name}」？", "删除确认",
-                    JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(s.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteStock(s.id); loadRows()
             }
         }
@@ -232,17 +258,14 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         val targetIdx = modelRow + delta
         if (targetIdx < 0 || targetIdx >= items.size) return
 
-        // 先归一化所有股票的 sortOrder（确保无重复值）
         state.stocks.sortedBy { it.sortOrder }.forEachIndexed { i, s -> s.sortOrder = i }
 
-        // 重新获取归一化后的列表，再交换两项的 sortOrder
         val fresh = state.getStocksForGroup(currentGroupId)
         val a = fresh[modelRow]; val b = fresh[targetIdx]
         val tmp = a.sortOrder
         state.stocks.find { it.id == a.id }?.sortOrder = b.sortOrder
         state.stocks.find { it.id == b.id }?.sortOrder = tmp
 
-        // 清除列排序，重载，恢复选中
         (table.rowSorter as? javax.swing.table.TableRowSorter<*>)?.sortKeys = emptyList()
         loadRows()
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
@@ -253,7 +276,7 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
     private fun groupIdList() = listOf(SystemGroups.ALL_STOCK_ID, SystemGroups.HOLDING_STOCK_ID) +
         state.stockGroups.map { it.id }
 
-    private fun groupNameList() = listOf(SystemGroups.ALL_STOCK_NAME, SystemGroups.HOLDING_STOCK_NAME) +
+    private fun groupNameList() = listOf(L10n.groupAllStocks, L10n.groupHoldingStocks) +
         state.stockGroups.map { it.name }
 
     private fun isSystemGroup(id: String) =
@@ -288,7 +311,7 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
         }
         val sign = if (totalPnl >= 0) "+" else ""
-        summaryLabel.text = "总市值: ${Fmt.value(totalValue)}   总盈亏: $sign${Fmt.value(totalPnl)}"
+        summaryLabel.text = "${L10n.lblTotalValue} ${Fmt.value(totalValue)}   ${L10n.lblTotalPnl} $sign${Fmt.value(totalPnl)}"
         statusLabel.text  = MarketTimeUtil.getMarketStatusText()
     }
 

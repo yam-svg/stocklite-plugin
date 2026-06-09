@@ -54,6 +54,7 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
   <li>Click the <b>Change%</b> column on any stock, future, or global index to open an inline intraday chart at the panel bottom; click ✕ to close</li>
   <li>Intraday chart Y-axis shows change% relative to previous close, with baseline at 0%; powered by lightweight-charts v4.2.0</li>
   <li>Smart price decimal places: auto-detects 2 / 3 / 4 decimals (ETF-compatible)</li>
+  <li><b>Bilingual UI</b>: switch between Chinese (中文) and English in Settings &rarr; Tools &rarr; StockLite; all labels, columns, buttons, and dialogs update instantly</li>
   <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
   <li>Data saved in IDE config directory — survives restarts</li>
   <li>Pure native Kotlin/Swing, no Electron, lightweight and fast</li>
@@ -119,6 +120,7 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
 <ul>
   <li>列标题点击排序；↑↓ 按钮调整行顺序并持久化</li>
   <li>价格自动适配小数位数（2/3/4 位），兼容 ETF、低价股等不同精度需求</li>
+  <li><b>中英文界面切换</b>：在 Settings → Tools → StockLite 中选择语言，所有标签页、列名、按钮、对话框即时切换，无需重启 IDE</li>
   <li>数据存储在 IDE 配置目录（stocklite.xml），重启 IDE 数据不丢失</li>
   <li>纯原生 Kotlin/Swing 实现，无 Electron，无独立进程，轻量快速</li>
 </ul>
@@ -133,6 +135,7 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
   <li>价格小数位自动适配（2/3/4 位），兼容 ETF 等精度较高的品种</li>
   <li>修复期货日内数据：国内期货改用 InnerFuturesNewService，国际期货改用 GlobalFuturesService</li>
   <li>修复股票/基金 K 线字段名（day/close），解决图表无数据问题</li>
+  <li>新增中英文界面切换（Settings → Tools → StockLite → 界面语言），所有 UI 文字即时响应</li>
 </ul>
 
 <h3>1.0.0</h3>

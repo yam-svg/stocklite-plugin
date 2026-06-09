@@ -14,13 +14,16 @@ import com.stocklite.plugin.ui.dialogs.AddFundDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
 import java.awt.FlowLayout
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 
-class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener {
+class FundPanel : JPanel(BorderLayout()),
+    StockliteState.ColumnSettingsListener,
+    StockliteState.LanguageListener {
 
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
@@ -28,37 +31,30 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
         val getValue: (FundData, FundQuote?) -> Any
     )
 
-    private val ALL_COLS = listOf(
-        ColDef("name",         "名称",     QuoteColumnType.PLAIN,  true) { f, _  -> f.name },
-        ColDef("nav",          "当前净值", QuoteColumnType.PRICE4, true) { _, q  -> q?.nav ?: 0.0 },
-        // 官方净值涨跌幅（F10 数据，始终反映最新已发布净值的当日变化）
-        ColDef("changePercent","官方涨跌", QuoteColumnType.PCT,    true) { _, q  -> q?.changePercent ?: 0.0 },
-        // 净值日期（YYYY-MM-DD），日期从昨天变今天即说明今日净值已更新
-        ColDef("navDate",      "净值日期", QuoteColumnType.PLAIN,  true) { _, q  ->
+    private val allCols get() = listOf(
+        ColDef("name",         L10n.colName,       QuoteColumnType.PLAIN,  true) { f, _  -> f.name },
+        ColDef("nav",          L10n.colNav,         QuoteColumnType.PRICE4, true) { _, q  -> q?.nav ?: 0.0 },
+        ColDef("changePercent",L10n.colOfficialChg, QuoteColumnType.PCT,    true) { _, q  -> q?.changePercent ?: 0.0 },
+        ColDef("navDate",      L10n.colNavDate,     QuoteColumnType.PLAIN,  true) { _, q  ->
             val d = q?.date ?: return@ColDef "--"
-            if (d.length >= 10) d.substring(5) else d  // 显示 MM-dd
+            if (d.length >= 10) d.substring(5) else d
         },
-        // 今日盘中估算（天天基金 gszzl），始终返回 Double 以支持正确排序：
-        //   hasEstimate=true  → 今日实时估算涨跌幅
-        //   hasEstimate=false + date==today → 哨兵 SENTINEL_OFFICIAL_UPDATED，显示"官方✓"
-        //   else              → 哨兵 SENTINEL_NO_ESTIMATE，显示"-"
-        ColDef("todayChange",  "今日估算", QuoteColumnType.PCT,    true) { _, q  ->
+        ColDef("todayChange",  L10n.colTodayEst,   QuoteColumnType.PCT,    true) { _, q  ->
             when {
-                q == null             -> SENTINEL_NO_ESTIMATE
-                q.hasEstimate         -> q.estimatedChangePercent ?: 0.0
-                q.date == todayStr()  -> SENTINEL_OFFICIAL_UPDATED
-                else                  -> SENTINEL_NO_ESTIMATE
+                q == null        -> SENTINEL_NO_ESTIMATE
+                q.hasEstimate    -> q.estimatedChangePercent ?: 0.0
+                q.date == todayStr() -> SENTINEL_OFFICIAL_UPDATED
+                else             -> SENTINEL_NO_ESTIMATE
             }
         },
-        // 可选列（默认隐藏）
-        ColDef("code",         "代码",     QuoteColumnType.PLAIN)        { f, _  -> f.code },
-        ColDef("shares",       "持仓份额", QuoteColumnType.QTY)          { f, _  -> f.shares },
-        ColDef("costNav",      "成本净值", QuoteColumnType.PRICE4)       { f, _  -> f.costNav },
-        ColDef("marketValue",  "市值",     QuoteColumnType.VALUE)        { f, q  -> (q?.nav ?: 0.0) * f.shares },
-        ColDef("pnl",          "盈亏",     QuoteColumnType.PNL)          { f, q  ->
+        ColDef("code",         L10n.colSymbol,     QuoteColumnType.PLAIN)        { f, _  -> f.code },
+        ColDef("shares",       L10n.colShares,     QuoteColumnType.QTY)          { f, _  -> f.shares },
+        ColDef("costNav",      L10n.colCostNav,    QuoteColumnType.PRICE4)       { f, _  -> f.costNav },
+        ColDef("marketValue",  L10n.colValue,      QuoteColumnType.VALUE)        { f, q  -> (q?.nav ?: 0.0) * f.shares },
+        ColDef("pnl",          L10n.colPnl,        QuoteColumnType.PNL)          { f, q  ->
             val n = q?.nav ?: 0.0; if (n > 0) (n - f.costNav) * f.shares else 0.0
         },
-        ColDef("pnlPercent",   "盈亏%",    QuoteColumnType.PCT)          { f, q  ->
+        ColDef("pnlPercent",   L10n.colPnlPct,    QuoteColumnType.PCT)          { f, q  ->
             val n = q?.nav ?: 0.0
             if (n > 0 && f.costNav > 0) (n - f.costNav) / f.costNav * 100.0 else 0.0
         },
@@ -93,11 +89,19 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
     private val table        = JBTable(tableModel)
     private val groupCombo   = JComboBox<String>()
     private var updatingCombo = false
-    private val summaryLabel = JLabel("总市值: --   总盈亏: --")
+    private val summaryLabel = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --")
     private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
+
+    private lateinit var groupLbl:   JLabel
+    private lateinit var manageBtn:  JButton
+    private lateinit var addBtn:     JButton
+    private lateinit var editBtn:    JButton
+    private lateinit var delBtn:     JButton
+    private lateinit var refreshBtn: JButton
 
     init {
         state.addColumnListener(this)
+        state.addLanguageListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
@@ -111,11 +115,24 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
         loadRows()
     }
 
+    override fun onLanguageChanged() {
+        rebuildVisibleCols()
+        refreshGroups()
+        groupLbl.text   = L10n.lblGroup
+        manageBtn.text  = L10n.btnManageGroups
+        addBtn.text     = L10n.btnAddFund
+        editBtn.text    = L10n.btnEdit
+        delBtn.text     = L10n.btnDelete
+        refreshBtn.text = L10n.btnRefresh
+        updateSummary()
+        revalidate(); repaint()
+    }
+
     private fun rebuildVisibleCols() {
         val enabled = state.fundVisibleColumns.toSet()
-        visibleCols = ALL_COLS.filter { it.alwaysOn || it.key in enabled }
+        visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
-        table.rowSorter = TableRowSorter(tableModel)  // 列结构变化后重建排序器
+        table.rowSorter = TableRowSorter(tableModel)
         applyRenderers()
     }
 
@@ -138,14 +155,16 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
 
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
-        toolbar.add(JLabel("分组:")); toolbar.add(groupCombo)
-        val manageBtn  = JButton("管理分组")
-        val addBtn     = JButton("添加基金")
-        val editBtn    = JButton("编辑")
-        val delBtn     = JButton("删除")
-        val upBtn      = JButton("↑")
-        val downBtn    = JButton("↓")
-        val refreshBtn = JButton("刷新")
+        groupLbl   = JLabel(L10n.lblGroup)
+        manageBtn  = JButton(L10n.btnManageGroups)
+        addBtn     = JButton(L10n.btnAddFund)
+        editBtn    = JButton(L10n.btnEdit)
+        delBtn     = JButton(L10n.btnDelete)
+        val upBtn  = JButton("↑")
+        val downBtn= JButton("↓")
+        refreshBtn = JButton(L10n.btnRefresh)
+
+        toolbar.add(groupLbl); toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(editBtn);   toolbar.add(delBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
@@ -199,8 +218,8 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
             val (f, _) = rows[row]
-            if (JOptionPane.showConfirmDialog(this, "确定删除「${f.name}」？", "删除确认",
-                    JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(f.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteFund(f.id); loadRows()
             }
         }
@@ -235,7 +254,7 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
     private fun groupIdList() = listOf(SystemGroups.ALL_FUND_ID, SystemGroups.HOLDING_FUND_ID) +
         state.fundGroups.map { it.id }
 
-    private fun groupNameList() = listOf(SystemGroups.ALL_FUND_NAME, SystemGroups.HOLDING_FUND_NAME) +
+    private fun groupNameList() = listOf(L10n.groupAllFunds, L10n.groupHoldingFunds) +
         state.fundGroups.map { it.name }
 
     private fun isSystemGroup(id: String) =
@@ -270,7 +289,7 @@ class FundPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener 
             val n = q?.nav ?: 0.0; if (n > 0) (n - f.costNav) * f.shares else 0.0
         }
         val sign = if (totalPnl >= 0) "+" else ""
-        summaryLabel.text = "总市值: ${Fmt.value(totalValue)}   总盈亏: $sign${Fmt.value(totalPnl)}"
+        summaryLabel.text = "${L10n.lblTotalValue} ${Fmt.value(totalValue)}   ${L10n.lblTotalPnl} $sign${Fmt.value(totalPnl)}"
         statusLabel.text  = MarketTimeUtil.getMarketStatusText()
     }
 

@@ -8,6 +8,7 @@ import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.FundData
 import com.stocklite.plugin.state.FundGroupData
 import com.stocklite.plugin.state.FundSearchResult
+import com.stocklite.plugin.util.L10n
 import java.awt.*
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -21,7 +22,7 @@ class AddFundDialog(
 ) : DialogWrapper(null, true) {
 
     private val searchField  = JTextField(20)
-    private val searchBtn    = JButton("搜索")
+    private val searchBtn    = JButton(L10n.btnSearch)
     private val resultModel  = DefaultListModel<FundSearchResult>()
     private val resultList   = JBList(resultModel)
 
@@ -34,7 +35,7 @@ class AddFundDialog(
     private var selectedResult: FundSearchResult? = null
 
     init {
-        title = if (existingFund == null) "添加基金" else "编辑基金"
+        title = if (existingFund == null) L10n.dlgAddFund else L10n.dlgEditFund
         init()
         setupGroups()
         if (existingFund != null) prefillExisting()
@@ -47,7 +48,7 @@ class AddFundDialog(
 
         if (existingFund == null) {
             val searchBar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0))
-            searchBar.add(JLabel("搜索:"))
+            searchBar.add(JLabel(L10n.dlgSearch))
             searchBar.add(searchField)
             searchBar.add(searchBtn)
 
@@ -79,18 +80,18 @@ class AddFundDialog(
         }
 
         val form = JPanel(GridBagLayout())
-        val gbc = GridBagConstraints().apply { insets = Insets(4,4,4,4); anchor = GridBagConstraints.WEST }
+        val gbc = GridBagConstraints().apply { insets = Insets(4, 4, 4, 4); anchor = GridBagConstraints.WEST }
         fun row(label: String, comp: JComponent, r: Int) {
             gbc.gridx = 0; gbc.gridy = r; gbc.fill = GridBagConstraints.NONE
             form.add(JLabel(label), gbc)
             gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
             form.add(comp, gbc); gbc.weightx = 0.0
         }
-        row("基金代码:", codeLabel,    0)
-        row("基金名称:", nameLabel,    1)
-        row("成本净值:", costNavField,  2)
-        row("持仓份额:", sharesField,   3)
-        row("所属分组:", groupCombo,    4)
+        row(L10n.dlgFundCodeLbl, codeLabel,    0)
+        row(L10n.dlgFundNameLbl, nameLabel,    1)
+        row(L10n.dlgCostNavLbl,  costNavField, 2)
+        row(L10n.dlgSharesLbl,   sharesField,  3)
+        row(L10n.dlgGroupLbl,    groupCombo,   4)
 
         panel.add(form, BorderLayout.CENTER)
         return panel
@@ -104,7 +105,7 @@ class AddFundDialog(
             SwingUtilities.invokeLater {
                 results.forEach { resultModel.addElement(it) }
                 searchBtn.isEnabled = true
-                if (results.isEmpty()) JOptionPane.showMessageDialog(null, "未找到相关基金")
+                if (results.isEmpty()) JOptionPane.showMessageDialog(null, L10n.dlgNoFundFound)
             }
         }
     }

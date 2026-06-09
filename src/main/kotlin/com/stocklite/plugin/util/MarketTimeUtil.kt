@@ -9,8 +9,8 @@ object MarketTimeUtil {
 
     private val SHANGHAI_ZONE = ZoneId.of("Asia/Shanghai")
 
-    private val STOCK_MORNING_START = LocalTime.of(9, 30)
-    private val STOCK_MORNING_END   = LocalTime.of(11, 30)
+    private val STOCK_MORNING_START   = LocalTime.of(9,  30)
+    private val STOCK_MORNING_END     = LocalTime.of(11, 30)
     private val STOCK_AFTERNOON_START = LocalTime.of(13, 0)
     private val STOCK_AFTERNOON_END   = LocalTime.of(15, 0)
 
@@ -24,14 +24,20 @@ object MarketTimeUtil {
 
     fun getMarketStatusText(): String {
         val now = ZonedDateTime.now(SHANGHAI_ZONE)
-        val t = now.toLocalTime()
+        val t   = now.toLocalTime()
         return when {
-            now.dayOfWeek == DayOfWeek.SATURDAY || now.dayOfWeek == DayOfWeek.SUNDAY -> "休市（周末）"
-            t < STOCK_MORNING_START -> "未开市（${STOCK_MORNING_START} 开盘）"
-            t in STOCK_MORNING_START..STOCK_MORNING_END -> "交易中（上午盘）"
-            t < STOCK_AFTERNOON_START -> "午休中（${STOCK_AFTERNOON_START} 开盘）"
-            t in STOCK_AFTERNOON_START..STOCK_AFTERNOON_END -> "交易中（下午盘）"
-            else -> "已收盘"
+            now.dayOfWeek == DayOfWeek.SATURDAY || now.dayOfWeek == DayOfWeek.SUNDAY ->
+                L10n.statusWeekend
+            t < STOCK_MORNING_START ->
+                L10n.statusPreOpen(STOCK_MORNING_START.toString())
+            t in STOCK_MORNING_START..STOCK_MORNING_END ->
+                L10n.statusAMOpen
+            t < STOCK_AFTERNOON_START ->
+                L10n.statusLunch
+            t in STOCK_AFTERNOON_START..STOCK_AFTERNOON_END ->
+                L10n.statusPMOpen
+            else ->
+                L10n.statusClosed
         }
     }
 

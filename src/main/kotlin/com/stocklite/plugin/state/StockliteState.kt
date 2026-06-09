@@ -30,6 +30,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // "RED_UP"（红涨绿跌，中国惯例）| "RED_DOWN"（绿涨红跌，欧美惯例）| "NONE"（无颜色）
     var colorScheme: String = "RED_UP"
 
+    // ── 界面语言 ──
+    // "ZH"（中文）| "EN"（English）
+    var language: String = "ZH"
+
     override fun getState(): StockliteState = this
 
     override fun loadState(state: StockliteState) {
@@ -42,6 +46,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun addColumnListener(l: ColumnSettingsListener) { columnListeners.add(l) }
     fun removeColumnListener(l: ColumnSettingsListener) { columnListeners.remove(l) }
     fun notifyColumnSettingsChanged() = columnListeners.forEach { it.onColumnSettingsChanged() }
+
+    // ── 语言变更通知 ──
+    interface LanguageListener { fun onLanguageChanged() }
+    @Transient private val languageListeners = mutableListOf<LanguageListener>()
+    fun addLanguageListener(l: LanguageListener) { languageListeners.add(l) }
+    fun removeLanguageListener(l: LanguageListener) { languageListeners.remove(l) }
+    fun notifyLanguageChanged() = languageListeners.forEach { it.onLanguageChanged() }
 
     // ── 股票分组 CRUD ──
 

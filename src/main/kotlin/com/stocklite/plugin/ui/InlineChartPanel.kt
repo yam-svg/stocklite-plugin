@@ -5,6 +5,7 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.util.L10n
 import java.awt.*
 import javax.swing.*
 
@@ -41,11 +42,11 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         infoLabel.font = infoLabel.font.deriveFont(12f)
         closeBtn.apply {
             preferredSize = Dimension(26, 26)
-            isBorderPainted   = false
+            isBorderPainted    = false
             isContentAreaFilled = false
-            isFocusPainted    = false
+            isFocusPainted     = false
             font = font.deriveFont(Font.BOLD, 14f)
-            toolTipText = "关闭图表"
+            toolTipText = L10n.chartCloseTip
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addActionListener { close() }
         }
@@ -73,10 +74,13 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         prevClose: Double,
         fetchData: () -> List<ChartDataService.ChartPoint>
     ) {
+        // 更新关闭按钮 tooltip（语言可能已切换）
+        closeBtn.toolTipText = L10n.chartCloseTip
+
         val scheme = StockliteState.getInstance().colorScheme
-        val color = pctHexColor(changePercent, scheme)
-        val sign  = if (changePercent >= 0) "+" else ""
-        val pct   = "%.2f".format(changePercent)
+        val color  = pctHexColor(changePercent, scheme)
+        val sign   = if (changePercent >= 0) "+" else ""
+        val pct    = "%.2f".format(changePercent)
         infoLabel.text = "<html><b>$displayName</b>&nbsp;&nbsp;" +
             "<span style='color:#888aaa;font-size:11px'>$displaySymbol</span>&nbsp;&nbsp;" +
             "<b style='color:$color'>$sign${pct}%</b></html>"
@@ -87,7 +91,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val id = ++loadId
 
         if (!JBCefApp.isSupported()) {
-            showFallback("当前 IDE 不支持内嵌浏览器（需 JetBrains IDE 2023.3+）")
+            showFallback(L10n.chartUnsupported)
             return
         }
 
@@ -144,8 +148,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
 
     // ── HTML 生成 ───────────────────────────────────────────────────────
 
-    private fun loadingHtml() = minPage("<div>数据加载中…</div>", "#cdd6f4")
-    private fun errorHtml()   = minPage("<div>暂无当日数据</div>", "#f38ba8")
+    private fun loadingHtml() = minPage("<div>${L10n.chartLoading}</div>", "#cdd6f4")
+    private fun errorHtml()   = minPage("<div>${L10n.chartNoData}</div>",  "#f38ba8")
 
     private fun minPage(body: String, color: String) = """
         <!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -176,6 +180,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val hasPrev = prevClose > 0.0
         val prevJs  = "%.6f".format(prevClose)
         val rawJs   = points.joinToString(",") { """{"time":${it.time},"price":${it.value}}""" }
+        // "昨收" / "Prev Close" label used in the chart baseline annotation
+        val prevCloseLabel = L10n.chartPrevClose.replace("'", "\\'")
 
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -222,7 +228,7 @@ body{background:#1e1e2e;overflow:hidden;}
       lineWidth:2, priceLineVisible:false, lastValueVisible:true,
     });
     series.createPriceLine({price:0,color:'#666688',lineWidth:1,
-      lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'昨收'});
+      lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'$prevCloseLabel'});
   } else {
     series=chart.addAreaSeries({lineColor:UP,topColor:'${pal.upF1}',bottomColor:'${pal.upF2}',
       lineWidth:2,priceLineVisible:false,lastValueVisible:true});

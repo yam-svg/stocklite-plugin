@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.FutureGroupData
 import com.stocklite.plugin.state.FutureSearchResult
+import com.stocklite.plugin.util.L10n
 import java.awt.*
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
@@ -22,7 +23,7 @@ class AddFutureDialog(
 ) : DialogWrapper(null, true) {
 
     private val searchField  = JTextField(20)
-    private val searchBtn    = JButton("搜索")
+    private val searchBtn    = JButton(L10n.btnSearch)
     private val resultModel  = DefaultListModel<FutureSearchResult>()
     private val resultList   = JBList(resultModel)
     private val symbolLabel  = JLabel("--")
@@ -32,7 +33,7 @@ class AddFutureDialog(
     private var selectedResult: FutureSearchResult? = null
 
     init {
-        title = "添加期货合约"
+        title = L10n.dlgAddFuture
         init()
         setupGroups()
         isOKActionEnabled = false
@@ -44,7 +45,7 @@ class AddFutureDialog(
 
         // 搜索区
         val searchBar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0))
-        searchBar.add(JLabel("搜索:"))
+        searchBar.add(JLabel(L10n.dlgSearch))
         searchBar.add(searchField)
         searchBar.add(searchBtn)
 
@@ -70,17 +71,17 @@ class AddFutureDialog(
             gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
             form.add(comp, gbc); gbc.weightx = 0.0
         }
-        row("代码:", symbolLabel, 0)
-        row("名称:", nameLabel,   1)
-        row("分组:", groupCombo,  2)
+        row(L10n.dlgSymbolLbl,    symbolLabel, 0)
+        row(L10n.dlgNameLbl,      nameLabel,   1)
+        row(L10n.dlgFutureGrpLbl, groupCombo,  2)
         panel.add(form, BorderLayout.CENTER)
 
         // 事件
         resultList.addListSelectionListener {
             resultList.selectedValue?.let { r ->
                 selectedResult = r
-                symbolLabel.text = r.symbol
-                nameLabel.text   = r.name
+                symbolLabel.text  = r.symbol
+                nameLabel.text    = r.name
                 isOKActionEnabled = true
             }
         }
@@ -100,7 +101,7 @@ class AddFutureDialog(
             SwingUtilities.invokeLater {
                 results.forEach { resultModel.addElement(it) }
                 searchBtn.isEnabled = true
-                if (results.isEmpty()) JOptionPane.showMessageDialog(null, "未找到相关期货合约")
+                if (results.isEmpty()) JOptionPane.showMessageDialog(null, L10n.dlgNoFutureFound)
             }
         }
     }

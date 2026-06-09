@@ -4,6 +4,7 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.util.L10n
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
@@ -11,24 +12,31 @@ import javax.swing.*
 
 class StockliteConfigurable : Configurable {
 
-    // ── 股票可选列 ──
-    private val STOCK_OPTIONAL = listOf(
-        "symbol"      to "代码",
-        "quantity"    to "持仓数量",
-        "cost"        to "成本价",
-        "marketValue" to "市值",
-        "pnl"         to "盈亏",
-        "pnlPercent"  to "盈亏%"
+    // 语言选择单选组
+    private val langRadios = linkedMapOf(
+        "ZH" to JRadioButton(L10n.settingsLangZh),
+        "EN" to JRadioButton(L10n.settingsLangEn)
+    )
+    private val langGroup = ButtonGroup().also { g -> langRadios.values.forEach { g.add(it) } }
+
+    // 股票可选列（key → 显示标签）
+    private val stockOptional get() = listOf(
+        "symbol"      to L10n.settingsOptStockSymbol,
+        "quantity"    to L10n.settingsOptStockQty,
+        "cost"        to L10n.settingsOptStockCost,
+        "marketValue" to L10n.settingsOptStockValue,
+        "pnl"         to L10n.settingsOptStockPnl,
+        "pnlPercent"  to L10n.settingsOptStockPnlPct
     )
 
-    // ── 基金可选列（"当前净值""昨日涨跌""今日估算"始终显示，不在此列） ──
-    private val FUND_OPTIONAL = listOf(
-        "code"        to "代码",
-        "shares"      to "持仓份额",
-        "costNav"     to "成本净值",
-        "marketValue" to "市值",
-        "pnl"         to "盈亏",
-        "pnlPercent"  to "盈亏%"
+    // 基金可选列
+    private val fundOptional get() = listOf(
+        "code"        to L10n.settingsOptFundCode,
+        "shares"      to L10n.settingsOptFundShares,
+        "costNav"     to L10n.settingsOptFundCostNav,
+        "marketValue" to L10n.settingsOptFundValue,
+        "pnl"         to L10n.settingsOptFundPnl,
+        "pnlPercent"  to L10n.settingsOptFundPnlPct
     )
 
     private val stockBoxes = mutableMapOf<String, JBCheckBox>()
@@ -36,9 +44,9 @@ class StockliteConfigurable : Configurable {
 
     // 颜色方案单选组
     private val colorRadios = linkedMapOf(
-        "RED_UP"   to JRadioButton("红涨绿跌（中国惯例）"),
-        "RED_DOWN" to JRadioButton("绿涨红跌（欧美惯例）"),
-        "NONE"     to JRadioButton("无颜色")
+        "RED_UP"   to JRadioButton(L10n.settingsRedUp),
+        "RED_DOWN" to JRadioButton(L10n.settingsRedDown),
+        "NONE"     to JRadioButton(L10n.settingsNoColor)
     )
     private val colorGroup = ButtonGroup().also { g -> colorRadios.values.forEach { g.add(it) } }
 
@@ -49,9 +57,9 @@ class StockliteConfigurable : Configurable {
         val gbc = GridBagConstraints().apply {
             insets = Insets(2, 8, 2, 8)
             anchor = GridBagConstraints.WEST
-            fill = GridBagConstraints.HORIZONTAL
+            fill   = GridBagConstraints.HORIZONTAL
             weightx = 1.0
-            gridx = 0
+            gridx   = 0
         }
 
         fun sep(text: String, row: Int) {
@@ -71,26 +79,30 @@ class StockliteConfigurable : Configurable {
             val cb = JBCheckBox(label); boxes[key] = cb; panel.add(cb, gbc)
         }
 
-        // ── 颜色方案 ──
-        sep("涨跌幅颜色", 0)
+        // ── 界面语言 ──
+        sep(L10n.settingsLanguage, 0)
         var row = 2
+        langRadios.values.forEach { rb -> gbc.gridy = row++; gbc.insets = Insets(2, 8, 2, 8); panel.add(rb, gbc) }
+
+        // ── 颜色方案 ──
+        sep(L10n.settingsColorScheme, row++); row++
         colorRadios.values.forEach { rb -> gbc.gridy = row++; gbc.insets = Insets(2, 8, 2, 8); panel.add(rb, gbc) }
 
         // ── 股票列 ──
-        sep("股票列设置", row++); row++
-        alwaysRow("名称（始终显示）", row++)
-        alwaysRow("现价（始终显示）", row++)
-        alwaysRow("涨跌幅（始终显示）", row++)
-        for ((key, label) in STOCK_OPTIONAL) optionalRow(key, label, stockBoxes, row++)
+        sep(L10n.settingsStockCols, row++); row++
+        alwaysRow(L10n.settingsStockName,   row++)
+        alwaysRow(L10n.settingsStockPrice,  row++)
+        alwaysRow(L10n.settingsStockChange, row++)
+        for ((key, label) in stockOptional) optionalRow(key, label, stockBoxes, row++)
 
         // ── 基金列 ──
-        sep("基金列设置", row++); row++
-        alwaysRow("名称（始终显示）", row++)
-        alwaysRow("当前净值（始终显示）", row++)
-        alwaysRow("官方涨跌（始终显示）", row++)
-        alwaysRow("净值日期（始终显示，日期变今天即说明已更新）", row++)
-        alwaysRow("今日估算（始终显示，官方净值更新后显示 官方✓）", row++)
-        for ((key, label) in FUND_OPTIONAL) optionalRow(key, label, fundBoxes, row++)
+        sep(L10n.settingsFundCols, row++); row++
+        alwaysRow(L10n.settingsFundName,       row++)
+        alwaysRow(L10n.settingsFundNav,         row++)
+        alwaysRow(L10n.settingsFundOfficialChg, row++)
+        alwaysRow(L10n.settingsFundNavDate,     row++)
+        alwaysRow(L10n.settingsFundTodayEst,    row++)
+        for ((key, label) in fundOptional) optionalRow(key, label, fundBoxes, row++)
 
         // 撑开底部
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
@@ -105,9 +117,11 @@ class StockliteConfigurable : Configurable {
         val sv = state.stockVisibleColumns.toSet()
         val fv = state.fundVisibleColumns.toSet()
         val selectedScheme = colorRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "RED_UP"
+        val selectedLang   = langRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "ZH"
         return stockBoxes.any { (k, cb) -> cb.isSelected != sv.contains(k) } ||
                fundBoxes.any  { (k, cb) -> cb.isSelected != fv.contains(k) } ||
-               selectedScheme != state.colorScheme
+               selectedScheme != state.colorScheme ||
+               selectedLang   != state.language
     }
 
     override fun apply() {
@@ -115,7 +129,10 @@ class StockliteConfigurable : Configurable {
         state.stockVisibleColumns = ArrayList(stockBoxes.filter { it.value.isSelected }.keys.sorted())
         state.fundVisibleColumns  = ArrayList(fundBoxes.filter  { it.value.isSelected }.keys.sorted())
         state.colorScheme = colorRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "RED_UP"
+        state.language    = langRadios.entries.firstOrNull  { it.value.isSelected }?.key ?: "ZH"
+        // 通知各面板刷新列设置和语言
         state.notifyColumnSettingsChanged()
+        state.notifyLanguageChanged()
     }
 
     override fun reset() {
@@ -125,5 +142,6 @@ class StockliteConfigurable : Configurable {
         stockBoxes.forEach { (k, cb) -> cb.isSelected = k in sv }
         fundBoxes.forEach  { (k, cb) -> cb.isSelected = k in fv }
         (colorRadios[state.colorScheme] ?: colorRadios["RED_UP"])?.isSelected = true
+        (langRadios[state.language]     ?: langRadios["ZH"])?.isSelected = true
     }
 }

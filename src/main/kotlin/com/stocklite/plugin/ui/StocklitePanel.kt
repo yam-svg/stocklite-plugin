@@ -1,22 +1,25 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.ui.components.JBTabbedPane
+import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
 import javax.swing.JPanel
 
-class StocklitePanel : JPanel(BorderLayout()) {
+class StocklitePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
     val stockPanel  = StockPanel()
     val fundPanel   = FundPanel()
     val futurePanel = FuturePanel()
     val globalPanel = GlobalPanel()
 
+    private val tabs = JBTabbedPane()
+
     init {
-        val tabs = JBTabbedPane()
-        tabs.addTab("股票", stockPanel)
-        tabs.addTab("基金", fundPanel)
-        tabs.addTab("期货", futurePanel)
-        tabs.addTab("全球", globalPanel)
+        tabs.addTab(L10n.tabStock,  stockPanel)
+        tabs.addTab(L10n.tabFund,   fundPanel)
+        tabs.addTab(L10n.tabFuture, futurePanel)
+        tabs.addTab(L10n.tabGlobal, globalPanel)
 
         tabs.addChangeListener {
             when (tabs.selectedIndex) {
@@ -28,5 +31,17 @@ class StocklitePanel : JPanel(BorderLayout()) {
         }
 
         add(tabs, BorderLayout.CENTER)
+        StockliteState.getInstance().addLanguageListener(this)
+    }
+
+    override fun onLanguageChanged() {
+        tabs.setTitleAt(0, L10n.tabStock)
+        tabs.setTitleAt(1, L10n.tabFund)
+        tabs.setTitleAt(2, L10n.tabFuture)
+        tabs.setTitleAt(3, L10n.tabGlobal)
+        stockPanel.onLanguageChanged()
+        fundPanel.onLanguageChanged()
+        futurePanel.onLanguageChanged()
+        globalPanel.onLanguageChanged()
     }
 }
