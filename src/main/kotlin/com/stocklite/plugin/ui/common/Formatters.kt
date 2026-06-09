@@ -19,12 +19,29 @@ fun centerTableHeader(table: JTable) {
 
 object Fmt {
     private val price2  = DecimalFormat("#,##0.00")
+    private val price3  = DecimalFormat("#,##0.000")
     private val price4  = DecimalFormat("#,##0.0000")
     private val pct     = DecimalFormat("+0.00%;-0.00%")
     private val pctRaw  = DecimalFormat("+0.00;-0.00")
     private val number  = DecimalFormat("#,##0.####")
 
-    fun price(v: Double): String  = if (v == 0.0) "--" else price2.format(v)
+    /**
+     * 自动检测小数位数：
+     *   - 2 位：绝大多数 A 股（如 1800.00）
+     *   - 3 位：ETF / LOF（如 4.513）
+     *   - 4 位：净值类价格（如 1.2345）
+     */
+    fun price(v: Double): String {
+        if (v == 0.0) return "--"
+        val r2 = Math.round(v * 100) / 100.0
+        val r3 = Math.round(v * 1000) / 1000.0
+        return when {
+            Math.abs(v - r2) < 5e-4 -> price2.format(v)
+            Math.abs(v - r3) < 5e-5 -> price3.format(v)
+            else                     -> price4.format(v)
+        }
+    }
+
     fun nav(v: Double): String    = if (v == 0.0) "--" else price4.format(v)
     fun pct(v: Double): String    = if (v == 0.0) "--" else "${pctRaw.format(v)}%"
     fun qty(v: Double): String    = number.format(v)

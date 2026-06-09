@@ -34,12 +34,19 @@ tasks {
         sinceBuild.set("233")
         untilBuild.set("")
     }
+    // 签名只在明确设置 SIGN_PLUGIN=true 环境变量时才启用。
+    // 日常 buildPlugin 不需要签名，避免触发 downloadZipSigner 下载失败。
+    // 发布时：set SIGN_PLUGIN=true && gradlew publishPlugin
+    val signingEnabled = System.getenv("SIGN_PLUGIN") == "true"
     signPlugin {
-        certificateChain.set(providers.fileContents(layout.projectDirectory.file("certificate.crt")).asText)
-        privateKey.set(providers.fileContents(layout.projectDirectory.file("private.pem")).asText)
-        password.set(providers.provider { "" })
+        enabled = signingEnabled
+        if (signingEnabled) {
+            certificateChain.set(providers.fileContents(layout.projectDirectory.file("certificate.crt")).asText)
+            privateKey.set(providers.fileContents(layout.projectDirectory.file("private.pem")).asText)
+            password.set(providers.provider { "" })
+        }
     }
     publishPlugin {
-        token.set(System.getenv("PUBLISH_TOKEN"))
+        token.set(System.getenv("PUBLISH_TOKEN") ?: "")
     }
 }

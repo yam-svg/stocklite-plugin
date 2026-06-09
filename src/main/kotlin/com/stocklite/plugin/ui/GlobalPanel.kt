@@ -3,14 +3,20 @@ package com.stocklite.plugin.ui
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.GlobalIndexQuote
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.dialogs.ChartDialog
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
+import java.awt.Cursor
 import java.awt.FlowLayout
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
@@ -78,6 +84,36 @@ class GlobalPanel : JPanel(BorderLayout()) {
         table.rowHeight = 24
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
         centerTableHeader(table)
+
+        // 点击"涨跌幅"列弹出日内走势图
+        table.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+                val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
+                if (table.getColumnName(viewCol) != "涨跌幅") return
+                val modelRow = table.convertRowIndexToModel(viewRow)
+                if (modelRow < 0 || modelRow >= quotes.size) return
+                val q = quotes[modelRow]
+                // 全球指数没有昨收字段；从现价和涨跌幅反推
+                val prev = if (q.changePercent != 0.0 && q.value > 0)
+                    q.value / (1.0 + q.changePercent / 100.0) else 0.0
+                ChartDialog(
+                    displayName   = q.name,
+                    displaySymbol = q.symbol,
+                    changePercent = q.changePercent,
+                    prevClose     = prev,
+                    fetchData     = { ChartDataService.getGlobalIntraday(q.symbol) }
+                ).show()
+            }
+        })
+        table.addMouseMotionListener(object : MouseMotionAdapter() {
+            override fun mouseMoved(e: MouseEvent) {
+                val col = table.columnAtPoint(e.point)
+                table.cursor = if (col >= 0 && table.getColumnName(col) == "涨跌幅")
+                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                else Cursor.getDefaultCursor()
+            }
+        })
     }
 
     private fun buildUI() {

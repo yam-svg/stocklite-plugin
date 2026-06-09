@@ -5,6 +5,7 @@
 ```bash
 ./gradlew buildPlugin
 ```
+
 产物：`build/distributions/stocklite-plugin-1.0.0.zip`
 
 ---
@@ -28,6 +29,7 @@ cat certificate.crt > chain.crt
 ### 2.2 设置环境变量
 
 **Windows PowerShell：**
+
 ```powershell
 $env:PRIVATE_KEY        = [System.IO.File]::ReadAllText("private.pem")
 $env:CERTIFICATE_CHAIN  = [System.IO.File]::ReadAllText("chain.crt")
@@ -39,6 +41,7 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 ```bash
 ./gradlew signPlugin
 ```
+
 签名后产物在：`build/distributions/stocklite-plugin-1.0.0-signed.zip`
 
 ---
@@ -49,13 +52,13 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 2. 点右上角头像 → **Upload Plugin**
 3. 填写表单：
 
-| 字段 | 填写内容 |
-|------|---------|
+| 字段          | 填写内容                                |
+|-------------|-------------------------------------|
 | Plugin File | `stocklite-plugin-1.0.0-signed.zip` |
-| Plugin Name | `StockLite` |
-| Category | `Tools Integration` |
-| License | `MIT`（或你选择的协议） |
-| Tags | `stock, finance, market, 股票, 行情` |
+| Plugin Name | `StockLite`                         |
+| Category    | `Tools Integration`                 |
+| License     | `MIT`（或你选择的协议）                      |
+| Tags        | `stock, finance, market, 股票, 行情`    |
 
 4. 点 **Submit** → 等待人工审核（1–3 个工作日）
 
@@ -65,16 +68,17 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 
 建议截 4 张图：
 
-| 图 | 内容 |
-|----|------|
+| 图 | 内容                   |
+|---|----------------------|
 | 1 | 股票面板，展示持仓列表 + 实时涨跌颜色 |
-| 2 | 基金面板，展示估值 + 盈亏 |
-| 3 | 全球指数面板 |
-| 4 | 添加股票对话框（搜索界面） |
+| 2 | 基金面板，展示估值 + 盈亏       |
+| 3 | 全球指数面板               |
+| 4 | 添加股票对话框（搜索界面）        |
 
 **截图规格：** 宽度至少 1280px，PNG 格式
 
 **截图方法：**
+
 1. 运行 `./gradlew runIde` 启动沙箱 IDE
 2. 添加几只股票/基金测试数据
 3. 截图保存
@@ -98,10 +102,10 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 
 ## 七、审核常见拒绝原因
 
-| 问题 | 对策 |
-|------|------|
-| 插件未签名 | 按第二节完成签名 |
-| 描述只有中文 | `plugin.xml` 已加入英文说明 ✅ |
+| 问题            | 对策                       |
+|---------------|--------------------------|
+| 插件未签名         | 按第二节完成签名                 |
+| 描述只有中文        | `plugin.xml` 已加入英文说明 ✅   |
 | `vendor` 邮箱无效 | 已填 `1436393509@qq.com` ✅ |
-| 截图为空 | 按第四节准备截图 |
-| API 访问违规 | 本插件仅请求公开行情 API，无风险 ✅ |
+| 截图为空          | 按第四节准备截图                 |
+| API 访问违规      | 本插件仅请求公开行情 API，无风险 ✅     |
