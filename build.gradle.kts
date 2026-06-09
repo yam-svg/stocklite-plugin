@@ -34,6 +34,11 @@ tasks {
         sinceBuild.set("233")
         untilBuild.set("")
     }
+    // buildSearchableOptions 会启动沙箱 IDE 扫描设置项，容易因内存/环境崩溃（exit 3）。
+    // 该任务仅影响"设置搜索"功能，对插件核心功能无影响，禁用后可正常构建和发布。
+    buildSearchableOptions {
+        enabled = false
+    }
     // 签名只在明确设置 SIGN_PLUGIN=true 环境变量时才启用。
     // 日常 buildPlugin 不需要签名，避免触发 downloadZipSigner 下载失败。
     // 发布时：set SIGN_PLUGIN=true && gradlew publishPlugin

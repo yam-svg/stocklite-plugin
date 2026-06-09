@@ -10,7 +10,6 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import javax.swing.table.TableRowSorter
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
-import com.stocklite.plugin.ui.dialogs.ChartDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
@@ -25,6 +24,8 @@ import javax.swing.*
 import javax.swing.table.AbstractTableModel
 
 class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener {
+
+    private val chartPanel = InlineChartPanel()
 
     // ── 列定义 ──
     private data class ColDef(
@@ -125,13 +126,13 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (s, q) = rows[modelRow]
-                ChartDialog(
+                chartPanel.showChart(
                     displayName   = s.name,
                     displaySymbol = s.symbol,
                     changePercent = q?.changePercent ?: 0.0,
                     prevClose     = q?.prevClose ?: 0.0,
                     fetchData     = { ChartDataService.getStockIntraday(s.symbol) }
-                ).show()
+                )
             }
         })
         table.addMouseMotionListener(object : MouseMotionAdapter() {
@@ -163,8 +164,13 @@ class StockPanel : JPanel(BorderLayout()), StockliteState.ColumnSettingsListener
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
         bottomBar.add(summaryLabel); bottomBar.add(statusLabel)
 
+        // 中间区域：表格 + 内嵌图表（图表初始隐藏，点击涨跌幅后展开）
+        val centerWrapper = JPanel(BorderLayout())
+        centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
+        centerWrapper.add(chartPanel, BorderLayout.SOUTH)
+
         add(toolbar, BorderLayout.NORTH)
-        add(JBScrollPane(table), BorderLayout.CENTER)
+        add(centerWrapper, BorderLayout.CENTER)
         add(bottomBar, BorderLayout.SOUTH)
 
         groupCombo.addActionListener {

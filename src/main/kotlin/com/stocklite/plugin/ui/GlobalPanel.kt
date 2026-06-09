@@ -9,7 +9,6 @@ import com.stocklite.plugin.state.GlobalIndexQuote
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
-import com.stocklite.plugin.ui.dialogs.ChartDialog
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
 import java.awt.Cursor
@@ -22,6 +21,8 @@ import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
 
 class GlobalPanel : JPanel(BorderLayout()) {
+
+    private val chartPanel = InlineChartPanel()
 
     // ── 自适应刷新间隔 ──
     private val MIN_INTERVAL_MS  = 5_000
@@ -97,13 +98,13 @@ class GlobalPanel : JPanel(BorderLayout()) {
                 // 全球指数没有昨收字段；从现价和涨跌幅反推
                 val prev = if (q.changePercent != 0.0 && q.value > 0)
                     q.value / (1.0 + q.changePercent / 100.0) else 0.0
-                ChartDialog(
+                chartPanel.showChart(
                     displayName   = q.name,
                     displaySymbol = q.symbol,
                     changePercent = q.changePercent,
                     prevClose     = prev,
                     fetchData     = { ChartDataService.getGlobalIntraday(q.symbol) }
-                ).show()
+                )
             }
         })
         table.addMouseMotionListener(object : MouseMotionAdapter() {
@@ -123,8 +124,12 @@ class GlobalPanel : JPanel(BorderLayout()) {
         toolbar.add(refreshBtn)
         toolbar.add(statusLabel)
 
+        val centerWrapper = JPanel(BorderLayout())
+        centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
+        centerWrapper.add(chartPanel, BorderLayout.SOUTH)
+
         add(toolbar, BorderLayout.NORTH)
-        add(JBScrollPane(table), BorderLayout.CENTER)
+        add(centerWrapper, BorderLayout.CENTER)
 
         refreshBtn.addActionListener { fetchAsync() }
     }

@@ -10,7 +10,6 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.dialogs.AddFutureDialog
-import com.stocklite.plugin.ui.dialogs.ChartDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.BorderLayout
@@ -28,6 +27,7 @@ import javax.swing.table.TableRowSorter
  */
 class FuturePanel : JPanel(BorderLayout()) {
 
+    private val chartPanel = InlineChartPanel()
     private val state get() = StockliteState.getInstance()
     private var currentGroupId = SystemGroups.ALL_FUTURE_ID
     private var rows: List<Pair<FutureData, FutureQuote?>> = emptyList()
@@ -89,13 +89,13 @@ class FuturePanel : JPanel(BorderLayout()) {
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (f, q) = rows[modelRow]
-                ChartDialog(
+                chartPanel.showChart(
                     displayName   = f.name,
                     displaySymbol = f.symbol,
                     changePercent = q?.changePercent ?: 0.0,
                     prevClose     = q?.prevClose ?: 0.0,
                     fetchData     = { ChartDataService.getFutureIntraday(f.symbol) }
-                ).show()
+                )
             }
         })
         table.addMouseMotionListener(object : MouseMotionAdapter() {
@@ -125,8 +125,12 @@ class FuturePanel : JPanel(BorderLayout()) {
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
         bottomBar.add(statusLabel)
 
+        val centerWrapper = JPanel(BorderLayout())
+        centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
+        centerWrapper.add(chartPanel, BorderLayout.SOUTH)
+
         add(toolbar, BorderLayout.NORTH)
-        add(JBScrollPane(table), BorderLayout.CENTER)
+        add(centerWrapper, BorderLayout.CENTER)
         add(bottomBar, BorderLayout.SOUTH)
 
         groupCombo.addActionListener {
