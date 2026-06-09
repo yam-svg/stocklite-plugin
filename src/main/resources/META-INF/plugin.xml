@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[<p><b>StockLite</b> — A real-time market data panel built natively into your JetBrains IDE.
@@ -30,6 +30,7 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
 <ul>
   <li>Domestic futures (index + commodity) and international futures (gold, oil, indices, etc.)</li>
   <li>Pure market data board, 5-second auto-refresh</li>
+  <li>Click the Change% column for an intraday chart of any contract</li>
 </ul>
 
 <h4>Global Indices</h4>
@@ -50,16 +51,90 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
 <ul>
   <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
   <li>Data saved in IDE config directory — survives restarts</li>
-  <li>Pure native Kotlin/Swing, no Electron, no embedded browser, lightweight and fast</li>
+  <li>Click the <b>Change%</b> column on any stock, future, or global index to open an inline intraday chart at the panel bottom; click ✕ to close</li>
+  <li>Intraday chart Y-axis shows change% relative to previous close, with baseline at 0%; powered by lightweight-charts v4.2.0</li>
+  <li>Smart price decimal places: auto-detects 2 / 3 / 4 decimals (ETF-compatible)</li>
+  <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
+  <li>Data saved in IDE config directory — survives restarts</li>
+  <li>Pure native Kotlin/Swing, no Electron, lightweight and fast</li>
 </ul>
 
 <hr/>
 
-<p>&#20013;&#25991;&#31616;&#20171;&#65306;</p>
-<p><b>StockLite</b> &#8212; &#19987;&#20026;&#25665;&#39770;&#35774;&#35745;&#30340;&#34892;&#24773;&#38754;&#26495;&#12290;&#26080;&#39069;&#31163;&#24320; IDE&#65292;&#22312;&#20391;&#36793;&#26639;&#23454;&#26102;&#26597;&#30475; A &#32929;&#12289;&#22522;&#37329;&#12289;&#26399;&#36135;&#21644;&#20840;&#29699;&#25351;&#25968;&#34892;&#24773;&#12290;</p>
+<h3>中文介绍</h3>
+
+<p><b>StockLite</b> — 专为开发者设计的 IDE 内行情看板，无需离开编辑器，实时掌握 A 股、基金、期货和全球指数动态。</p>
+
+<h4>股票（沪深 A 股）</h4>
+<ul>
+  <li>实时行情，每 5 秒自动刷新，数据来自新浪行情 API（支持 GBK 解码）</li>
+  <li>持仓管理：填写成本价和持股数量，自动计算浮动盈亏、盈亏百分比、总市值</li>
+  <li>自定义分组（新建/重命名/删除）+ 虚拟分组"全部"和"我的持仓"</li>
+  <li>搜索添加：在对话框中按名称或代码搜索，快速添加股票</li>
+  <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启成本价、持仓、市值、盈亏等列</li>
+  <li>点击"涨跌幅"列，在面板底部展开当日分钟级走势图，再次点击或按 ✕ 关闭</li>
+</ul>
+
+<h4>基金</h4>
+<ul>
+  <li>实时估值，每 30 秒刷新，数据来自天天基金（支持普通基金和 QDII 基金专用通道）</li>
+  <li>双涨跌幅列：<b>官方涨跌</b>（历史净值，T-1 日）+ <b>今日估算</b>（盘中实时估算）</li>
+  <li>净值日期列：官方净值发布后自动更新为今日，"今日估算"同步标注"官方"字样</li>
+  <li>持仓管理与盈亏计算，与股票模块逻辑一致</li>
+</ul>
+
+<h4>期货</h4>
+<ul>
+  <li>国内期货（股指 + 商品）和国际期货（黄金、原油、海外指数等）统一看板</li>
+  <li>5 秒自动刷新，纯行情展示（不含方向/盈亏管理）</li>
+  <li>点击"涨跌幅"列，展开日内分钟线走势图（国内期货和国际期货使用不同数据源）</li>
+</ul>
+
+<h4>全球指数</h4>
+<ul>
+  <li>内置 11 大指数：沪深 300、上证、深证、创业板、恒生、恒生科技、标普 500、道琼斯、纳斯达克、日经 225、韩国综合</li>
+  <li>通过 Yahoo Finance marketState 判断实际开/休市状态，节假日自动休市，无需手动维护时区规则</li>
+  <li>5 秒刷新，遇 HTTP 429 限流时自动指数退避（最长 60 秒），恢复后逐步缩短间隔</li>
+  <li>点击"涨跌幅"列，通过 Yahoo Finance 获取当日 5 分钟 K 线并展示走势图</li>
+</ul>
+
+<h4>日内走势图</h4>
+<ul>
+  <li>内嵌于各行情面板底部（高度 260px），无需弹窗，交互更直观</li>
+  <li>Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
+  <li>涨跌颜色跟随全局配色方案（红涨绿跌 / 绿涨红跌 / 无色）</li>
+  <li>鼠标悬停 Tooltip 显示：时间 + 涨跌幅% + 原始价格</li>
+  <li>同一 JBCefBrowser 实例复用，切换标的无重建开销</li>
+  <li>基于 lightweight-charts v4.2.0（TradingView 开源图表库）</li>
+</ul>
+
+<h4>个性化设置（Settings → Tools → StockLite）</h4>
+<ul>
+  <li>列显示控制：按需开启/关闭代码、持仓、成本价、市值、盈亏等列</li>
+  <li>涨跌配色方案三选一：红涨绿跌（A 股惯例）/ 绿涨红跌（欧美惯例）/ 无色（中性）</li>
+  <li>设置即时生效，无需重启 IDE</li>
+</ul>
+
+<h4>通用</h4>
+<ul>
+  <li>列标题点击排序；↑↓ 按钮调整行顺序并持久化</li>
+  <li>价格自动适配小数位数（2/3/4 位），兼容 ETF、低价股等不同精度需求</li>
+  <li>数据存储在 IDE 配置目录（stocklite.xml），重启 IDE 数据不丢失</li>
+  <li>纯原生 Kotlin/Swing 实现，无 Electron，无独立进程，轻量快速</li>
+</ul>
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.1.0</h3>
+<ul>
+  <li>新增日内走势图：点击涨跌幅列，面板底部内嵌展示当日分钟级 K 线，支持股票、期货、全球指数</li>
+  <li>走势图 Y 轴改为涨跌幅 %（以昨收为基准，0% 处显示基准线）</li>
+  <li>走势图跟随全局配色方案，鼠标悬停显示 Tooltip（时间 + 涨跌幅% + 原始价格）</li>
+  <li>价格小数位自动适配（2/3/4 位），兼容 ETF 等精度较高的品种</li>
+  <li>修复期货日内数据：国内期货改用 InnerFuturesNewService，国际期货改用 GlobalFuturesService</li>
+  <li>修复股票/基金 K 线字段名（day/close），解决图表无数据问题</li>
+</ul>
+
 <h3>1.0.0</h3>
 <ul>
   <li>初始版本发布</li>
