@@ -9,32 +9,47 @@ import com.stocklite.plugin.util.L10n
 import java.awt.*
 import javax.swing.*
 
-/**
- * 内嵌走势图面板（嵌入各行情面板底部，替代弹窗方案）。
- *
- * 初始不可见；调用 [showChart] 展开，点击 ✕ 收起。
- * 复用同一个 [JBCefBrowser] 实例，避免重复创建。
- */
 class InlineChartPanel : JPanel(BorderLayout()) {
 
     companion object {
-        /** 展开后固定高度（px） */
-        const val PANEL_HEIGHT = 260
+        const val PANEL_HEIGHT = 280
+
+        // Period constants
+        const val PERIOD_INTRADAY = "INTRADAY"
+        const val PERIOD_DAILY    = "DAILY"
+        const val PERIOD_WEEKLY   = "WEEKLY"
+        const val PERIOD_MONTHLY  = "MONTHLY"
     }
 
     private var browser: JBCefBrowser? = null
-    private var loadId = 0                     // 取消过时请求
+    private var loadId = 0
 
-    private val infoLabel = JLabel("", SwingConstants.LEFT)
-    private val closeBtn  = JButton("✕")
+    // Current chart state for reload-on-period-change
+    private var currentName      = ""
+    private var currentSymbol    = ""
+    private var currentChangePct = 0.0
+    private var currentPrevClose = 0.0
+    private var currentFetchIntraday: (() -> List<ChartDataService.ChartPoint>)? = null
+    private var currentPeriod    = PERIOD_INTRADAY
+
+    private val infoLabel     = JLabel("", SwingConstants.LEFT)
+    private val closeBtn      = JButton("✕")
     private val browserHolder = JPanel(BorderLayout())
+
+    // Period toggle buttons
+    private val periodBtns = linkedMapOf(
+        PERIOD_INTRADAY to JButton(),
+        PERIOD_DAILY    to JButton(),
+        PERIOD_WEEKLY   to JButton(),
+        PERIOD_MONTHLY  to JButton()
+    )
 
     init {
         isVisible = false
         preferredSize = Dimension(0, PANEL_HEIGHT)
         border = BorderFactory.createMatteBorder(1, 0, 0, 0, Color(0x3A3A5A))
 
-        /* ── 标题栏 ── */
+        // ── 标题栏 ──
         val header = JPanel(BorderLayout()).apply {
             background = Color(0x252538)
             border = BorderFactory.createEmptyBorder(4, 10, 4, 4)
@@ -42,31 +57,43 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         infoLabel.font = infoLabel.font.deriveFont(12f)
         closeBtn.apply {
             preferredSize = Dimension(26, 26)
-            isBorderPainted    = false
-            isContentAreaFilled = false
-            isFocusPainted     = false
+            isBorderPainted = false; isContentAreaFilled = false; isFocusPainted = false
             font = font.deriveFont(Font.BOLD, 14f)
             toolTipText = L10n.chartCloseTip
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             addActionListener { close() }
         }
+
+        // ── 周期切换栏 ──
+        val periodBar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+            background = Color(0x1e1e2e)
+            border = BorderFactory.createEmptyBorder(0, 6, 0, 6)
+        }
+        periodBtns.forEach { (key, btn) ->
+            btn.apply {
+                isBorderPainted = false; isContentAreaFilled = false; isFocusPainted = false
+                font = font.deriveFont(11f)
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                foreground = Color(0x888aaa)
+                preferredSize = Dimension(38, 22)
+                addActionListener { selectPeriod(key) }
+            }
+            periodBar.add(btn)
+        }
+        updatePeriodButtonTexts()
+        highlightPeriodBtn(PERIOD_INTRADAY)
+
         header.add(infoLabel, BorderLayout.CENTER)
         header.add(closeBtn,  BorderLayout.EAST)
 
-        add(header,        BorderLayout.NORTH)
+        val topSection = JPanel(BorderLayout())
+        topSection.add(header,    BorderLayout.NORTH)
+        topSection.add(periodBar, BorderLayout.SOUTH)
+
+        add(topSection,    BorderLayout.NORTH)
         add(browserHolder, BorderLayout.CENTER)
     }
 
-    // ── 公开 API ────────────────────────────────────────────────────────
-
-    /**
-     * 展开并加载指定标的的日内走势图。
-     * @param displayName   显示名称，如 "贵州茅台"
-     * @param displaySymbol 显示代码，如 "sh600519"
-     * @param changePercent 当前涨跌幅（用于标题着色）
-     * @param prevClose     昨收价；> 0 时 Y 轴显示涨跌幅 %
-     * @param fetchData     后台线程调用的数据获取函数
-     */
     fun showChart(
         displayName: String,
         displaySymbol: String,
@@ -74,8 +101,14 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         prevClose: Double,
         fetchData: () -> List<ChartDataService.ChartPoint>
     ) {
-        // 更新关闭按钮 tooltip（语言可能已切换）
         closeBtn.toolTipText = L10n.chartCloseTip
+        updatePeriodButtonTexts()
+
+        currentName          = displayName
+        currentSymbol        = displaySymbol
+        currentChangePct     = changePercent
+        currentPrevClose     = prevClose
+        currentFetchIntraday = fetchData
 
         val scheme = StockliteState.getInstance().colorScheme
         val color  = pctHexColor(changePercent, scheme)
@@ -85,52 +118,84 @@ class InlineChartPanel : JPanel(BorderLayout()) {
             "<span style='color:#888aaa;font-size:11px'>$displaySymbol</span>&nbsp;&nbsp;" +
             "<b style='color:$color'>$sign${pct}%</b></html>"
 
+        // Reset to intraday on new chart
+        currentPeriod = PERIOD_INTRADAY
+        highlightPeriodBtn(PERIOD_INTRADAY)
+
         isVisible = true
         revalidate(); repaint()
+        loadCurrentPeriod()
+    }
 
-        val id = ++loadId
+    fun close() {
+        loadId++
+        isVisible = false
+        revalidate(); repaint()
+    }
 
-        if (!JBCefApp.isSupported()) {
-            showFallback(L10n.chartUnsupported)
-            return
-        }
+    fun disposeResources() { browser?.dispose(); browser = null }
 
+    private fun selectPeriod(period: String) {
+        if (currentSymbol.isEmpty()) return
+        currentPeriod = period
+        highlightPeriodBtn(period)
+        loadCurrentPeriod()
+    }
+
+    private fun loadCurrentPeriod() {
+        if (!JBCefApp.isSupported()) { showFallback(L10n.chartUnsupported); return }
         val b = ensureBrowser()
         b.loadHTML(loadingHtml(), "http://stocklite.local/")
+        val id = ++loadId
+        val sym = currentSymbol
+        val period = currentPeriod
+        val fetchIntraday = currentFetchIntraday
+        val prevClose = currentPrevClose
+        val changePercent = currentChangePct
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val points = fetchData()
+            val points = when (period) {
+                PERIOD_INTRADAY -> fetchIntraday?.invoke() ?: emptyList()
+                PERIOD_DAILY    -> ChartDataService.getHistoryKLine(sym, "daily",   100)
+                PERIOD_WEEKLY   -> ChartDataService.getHistoryKLine(sym, "weekly",  52)
+                PERIOD_MONTHLY  -> ChartDataService.getHistoryKLine(sym, "monthly", 36)
+                else            -> fetchIntraday?.invoke() ?: emptyList()
+            }
+            val usePrevClose = period == PERIOD_INTRADAY  // only intraday uses prevClose baseline
             SwingUtilities.invokeLater {
-                if (loadId != id) return@invokeLater   // 已被更新的请求覆盖
+                if (loadId != id) return@invokeLater
                 b.loadHTML(
                     if (points.isEmpty()) errorHtml()
-                    else buildChartHtml(points, prevClose, changePercent),
+                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY),
                     "http://stocklite.local/"
                 )
             }
         }
     }
 
-    fun close() {
-        loadId++         // 让任何进行中的加载失效
-        isVisible = false
-        revalidate(); repaint()
+    private fun updatePeriodButtonTexts() {
+        periodBtns[PERIOD_INTRADAY]?.text = L10n.chartPeriodIntraday
+        periodBtns[PERIOD_DAILY]?.text    = L10n.chartPeriodDaily
+        periodBtns[PERIOD_WEEKLY]?.text   = L10n.chartPeriodWeekly
+        periodBtns[PERIOD_MONTHLY]?.text  = L10n.chartPeriodMonthly
     }
 
-    /** 在父组件销毁时调用，释放 JBCefBrowser 资源 */
-    fun disposeResources() {
-        browser?.dispose()
-        browser = null
+    private fun highlightPeriodBtn(selected: String) {
+        periodBtns.forEach { (key, btn) ->
+            if (key == selected) {
+                btn.foreground = Color(0xcdd6f4)
+                btn.font = btn.font.deriveFont(Font.BOLD, 11f)
+            } else {
+                btn.foreground = Color(0x888aaa)
+                btn.font = btn.font.deriveFont(Font.PLAIN, 11f)
+            }
+        }
     }
-
-    // ── 私有工具 ────────────────────────────────────────────────────────
 
     private fun ensureBrowser(): JBCefBrowser {
         browser?.let { return it }
         val b = JBCefBrowser().also { browser = it }
-        browserHolder.removeAll()
-        browserHolder.add(b.component, BorderLayout.CENTER)
-        browserHolder.revalidate()
+        browserHolder.removeAll(); browserHolder.add(b.component, BorderLayout.CENTER); browserHolder.revalidate()
         return b
     }
 
@@ -146,8 +211,6 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         else     -> if (scheme == "RED_DOWN") "#ef5350" else "#26a69a"
     }
 
-    // ── HTML 生成 ───────────────────────────────────────────────────────
-
     private fun loadingHtml() = minPage("<div>${L10n.chartLoading}</div>", "#cdd6f4")
     private fun errorHtml()   = minPage("<div>${L10n.chartNoData}</div>",  "#f38ba8")
 
@@ -160,7 +223,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
     private fun buildChartHtml(
         points: List<ChartDataService.ChartPoint>,
         prevClose: Double,
-        changePercent: Double
+        changePercent: Double,
+        isIntraday: Boolean
     ): String {
         val scheme = StockliteState.getInstance().colorScheme
 
@@ -177,11 +241,13 @@ class InlineChartPanel : JPanel(BorderLayout()) {
                               "#26a69a","rgba(38,166,154,.05)","rgba(38,166,154,.30)")
         }
 
-        val hasPrev = prevClose > 0.0
+        val hasPrev = isIntraday && prevClose > 0.0
         val prevJs  = "%.6f".format(prevClose)
+        // For OHLC history, ChartPoint.value is the close price
         val rawJs   = points.joinToString(",") { """{"time":${it.time},"price":${it.value}}""" }
-        // "昨收" / "Prev Close" label used in the chart baseline annotation
         val prevCloseLabel = L10n.chartPrevClose.replace("'", "\\'")
+        // For daily/weekly/monthly, use candlestick-style area (close only) with absolute price on Y-axis
+        val timeVisible = if (isIntraday) "true" else "false"
 
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -212,7 +278,7 @@ body{background:#1e1e2e;overflow:hidden;}
     layout:{background:{color:'#1e1e2e'},textColor:'#cdd6f4'},
     grid:{vertLines:{color:'#252538'},horzLines:{color:'#252538'}},
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-    timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#3a3a5a'},
+    timeScale:{timeVisible:$timeVisible,secondsVisible:false,borderColor:'#3a3a5a'},
     rightPriceScale:{borderColor:'#3a3a5a'},
     localization:{priceFormatter:HAS
       ?function(p){return(p>=0?'+':'')+p.toFixed(2)+'%';}

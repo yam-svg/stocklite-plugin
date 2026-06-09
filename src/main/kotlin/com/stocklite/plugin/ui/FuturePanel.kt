@@ -1,6 +1,7 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.ChartDataService
@@ -11,22 +12,23 @@ import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.dialogs.AddFutureDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
+import com.intellij.ide.BrowserUtil
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
-import java.awt.BorderLayout
-import java.awt.Cursor
-import java.awt.FlowLayout
+import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
 import javax.swing.*
+import javax.swing.event.TableColumnModelEvent
+import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
 
-/**
- * 期货行情看板（纯行情展示，不含持仓/方向/盈亏）
- */
-class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
+class FuturePanel : JPanel(BorderLayout()),
+    StockliteState.LanguageListener,
+    StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
     private val state get() = StockliteState.getInstance()
@@ -62,21 +64,32 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     private val table      = JBTable(tableModel)
     private val groupCombo = JComboBox<String>()
     private var updatingCombo = false
-    private val statusLabel = JLabel(MarketTimeUtil.getMarketStatusText())
+    private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
+    private var panelActive  = true
+    private var refreshTimer: Timer? = null
 
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
     private lateinit var delBtn:     JButton
     private lateinit var refreshBtn: JButton
+    private lateinit var filterField: SearchTextField
 
     init {
         state.addLanguageListener(this)
+        state.addRefreshIntervalListener(this)
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
+        addHierarchyListener { _ ->
+            val showing = isShowing
+            if (showing != panelActive) {
+                panelActive = showing
+                if (showing) fetchQuotesAsync()
+            }
+        }
     }
 
     override fun onLanguageChanged() {
@@ -93,25 +106,56 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         revalidate(); repaint()
     }
 
+    override fun onRefreshIntervalChanged() {
+        refreshTimer?.stop()
+        scheduleRefresh()
+    }
+
     private fun applyRenderers() {
         allCols.forEachIndexed { i, col ->
-            if (i < table.columnModel.columnCount)
+            if (i < table.columnModel.columnCount) {
                 table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
+            }
+        }
+        // Restore column widths
+        allCols.forEachIndexed { i, col ->
+            val saved = state.getColumnWidth("future.${col.key}")
+            if (saved != null && i < table.columnModel.columnCount)
+                table.columnModel.getColumn(i).preferredWidth = saved
         }
         if (table.columnModel.columnCount > 0)
-            table.columnModel.getColumn(0).preferredWidth = 120
+            table.columnModel.getColumn(0).preferredWidth =
+                state.getColumnWidth("future.name") ?: 120
+    }
+
+    private fun installColumnWidthListener() {
+        table.columnModel.addColumnModelListener(object : TableColumnModelListener {
+            override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
+                allCols.forEachIndexed { i, col ->
+                    if (i < table.columnModel.columnCount) {
+                        val w = table.columnModel.getColumn(i).width
+                        if (w > 0) state.setColumnWidth("future.${col.key}", w)
+                    }
+                }
+            }
+            override fun columnAdded(e: TableColumnModelEvent) {}
+            override fun columnRemoved(e: TableColumnModelEvent) {}
+            override fun columnMoved(e: TableColumnModelEvent) {}
+            override fun columnSelectionChanged(e: javax.swing.event.ListSelectionEvent) {}
+        })
     }
 
     private fun setupTable() {
         applyRenderers()
+        installColumnWidthListener()
         table.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         table.rowHeight = 24
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
 
-        // 点击"涨跌幅"列展开内嵌走势图
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(e)) return
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
                 if (table.getColumnName(viewCol) != L10n.colChangePct) return
@@ -126,6 +170,8 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
                     fetchData     = { ChartDataService.getFutureIntraday(f.symbol) }
                 )
             }
+            override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+            override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
         })
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
@@ -137,6 +183,44 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         })
     }
 
+    private fun showContextMenu(e: MouseEvent) {
+        val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+        table.setRowSelectionInterval(viewRow, viewRow)
+        val modelRow = table.convertRowIndexToModel(viewRow)
+        if (modelRow < 0 || modelRow >= rows.size) return
+        val (f, _) = rows[modelRow]
+
+        val popup = JPopupMenu()
+        popup.add(JMenuItem(L10n.btnDelete).also { it.addActionListener {
+            if (JOptionPane.showConfirmDialog(this@FuturePanel, L10n.dlgConfirmDelete(f.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                state.deleteFuture(f.id); loadRows()
+            }
+        }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnCopySymbol).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(f.symbol), null)
+        }})
+        popup.add(JMenuItem(L10n.btnCopyName).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(f.name), null)
+        }})
+        popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
+            BrowserUtil.browse(buildFutureUrl(f.symbol))
+        }})
+        popup.show(table, e.x, e.y)
+    }
+
+    private fun buildFutureUrl(symbol: String): String {
+        val sym = symbol.trim()
+        // 东方财富期货行情页：国内 nf_IF2506 → IF2506，国际 hf_GC → GC，统一大写
+        val contract = when {
+            sym.startsWith("nf_") -> sym.removePrefix("nf_").uppercase()
+            sym.startsWith("hf_") -> sym.removePrefix("hf_").uppercase()
+            else -> sym.uppercase()
+        }
+        return "https://quote.eastmoney.com/qihuo/$contract.html"
+    }
+
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
         groupLbl   = JLabel(L10n.lblGroup)
@@ -146,12 +230,14 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         val upBtn  = JButton("↑")
         val downBtn= JButton("↓")
         refreshBtn = JButton(L10n.btnRefresh)
+        filterField = SearchTextField().also { it.preferredSize = Dimension(120, 26) }
 
         toolbar.add(groupLbl); toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(delBtn)
         toolbar.add(upBtn);  toolbar.add(downBtn)
         toolbar.add(refreshBtn)
+        toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
         bottomBar.add(statusLabel)
@@ -164,21 +250,24 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         add(centerWrapper, BorderLayout.CENTER)
         add(bottomBar,     BorderLayout.SOUTH)
 
+        filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+        })
+
         groupCombo.addActionListener {
             if (updatingCombo) return@addActionListener
             val idx = groupCombo.selectedIndex.takeIf { it >= 0 } ?: return@addActionListener
-            currentGroupId = groupIdList()[idx]
-            loadRows(); fetchQuotesAsync()
+            currentGroupId = groupIdList()[idx]; loadRows(); fetchQuotesAsync()
         }
 
         manageBtn.addActionListener {
-            ManageGroupsDialog(
-                groups   = state.futureGroups,
+            ManageGroupsDialog(groups = state.futureGroups,
                 onCreate = { name -> state.createFutureGroup(name) },
                 onRename = { id, name -> state.updateFutureGroup(id, name) },
                 onDelete = { id -> state.deleteFutureGroup(id) },
-                onDone   = { refreshGroups() }
-            ).show()
+                onDone   = { refreshGroups() }).show()
         }
 
         addBtn.addActionListener {
@@ -194,7 +283,8 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val (f, _) = rows[row]
+            val modelRow = table.convertRowIndexToModel(row)
+            val (f, _) = rows[modelRow]
             if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(f.name),
                     L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteFuture(f.id); loadRows()
@@ -206,22 +296,25 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         refreshBtn.addActionListener { fetchQuotesAsync() }
     }
 
+    private fun updateFilter() {
+        val text = filterField.text.trim()
+        val sorter = table.rowSorter as? TableRowSorter<*> ?: return
+        sorter.rowFilter = if (text.isEmpty()) null else RowFilter.regexFilter("(?i)${Regex.escape(text)}")
+    }
+
     private fun moveRow(delta: Int) {
         val viewRow   = table.selectedRow.takeIf { it >= 0 } ?: return
         val modelRow  = table.convertRowIndexToModel(viewRow)
-        val items     = state.getFuturesForGroup(currentGroupId)
         val targetIdx = modelRow + delta
+        val items     = state.getFuturesForGroup(currentGroupId)
         if (targetIdx < 0 || targetIdx >= items.size) return
-
         state.futures.sortedBy { it.sortOrder }.forEachIndexed { i, f -> f.sortOrder = i }
-
         val fresh = state.getFuturesForGroup(currentGroupId)
         val a = fresh[modelRow]; val b = fresh[targetIdx]
         val tmp = a.sortOrder
         state.futures.find { it.id == a.id }?.sortOrder = b.sortOrder
         state.futures.find { it.id == b.id }?.sortOrder = tmp
-
-        (table.rowSorter as? javax.swing.table.TableRowSorter<*>)?.sortKeys = emptyList()
+        (table.rowSorter as? TableRowSorter<*>)?.sortKeys = emptyList()
         loadRows()
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
         table.setRowSelectionInterval(newRow, newRow)
@@ -239,11 +332,8 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
             groupCombo.removeAllItems()
             names.forEach { groupCombo.addItem(it) }
             val idx = ids.indexOf(prevId).takeIf { it >= 0 } ?: 0
-            groupCombo.selectedIndex = idx
-            currentGroupId = ids[idx]
-        } finally {
-            updatingCombo = false
-        }
+            groupCombo.selectedIndex = idx; currentGroupId = ids[idx]
+        } finally { updatingCombo = false }
         loadRows()
     }
 
@@ -254,6 +344,7 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     fun fetchQuotesAsync() {
+        if (!panelActive) return
         val symbols = rows.map { it.first.symbol }.distinct().ifEmpty { return }
         ApplicationManager.getApplication().executeOnPooledThread {
             val fetched = MarketDataService.getFutureQuotes(symbols)
@@ -267,6 +358,9 @@ class FuturePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     private fun scheduleRefresh() {
-        Timer(5_000) { fetchQuotesAsync() }.also { it.isRepeats = true; it.start() }
+        val intervalMs = state.refreshIntervalStock * 1000L  // futures use stock interval
+        refreshTimer = Timer(intervalMs.toInt()) { fetchQuotesAsync() }.also {
+            it.isRepeats = true; it.start()
+        }
     }
 }

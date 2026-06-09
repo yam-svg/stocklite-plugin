@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[<p><b>StockLite</b> — A real-time market data panel built natively into your JetBrains IDE.
@@ -127,6 +127,22 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.2.0</h3>
+<ul>
+  <li>新增价格提醒：达到目标价时触发 IDE 气泡通知，支持上穿 / 下穿两种模式</li>
+  <li>新增价格闪烁：行情更新时单元格短暂变色（涨红跌绿），跟随全局配色方案，可在设置中关闭</li>
+  <li>新增右键菜单：股票/基金/期货/全球指数均支持编辑、删除、设置提醒、复制代码/名称、在浏览器中打开</li>
+  <li>新增快速筛选：各面板工具栏新增搜索框，实时正则过滤表格行</li>
+  <li>新增列宽记忆：每列宽度拖动后自动持久化，下次打开时恢复</li>
+  <li>新增 K 线周期切换：图表面板支持 日内 / 日K / 周K / 月K 四档切换</li>
+  <li>新增港股 / 美股支持：股票搜索和行情获取扩展至港股（腾讯 API）和美股（Yahoo Finance）</li>
+  <li>新增数据导入/导出：Settings → StockLite → 数据管理，支持 JSON 格式完整备份与还原</li>
+  <li>新增网络断线提示：各面板顶部在检测到断网时显示"⚠ 网络断开"标签</li>
+  <li>新增刷新间隔设置：可在设置中分别配置股票、基金、全球指数的刷新频率（秒）</li>
+  <li>新增输入验证：添加/编辑时对成本价、持仓数量、提醒目标价进行合法性校验</li>
+  <li>生命周期优化：面板隐藏时自动暂停刷新，显示时立即恢复，降低后台资源消耗</li>
+</ul>
+
 <h3>1.1.0</h3>
 <ul>
   <li>新增日内走势图：点击涨跌幅列，面板底部内嵌展示当日分钟级 K 线，支持股票、期货、全球指数</li>
@@ -167,5 +183,8 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
                 instance="com.stocklite.plugin.settings.StockliteConfigurable"
                 id="com.stocklite.plugin.settings"
                 displayName="StockLite"/>
+        <notificationGroup id="StockLite Alerts"
+                           displayType="BALLOON"
+                           isLogByDefault="true"/>
     </extensions>
 </idea-plugin>

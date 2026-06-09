@@ -1,6 +1,7 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.ChartDataService
@@ -8,29 +9,33 @@ import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.*
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
-import javax.swing.table.TableRowSorter
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
+import com.stocklite.plugin.ui.dialogs.SetAlertDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.util.AlertManager
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
-import java.awt.BorderLayout
-import java.awt.Cursor
-import java.awt.FlowLayout
+import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
+import com.intellij.ide.BrowserUtil
 import javax.swing.*
+import javax.swing.event.TableColumnModelEvent
+import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
+import javax.swing.table.TableRowSorter
 
 class StockPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
-    StockliteState.LanguageListener {
+    StockliteState.LanguageListener,
+    StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
 
-    // ── 列定义（计算属性，每次访问返回当前语言的列名）──
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
         val alwaysOn: Boolean = false,
@@ -55,8 +60,6 @@ class StockPanel : JPanel(BorderLayout()),
     )
 
     private var visibleCols: List<ColDef> = emptyList()
-
-    // ── 数据状态 ──
     private val state get() = StockliteState.getInstance()
     private var currentGroupId = SystemGroups.ALL_STOCK_ID
     private var rows: List<Pair<StockData, StockQuote?>> = emptyList()
@@ -76,39 +79,50 @@ class StockPanel : JPanel(BorderLayout()),
         }
     }
 
-    private val table      = JBTable(tableModel)
-    private val groupCombo = JComboBox<String>()
+    private val table        = JBTable(tableModel)
+    private val groupCombo   = JComboBox<String>()
     private var updatingCombo = false
     private val summaryLabel = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --")
     private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
 
-    // ── 需要在语言切换时更新文字的 UI 组件 ──
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
     private lateinit var editBtn:    JButton
     private lateinit var delBtn:     JButton
     private lateinit var refreshBtn: JButton
+    private lateinit var filterField: SearchTextField
+
+    private var refreshTimer: Timer? = null
+    // 面板是否可见（用于生命周期优化）
+    private var panelActive = true
 
     init {
         state.addColumnListener(this)
         state.addLanguageListener(this)
+        state.addRefreshIntervalListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
+
+        // 生命周期：面板隐藏时暂停刷新
+        addHierarchyListener { e ->
+            val showing = isShowing
+            if (showing != panelActive) {
+                panelActive = showing
+                if (showing) fetchQuotesAsync()
+            }
+        }
     }
 
-    override fun onColumnSettingsChanged() {
-        rebuildVisibleCols()
-        loadRows()
-    }
+    override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }
 
     override fun onLanguageChanged() {
-        rebuildVisibleCols()    // 刷新列名
-        refreshGroups()         // 刷新系统分组名称（"全部股票"/"我的持有"等）
+        rebuildVisibleCols()
+        refreshGroups()
         groupLbl.text   = L10n.lblGroup
         manageBtn.text  = L10n.btnManageGroups
         addBtn.text     = L10n.btnAddStock
@@ -119,12 +133,19 @@ class StockPanel : JPanel(BorderLayout()),
         revalidate(); repaint()
     }
 
+    override fun onRefreshIntervalChanged() {
+        refreshTimer?.stop()
+        scheduleRefresh()
+    }
+
     private fun rebuildVisibleCols() {
         val enabled = state.stockVisibleColumns.toSet()
         visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
         table.rowSorter = TableRowSorter(tableModel)
         applyRenderers()
+        restoreColumnWidths()
+        installColumnWidthListener()
     }
 
     private fun applyRenderers() {
@@ -133,7 +154,35 @@ class StockPanel : JPanel(BorderLayout()),
                 table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
             }
         }
-        table.columnModel.getColumn(0).preferredWidth = 100
+        if (table.columnModel.columnCount > 0)
+            table.columnModel.getColumn(0).preferredWidth = 100
+    }
+
+    private fun restoreColumnWidths() {
+        visibleCols.forEachIndexed { i, col ->
+            val saved = state.getColumnWidth("stock.${col.key}")
+            if (saved != null && i < table.columnModel.columnCount) {
+                table.columnModel.getColumn(i).preferredWidth = saved
+            }
+        }
+    }
+
+    private fun installColumnWidthListener() {
+        // Remove existing listeners first (to avoid duplicates after rebuild)
+        table.columnModel.addColumnModelListener(object : TableColumnModelListener {
+            override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
+                visibleCols.forEachIndexed { i, col ->
+                    if (i < table.columnModel.columnCount) {
+                        val w = table.columnModel.getColumn(i).width
+                        if (w > 0) state.setColumnWidth("stock.${col.key}", w)
+                    }
+                }
+            }
+            override fun columnAdded(e: TableColumnModelEvent) {}
+            override fun columnRemoved(e: TableColumnModelEvent) {}
+            override fun columnMoved(e: TableColumnModelEvent) {}
+            override fun columnSelectionChanged(e: javax.swing.event.ListSelectionEvent) {}
+        })
     }
 
     private fun setupTable() {
@@ -142,11 +191,12 @@ class StockPanel : JPanel(BorderLayout()),
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
 
-        // 点击"涨跌幅"列展开内嵌走势图
+        // 左键：点击涨跌幅列展开图表
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
+                if (SwingUtilities.isRightMouseButton(e)) return
                 if (table.getColumnName(viewCol) != L10n.colChangePct) return
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
@@ -159,7 +209,12 @@ class StockPanel : JPanel(BorderLayout()),
                     fetchData     = { ChartDataService.getStockIntraday(s.symbol) }
                 )
             }
+
+            // 右键菜单
+            override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+            override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
         })
+
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
                 val col = table.columnAtPoint(e.point)
@@ -170,27 +225,103 @@ class StockPanel : JPanel(BorderLayout()),
         })
     }
 
+    private fun showContextMenu(e: MouseEvent) {
+        val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+        table.setRowSelectionInterval(viewRow, viewRow)
+        val modelRow = table.convertRowIndexToModel(viewRow)
+        if (modelRow < 0 || modelRow >= rows.size) return
+        val (s, q) = rows[modelRow]
+
+        val popup = JPopupMenu()
+
+        popup.add(JMenuItem(L10n.btnEdit).also { it.addActionListener {
+            AddStockDialog(groupId = s.groupId, groups = state.stockGroups, existingStock = s) {
+                _, _, groupId, cost, qty ->
+                if (qty < 0) { JOptionPane.showMessageDialog(this, L10n.validationQtyNotNegative()); return@AddStockDialog }
+                state.updateStock(s.id, cost, qty, groupId)
+                loadRows(); fetchQuotesAsync()
+            }.show()
+        }})
+
+        popup.add(JMenuItem(L10n.btnDelete).also { it.addActionListener {
+            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(s.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                state.deleteStock(s.id); loadRows()
+            }
+        }})
+
+        popup.addSeparator()
+
+        popup.add(JMenuItem(L10n.btnSetAlert).also { it.addActionListener {
+            SetAlertDialog(s.symbol, s.name, q?.price ?: 0.0) { targetPrice, alertType ->
+                state.createAlert(s.symbol, s.name, targetPrice, alertType)
+            }.show()
+        }})
+
+        // 是否有有效提醒
+        val alerts = state.getAlertsForSymbol(s.symbol)
+        if (alerts.isNotEmpty()) {
+            popup.add(JMenuItem("${L10n.btnDeleteAlert} (${alerts.size})").also { mi ->
+                mi.addActionListener {
+                    alerts.forEach { state.deleteAlert(it.id) }
+                }
+            })
+        }
+
+        popup.addSeparator()
+
+        popup.add(JMenuItem(L10n.btnCopySymbol).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(s.symbol), null)
+        }})
+        popup.add(JMenuItem(L10n.btnCopyName).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(s.name), null)
+        }})
+        popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
+            BrowserUtil.browse(buildStockUrl(s.symbol))
+        }})
+
+        popup.show(table, e.x, e.y)
+    }
+
+    private fun buildStockUrl(symbol: String): String {
+        return when {
+            symbol.startsWith("sh") || symbol.startsWith("sz") -> {
+                // 东方财富：SH600519 / SZ000858
+                "https://quote.eastmoney.com/${symbol.uppercase()}.html"
+            }
+            symbol.startsWith("hk") -> {
+                // 港股：东方财富 HK00700
+                val code = symbol.removePrefix("hk").padStart(5, '0')
+                "https://quote.eastmoney.com/HK$code.html"
+            }
+            else ->
+                "https://finance.yahoo.com/quote/$symbol"
+        }
+    }
+
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4))
-        groupLbl   = JLabel(L10n.lblGroup)
-        manageBtn  = JButton(L10n.btnManageGroups)
-        addBtn     = JButton(L10n.btnAddStock)
-        editBtn    = JButton(L10n.btnEdit)
-        delBtn     = JButton(L10n.btnDelete)
-        val upBtn  = JButton("↑")
-        val downBtn= JButton("↓")
-        refreshBtn = JButton(L10n.btnRefresh)
+        groupLbl     = JLabel(L10n.lblGroup)
+        manageBtn    = JButton(L10n.btnManageGroups)
+        addBtn       = JButton(L10n.btnAddStock)
+        editBtn      = JButton(L10n.btnEdit)
+        delBtn       = JButton(L10n.btnDelete)
+        val upBtn    = JButton("↑")
+        val downBtn  = JButton("↓")
+        refreshBtn   = JButton(L10n.btnRefresh)
+        filterField  = SearchTextField().also { it.preferredSize = Dimension(120, 26) }
 
         toolbar.add(groupLbl);  toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(editBtn);   toolbar.add(delBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
         toolbar.add(refreshBtn)
+        toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
-        bottomBar.add(summaryLabel); bottomBar.add(statusLabel)
+        bottomBar.add(summaryLabel)
+        bottomBar.add(statusLabel)
 
-        // 中间区域：表格 + 内嵌图表（图表初始隐藏，点击涨跌幅后展开）
         val centerWrapper = JPanel(BorderLayout())
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
@@ -198,6 +329,13 @@ class StockPanel : JPanel(BorderLayout()),
         add(toolbar,      BorderLayout.NORTH)
         add(centerWrapper,BorderLayout.CENTER)
         add(bottomBar,    BorderLayout.SOUTH)
+
+        // 快速筛选
+        filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+        })
 
         groupCombo.addActionListener {
             if (updatingCombo) return@addActionListener
@@ -222,6 +360,8 @@ class StockPanel : JPanel(BorderLayout()),
                 groups  = state.stockGroups,
                 existingStock = null
             ) { symbol, name, groupId, cost, qty ->
+                if (cost < 0) { JOptionPane.showMessageDialog(this, L10n.validationCostPositive()); return@AddStockDialog }
+                if (qty < 0) { JOptionPane.showMessageDialog(this, L10n.validationQtyNotNegative()); return@AddStockDialog }
                 state.createStock(symbol, name, groupId, cost, qty)
                 loadRows(); fetchQuotesAsync()
             }.show()
@@ -229,9 +369,11 @@ class StockPanel : JPanel(BorderLayout()),
 
         editBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val (s, _) = rows[row]
+            val modelRow = table.convertRowIndexToModel(row)
+            val (s, _) = rows[modelRow]
             AddStockDialog(groupId = s.groupId, groups = state.stockGroups, existingStock = s) {
                 _, _, groupId, cost, qty ->
+                if (qty < 0) { JOptionPane.showMessageDialog(this, L10n.validationQtyNotNegative()); return@AddStockDialog }
                 state.updateStock(s.id, cost, qty, groupId)
                 loadRows(); fetchQuotesAsync()
             }.show()
@@ -239,7 +381,8 @@ class StockPanel : JPanel(BorderLayout()),
 
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val (s, _) = rows[row]
+            val modelRow = table.convertRowIndexToModel(row)
+            val (s, _) = rows[modelRow]
             if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(s.name),
                     L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteStock(s.id); loadRows()
@@ -249,6 +392,16 @@ class StockPanel : JPanel(BorderLayout()),
         upBtn.addActionListener   { moveRow(-1) }
         downBtn.addActionListener { moveRow(+1) }
         refreshBtn.addActionListener { fetchQuotesAsync() }
+    }
+
+    private fun updateFilter() {
+        val text = filterField.text.trim()
+        val sorter = table.rowSorter as? TableRowSorter<*> ?: return
+        if (text.isEmpty()) {
+            sorter.rowFilter = null
+        } else {
+            sorter.rowFilter = RowFilter.regexFilter("(?i)${Regex.escape(text)}")
+        }
     }
 
     private fun moveRow(delta: Int) {
@@ -266,7 +419,7 @@ class StockPanel : JPanel(BorderLayout()),
         state.stocks.find { it.id == a.id }?.sortOrder = b.sortOrder
         state.stocks.find { it.id == b.id }?.sortOrder = tmp
 
-        (table.rowSorter as? javax.swing.table.TableRowSorter<*>)?.sortKeys = emptyList()
+        (table.rowSorter as? TableRowSorter<*>)?.sortKeys = emptyList()
         loadRows()
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
         table.setRowSelectionInterval(newRow, newRow)
@@ -316,6 +469,7 @@ class StockPanel : JPanel(BorderLayout()),
     }
 
     fun fetchQuotesAsync() {
+        if (!panelActive) return
         val symbols = rows.map { it.first.symbol }.distinct().ifEmpty { return }
         ApplicationManager.getApplication().executeOnPooledThread {
             val fetched = MarketDataService.getStockQuotes(symbols)
@@ -325,11 +479,16 @@ class StockPanel : JPanel(BorderLayout()),
                 tableModel.fireTableDataChanged()
                 applyRenderers()
                 updateSummary()
+                // 价格提醒检测
+                AlertManager.checkAlerts(fetched.mapValues { it.value.price })
             }
         }
     }
 
     private fun scheduleRefresh() {
-        Timer(5_000) { fetchQuotesAsync() }.also { it.isRepeats = true; it.start() }
+        val intervalMs = state.refreshIntervalStock * 1000L
+        refreshTimer = Timer(intervalMs.toInt()) { fetchQuotesAsync() }.also {
+            it.isRepeats = true; it.start()
+        }
     }
 }

@@ -35,13 +35,10 @@ class StocklitePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     override fun onLanguageChanged() {
+        // 子面板已各自注册了 LanguageListener，此处只更新标签页标题
         tabs.setTitleAt(0, L10n.tabStock)
         tabs.setTitleAt(1, L10n.tabFund)
         tabs.setTitleAt(2, L10n.tabFuture)
         tabs.setTitleAt(3, L10n.tabGlobal)
-        stockPanel.onLanguageChanged()
-        fundPanel.onLanguageChanged()
-        futurePanel.onLanguageChanged()
-        globalPanel.onLanguageChanged()
     }
 }

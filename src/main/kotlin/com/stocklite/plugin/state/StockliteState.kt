@@ -20,25 +20,64 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var futureGroups: MutableList<FutureGroupData> = ArrayList()
     var futures: MutableList<FutureData> = ArrayList()
 
-    // ── 列显示设置（存储可选列的 key，始终显示的列不在此列表中）──
-    // 股票可选列：symbol, quantity, cost, marketValue, pnl, pnlPercent
+    // ── 列显示设置 ──
     var stockVisibleColumns: MutableList<String> = ArrayList()
-    // 基金可选列：code, shares, costNav, marketValue, pnl, pnlPercent
     var fundVisibleColumns: MutableList<String> = ArrayList()
 
+    // ── 列宽记忆 ──
+    var columnWidths: MutableList<ColumnWidthEntry> = ArrayList()
+
     // ── 涨跌幅颜色方案 ──
-    // "RED_UP"（红涨绿跌，中国惯例）| "RED_DOWN"（绿涨红跌，欧美惯例）| "NONE"（无颜色）
     var colorScheme: String = "RED_UP"
 
     // ── 界面语言 ──
-    // "ZH"（中文）| "EN"（English）
     var language: String = "ZH"
+
+    // ── 刷新间隔（秒）──
+    var refreshIntervalStock: Int = 5
+    var refreshIntervalFund: Int = 30
+    var refreshIntervalGlobal: Int = 5
+
+    // ── 功能开关 ──
+    var enablePriceAlerts: Boolean = true
+
+    // ── 价格提醒 ──
+    var priceAlerts: MutableList<PriceAlertData> = ArrayList()
 
     override fun getState(): StockliteState = this
 
     override fun loadState(state: StockliteState) {
         XmlSerializerUtil.copyBean(state, this)
     }
+
+    // ── 列宽 CRUD ──
+
+    fun getColumnWidth(key: String): Int? = columnWidths.find { it.key == key }?.width
+
+    fun setColumnWidth(key: String, width: Int) {
+        val existing = columnWidths.find { it.key == key }
+        if (existing != null) existing.width = width
+        else columnWidths.add(ColumnWidthEntry().also { it.key = key; it.width = width })
+    }
+
+    // ── 价格提醒 CRUD ──
+
+    fun createAlert(symbol: String, name: String, targetPrice: Double, alertType: String): PriceAlertData {
+        val a = PriceAlertData().apply {
+            id = UUID.randomUUID().toString()
+            this.symbol = symbol
+            this.name = name
+            this.targetPrice = targetPrice
+            this.alertType = alertType
+            this.createdAt = System.currentTimeMillis()
+        }
+        priceAlerts.add(a)
+        return a
+    }
+
+    fun deleteAlert(id: String) = priceAlerts.removeIf { it.id == id }
+
+    fun getAlertsForSymbol(symbol: String) = priceAlerts.filter { it.symbol == symbol }
 
     // ── 列设置变更通知 ──
     interface ColumnSettingsListener { fun onColumnSettingsChanged() }
@@ -53,6 +92,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun addLanguageListener(l: LanguageListener) { languageListeners.add(l) }
     fun removeLanguageListener(l: LanguageListener) { languageListeners.remove(l) }
     fun notifyLanguageChanged() = languageListeners.forEach { it.onLanguageChanged() }
+
+    // ── 刷新间隔变更通知 ──
+    interface RefreshIntervalListener { fun onRefreshIntervalChanged() }
+    @Transient private val refreshIntervalListeners = mutableListOf<RefreshIntervalListener>()
+    fun addRefreshIntervalListener(l: RefreshIntervalListener) { refreshIntervalListeners.add(l) }
+    fun removeRefreshIntervalListener(l: RefreshIntervalListener) { refreshIntervalListeners.remove(l) }
+    fun notifyRefreshIntervalChanged() = refreshIntervalListeners.forEach { it.onRefreshIntervalChanged() }
 
     // ── 股票分组 CRUD ──
 
@@ -72,7 +118,6 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     fun deleteStockGroup(id: String) {
         stockGroups.removeIf { it.id == id }
-        // 将该分组下的股票移入第一个可用分组或删除
         val fallback = stockGroups.firstOrNull()?.id ?: return
         stocks.filter { it.groupId == id }.forEach { it.groupId = fallback }
     }
@@ -187,7 +232,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         futures.filter { it.groupId == id }.forEach { it.groupId = fallback }
     }
 
-    // ── 期货 CRUD（纯行情看板，无持仓信息）──
+    // ── 期货 CRUD ──
 
     fun createFuture(symbol: String, name: String, groupId: String): FutureData {
         val f = FutureData().apply {

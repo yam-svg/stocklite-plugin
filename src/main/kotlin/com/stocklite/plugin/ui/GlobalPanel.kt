@@ -1,6 +1,7 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.ChartDataService
@@ -12,30 +13,31 @@ import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
-import java.awt.BorderLayout
-import java.awt.Cursor
-import java.awt.FlowLayout
+import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
+import com.intellij.ide.BrowserUtil
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
 
-class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
+class GlobalPanel : JPanel(BorderLayout()),
+    StockliteState.LanguageListener,
+    StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
 
-    // ── 自适应刷新间隔 ──
     private val MIN_INTERVAL_MS  = 5_000
     private val MAX_INTERVAL_MS  = 60_000
     private val RECOVERY_STEP_MS = 5_000
     private var currentIntervalMs = MIN_INTERVAL_MS
     private var refreshTimer: Timer? = null
+    private var panelActive = true
 
     private var quotes: List<GlobalIndexQuote> = emptyList()
 
-    // 列类型固定（全球面板无可选列），列名通过 L10n 动态读取
     private val colTypes = arrayOf(
         QuoteColumnType.PLAIN, QuoteColumnType.PRICE, QuoteColumnType.PCT,
         QuoteColumnType.PLAIN, QuoteColumnType.PLAIN
@@ -54,40 +56,44 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         override fun getValueAt(row: Int, col: Int): Any {
             val q = quotes[row]
             return when (col) {
-                0 -> q.name
-                1 -> q.value
-                2 -> q.changePercent
-                3 -> q.market
-                4 -> if (q.isOpen) L10n.cellOpen else L10n.cellClosed
+                0 -> q.name; 1 -> q.value; 2 -> q.changePercent
+                3 -> q.market; 4 -> if (q.isOpen) L10n.cellOpen else L10n.cellClosed
                 else -> ""
             }
         }
     }
 
-    private val table       = JBTable(tableModel)
-    private val statusLabel = JLabel("${L10n.lblLastUpdate} --")
+    private val table        = JBTable(tableModel)
+    private val statusLabel  = JLabel("${L10n.lblLastUpdate} --")
 
-    private lateinit var titleLbl:   JLabel
-    private lateinit var refreshBtn: JButton
+    private lateinit var titleLbl:    JLabel
+    private lateinit var refreshBtn:  JButton
+    private lateinit var filterField: SearchTextField
 
     init {
         StockliteState.getInstance().addLanguageListener(this)
+        StockliteState.getInstance().addRefreshIntervalListener(this)
         setupTable()
         buildUI()
         fetchAsync()
         table.rowSorter = TableRowSorter(tableModel)
         startTimer()
+        addHierarchyListener { _ ->
+            val showing = isShowing
+            if (showing != panelActive) {
+                panelActive = showing
+                if (showing) fetchAsync()
+            }
+        }
     }
 
     override fun onLanguageChanged() {
-        // 列名、单元格值（"Open"/"Closed"）均通过 L10n 动态计算，重绘即可
         tableModel.fireTableStructureChanged()
         tableModel.fireTableDataChanged()
         table.rowSorter = TableRowSorter(tableModel)
         applyRenderers()
         titleLbl.text   = L10n.lblGlobalTitle
         refreshBtn.text = L10n.btnRefresh
-        // 更新状态栏（不含上次更新时间，只更新市场状态部分）
         val cur = statusLabel.text
         val updatedPrefix = cur.substringBefore("   ").takeIf { it.isNotBlank() }
         statusLabel.text = if (updatedPrefix != null) "$updatedPrefix   ${MarketTimeUtil.getMarketStatusText()}"
@@ -95,12 +101,19 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         revalidate(); repaint()
     }
 
+    override fun onRefreshIntervalChanged() {
+        val newBase = StockliteState.getInstance().refreshIntervalGlobal * 1000
+        currentIntervalMs = newBase
+        restartTimer()
+    }
+
     private fun applyRenderers() {
-        colTypes.forEachIndexed { i, t ->
-            if (i < table.columnModel.columnCount)
-                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(t)
+        colTypes.forEachIndexed { i, type ->
+            if (i < table.columnModel.columnCount) {
+                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(type)
+            }
         }
-        if (table.columnModel.columnCount >= 2) {
+        if (table.columnModel.columnCount >= 3) {
             table.columnModel.getColumn(0).preferredWidth = 120
             table.columnModel.getColumn(1).preferredWidth = 100
             table.columnModel.getColumn(2).preferredWidth = 80
@@ -114,9 +127,9 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
         centerTableHeader(table)
 
-        // 点击"涨跌幅"列展开内嵌走势图
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(e)) return
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
                 if (table.getColumnName(viewCol) != L10n.colChangePct) return
@@ -133,6 +146,8 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
                     fetchData     = { ChartDataService.getGlobalIntraday(q.symbol) }
                 )
             }
+            override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+            override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
         })
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
@@ -144,13 +159,43 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         })
     }
 
+    private fun showContextMenu(e: MouseEvent) {
+        val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+        table.setRowSelectionInterval(viewRow, viewRow)
+        val modelRow = table.convertRowIndexToModel(viewRow)
+        if (modelRow < 0 || modelRow >= quotes.size) return
+        val q = quotes[modelRow]
+
+        val popup = JPopupMenu()
+        popup.add(JMenuItem(L10n.btnCopyName).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(q.name), null)
+        }})
+        popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
+            BrowserUtil.browse(buildIndexUrl(q.symbol))
+        }})
+        popup.show(table, e.x, e.y)
+    }
+
+    private fun buildIndexUrl(symbol: String): String = when {
+        symbol == "000001.SS" -> "https://quote.eastmoney.com/zs000001.html"
+        symbol == "399001.SZ" -> "https://quote.eastmoney.com/zs399001.html"
+        symbol == "399006.SZ" -> "https://quote.eastmoney.com/zs399006.html"
+        symbol == "000300.SS" -> "https://quote.eastmoney.com/zs000300.html"
+        symbol == "^HSI"      -> "https://finance.yahoo.com/quote/%5EHSI/"
+        symbol == "^HSTECH"   -> "https://finance.yahoo.com/quote/%5EHSTECH/"
+        symbol.startsWith("^") -> "https://finance.yahoo.com/quote/${symbol.replace("^", "%5E")}/"
+        else -> "https://finance.yahoo.com/quote/$symbol/"
+    }
+
     private fun buildUI() {
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 8, 4))
         titleLbl   = JLabel(L10n.lblGlobalTitle)
         refreshBtn = JButton(L10n.btnRefresh)
+        filterField = SearchTextField().also { it.preferredSize = Dimension(120, 26) }
         toolbar.add(titleLbl)
         toolbar.add(refreshBtn)
         toolbar.add(statusLabel)
+        toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
         val centerWrapper = JPanel(BorderLayout())
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
@@ -159,19 +204,29 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         add(toolbar, BorderLayout.NORTH)
         add(centerWrapper, BorderLayout.CENTER)
 
+        filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+        })
+
         refreshBtn.addActionListener { fetchAsync() }
     }
 
+    private fun updateFilter() {
+        val text = filterField.text.trim()
+        val sorter = table.rowSorter as? TableRowSorter<*> ?: return
+        sorter.rowFilter = if (text.isEmpty()) null else RowFilter.regexFilter("(?i)${Regex.escape(text)}")
+    }
+
     fun fetchAsync() {
+        if (!panelActive) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = MarketDataService.getGlobalIndexQuotes()
             SwingUtilities.invokeLater {
                 if (result.rateLimited) {
                     val newInterval = (currentIntervalMs * 2).coerceAtMost(MAX_INTERVAL_MS)
-                    if (newInterval != currentIntervalMs) {
-                        currentIntervalMs = newInterval
-                        restartTimer()
-                    }
+                    if (newInterval != currentIntervalMs) { currentIntervalMs = newInterval; restartTimer() }
                     statusLabel.text = L10n.statusRateLimited(currentIntervalMs / 1000)
                 } else {
                     if (currentIntervalMs > MIN_INTERVAL_MS) {
@@ -191,15 +246,13 @@ class GlobalPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     private fun startTimer() {
-        refreshTimer = Timer(currentIntervalMs) { fetchAsync() }.also {
-            it.isRepeats = true; it.start()
-        }
+        val base = StockliteState.getInstance().refreshIntervalGlobal * 1000
+        currentIntervalMs = base.coerceAtLeast(MIN_INTERVAL_MS)
+        refreshTimer = Timer(currentIntervalMs) { fetchAsync() }.also { it.isRepeats = true; it.start() }
     }
 
     private fun restartTimer() {
         refreshTimer?.stop()
-        refreshTimer = Timer(currentIntervalMs) { fetchAsync() }.also {
-            it.isRepeats = true; it.start()
-        }
+        refreshTimer = Timer(currentIntervalMs) { fetchAsync() }.also { it.isRepeats = true; it.start() }
     }
 }

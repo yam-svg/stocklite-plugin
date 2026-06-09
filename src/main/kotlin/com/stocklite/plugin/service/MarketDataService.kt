@@ -120,34 +120,71 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 股票行情（移植自 registerStockQuoteHandlers）
+    // 股票行情（移植自 registerStockQuoteHandlers，扩展支持港股/美股）
     // ══════════════════════════════════════════════════════════════
 
     fun getStockQuotes(symbols: List<String>): Map<String, StockQuote> {
         if (symbols.isEmpty()) return emptyMap()
-        val fullSymbols = symbols.map { s ->
-            val v = s.lowercase()
-            if (Regex("^[a-z]{2}\\d+").containsMatchIn(v)) v
-            else if (v.startsWith("6") || v.startsWith("5")) "sh$v"
-            else if (v.startsWith("0") || v.startsWith("3") || v.startsWith("1")) "sz$v"
-            else v
-        }
-        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${fullSymbols.joinToString(",")}",
-            "http://finance.sina.com.cn") ?: return emptyMap()
-
         val result = mutableMapOf<String, StockQuote>()
-        val re = Regex("""var hq_str_([^=]+)="([^"]+)"""")
-        for (m in re.findAll(raw)) {
-            val symbol = m.groupValues[1].trim()
-            val fields = m.groupValues[2].split(",")
-            if (fields.size < 4) continue
-            val name      = fields[0].trim().takeIf { it.isNotEmpty() } ?: continue
-            val prevClose = fields[2].toDoubleOrNull() ?: continue
-            val price     = fields[3].toDoubleOrNull() ?: continue
-            val change    = if (price != 0.0) price - prevClose else 0.0
-            val changePct = if (prevClose != 0.0) change / prevClose * 100 else 0.0
-            result[symbol] = StockQuote(symbol, name, price.takeIf { it != 0.0 } ?: prevClose, prevClose, change, changePct)
+
+        // Separate by market
+        val aShares  = symbols.filter { it.startsWith("sh") || it.startsWith("sz") }
+        val hkShares = symbols.filter { it.startsWith("hk") }
+        val usShares = symbols.filter { !it.startsWith("sh") && !it.startsWith("sz") && !it.startsWith("hk") }
+
+        // A-shares via Sina
+        if (aShares.isNotEmpty()) {
+            val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${aShares.joinToString(",")}",
+                "http://finance.sina.com.cn") ?: ""
+            val re = Regex("""var hq_str_([^=]+)="([^"]+)"""")
+            for (m in re.findAll(raw)) {
+                val symbol = m.groupValues[1].trim()
+                val fields = m.groupValues[2].split(",")
+                if (fields.size < 4) continue
+                val name      = fields[0].trim().takeIf { it.isNotEmpty() } ?: continue
+                val prevClose = fields[2].toDoubleOrNull() ?: continue
+                val price     = fields[3].toDoubleOrNull() ?: continue
+                val change    = if (price != 0.0) price - prevClose else 0.0
+                val changePct = if (prevClose != 0.0) change / prevClose * 100 else 0.0
+                result[symbol] = StockQuote(symbol, name, price.takeIf { it != 0.0 } ?: prevClose, prevClose, change, changePct)
+            }
         }
+
+        // HK shares via Tencent
+        for (sym in hkShares) {
+            val code   = sym.removePrefix("hk")
+            val tSym   = "r_hk$code"
+            val raw    = HttpUtil.get("https://qt.gtimg.cn/q=$tSym", referer = "https://gu.qq.com") ?: continue
+            val m      = Regex("""v_[^=]+="([^"]*)"""").find(raw) ?: continue
+            val f      = m.groupValues[1].split("~")
+            val price  = f.getOrElse(3) { "" }.toDoubleOrNull() ?: continue
+            val prev   = f.getOrElse(4) { "" }.toDoubleOrNull() ?: continue
+            if (price <= 0 || prev <= 0) continue
+            val name   = f.getOrElse(1) { sym }.ifEmpty { sym }
+            val change = price - prev
+            val pct    = if (prev > 0) change / prev * 100 else 0.0
+            result[sym] = StockQuote(sym, name, price, prev, change, pct)
+        }
+
+        // US/other shares via Yahoo Finance
+        for (sym in usShares) {
+            try {
+                val enc = URLEncoder.encode(sym, "UTF-8")
+                val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d") ?: continue
+                val meta = JSONObject(raw).optJSONObject("chart")
+                    ?.optJSONArray("result")?.optJSONObject(0)
+                    ?.optJSONObject("meta") ?: continue
+                val price     = meta.optDouble("regularMarketPrice", Double.NaN).takeIf { it.isFinite() && it > 0 } ?: continue
+                val prevClose = meta.optDouble("chartPreviousClose", Double.NaN).let {
+                    if (it.isFinite() && it > 0) it else meta.optDouble("regularMarketPreviousClose", Double.NaN)
+                }.takeIf { it.isFinite() && it > 0 } ?: price
+                val name     = meta.optString("shortName", sym).ifEmpty { sym }
+                val change   = price - prevClose
+                val pct      = if (prevClose > 0) change / prevClose * 100 else 0.0
+                result[sym] = StockQuote(sym, name, price, prevClose, change, pct)
+            } catch (_: Exception) {}
+        }
+
         return result
     }
 
@@ -630,7 +667,7 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 股票搜索（移植自 registerStockSearchHandler）
+    // 股票搜索（移植自 registerStockSearchHandler，扩展支持港股/美股）
     // ══════════════════════════════════════════════════════════════
 
     fun searchStocks(keyword: String): List<StockSearchResult> {
@@ -639,25 +676,56 @@ object MarketDataService {
         val raw = HttpUtil.getGbk("https://suggest3.sinajs.cn/suggest/key=$enc") ?: return emptyList()
         // 移植原版：match = text.match(/"([^"]+)"/)
         val m = Regex(""""([^"]+)"""").find(raw) ?: return emptyList()
-        return m.groupValues[1].split(";")
+
+        val results = mutableListOf<StockSearchResult>()
+
+        m.groupValues[1].split(";")
             .filter { it.isNotBlank() }
-            .mapNotNull { item ->
-                val parts = item.split(",")
+            .forEach { item ->
+                val parts  = item.split(",")
                 val symbol = parts.getOrElse(3) { "" }.ifEmpty { parts.getOrElse(2) { "" } }.trim()
                 val name   = parts.getOrElse(0) { "" }.trim()
-                if (symbol.isEmpty() || name.isEmpty()) return@mapNotNull null
-                // 只保留 A 股（sh/sz 前缀，或 6 位纯数字代码）
-                val fullSym = when {
-                    symbol.startsWith("sh") || symbol.startsWith("sz") -> symbol
+                if (symbol.isEmpty() || name.isEmpty()) return@forEach
+
+                when {
+                    // A-share with explicit prefix
+                    symbol.startsWith("sh") || symbol.startsWith("sz") ->
+                        results.add(StockSearchResult(symbol, name))
+                    // A-share 6-digit code
                     symbol.matches(Regex("\\d{6}")) -> {
-                        if (symbol.startsWith("6") || symbol.startsWith("5")) "sh$symbol" else "sz$symbol"
+                        val full = if (symbol.startsWith("6") || symbol.startsWith("5")) "sh$symbol" else "sz$symbol"
+                        results.add(StockSearchResult(full, name))
                     }
-                    else -> return@mapNotNull null
+                    // HK share: 5-digit numeric code
+                    symbol.matches(Regex("\\d{5}")) ->
+                        results.add(StockSearchResult("hk$symbol", name))
+                    // HK share with exchange prefix
+                    symbol.matches(Regex("[Hh][Kk]\\d{4,5}")) -> {
+                        val code = symbol.takeLast(5).padStart(5, '0')
+                        results.add(StockSearchResult("hk$code", name))
+                    }
                 }
-                StockSearchResult(fullSym, name)
             }
-            .distinctBy { it.symbol }
-            .take(15)
+
+        // US stock fallback: if keyword looks like a US ticker (uppercase letters only)
+        if (results.isEmpty() && keyword.matches(Regex("[A-Z]{1,5}"))) {
+            try {
+                val yEnc = URLEncoder.encode(keyword, "UTF-8")
+                val yRaw = HttpUtil.get("https://query2.finance.yahoo.com/v1/finance/search?q=$yEnc&quotesCount=5&newsCount=0") ?: ""
+                val quotes = JSONObject(yRaw).optJSONArray("quotes") ?: JSONArray()
+                for (i in 0 until quotes.length()) {
+                    val o = quotes.optJSONObject(i) ?: continue
+                    val sym = o.optString("symbol", "").takeIf { it.isNotEmpty() } ?: continue
+                    val shortName = o.optString("shortname", o.optString("longname", sym))
+                    val qType = o.optString("quoteType", "")
+                    if (qType == "EQUITY" || qType == "ETF") {
+                        results.add(StockSearchResult(sym, shortName))
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return results.distinctBy { it.symbol }.take(15)
     }
 
     // ══════════════════════════════════════════════════════════════

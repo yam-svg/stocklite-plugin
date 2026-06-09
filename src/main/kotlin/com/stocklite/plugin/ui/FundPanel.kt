@@ -1,6 +1,7 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.MarketDataService
@@ -9,21 +10,27 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.QuoteRenderer.Companion.SENTINEL_NO_ESTIMATE
 import com.stocklite.plugin.ui.common.QuoteRenderer.Companion.SENTINEL_OFFICIAL_UPDATED
-import javax.swing.table.TableRowSorter
 import com.stocklite.plugin.ui.dialogs.AddFundDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
-import java.awt.BorderLayout
-import java.awt.FlowLayout
+import java.awt.*
+import java.awt.datatransfer.StringSelection
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
+import com.intellij.ide.BrowserUtil
 import javax.swing.*
+import javax.swing.event.TableColumnModelEvent
+import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
+import javax.swing.table.TableRowSorter
 
 class FundPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
-    StockliteState.LanguageListener {
+    StockliteState.LanguageListener,
+    StockliteState.RefreshIntervalListener {
 
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
@@ -66,7 +73,6 @@ class FundPanel : JPanel(BorderLayout()),
     }
 
     private var visibleCols: List<ColDef> = emptyList()
-
     private val state get() = StockliteState.getInstance()
     private var currentGroupId = SystemGroups.ALL_FUND_ID
     private var rows: List<Pair<FundData, FundQuote?>> = emptyList()
@@ -91,6 +97,8 @@ class FundPanel : JPanel(BorderLayout()),
     private var updatingCombo = false
     private val summaryLabel = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --")
     private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
+    private var panelActive  = true
+    private var refreshTimer: Timer? = null
 
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
@@ -98,22 +106,28 @@ class FundPanel : JPanel(BorderLayout()),
     private lateinit var editBtn:    JButton
     private lateinit var delBtn:     JButton
     private lateinit var refreshBtn: JButton
+    private lateinit var filterField: SearchTextField
 
     init {
         state.addColumnListener(this)
         state.addLanguageListener(this)
+        state.addRefreshIntervalListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
+        addHierarchyListener { _ ->
+            val showing = isShowing
+            if (showing != panelActive) {
+                panelActive = showing
+                if (showing) fetchQuotesAsync()
+            }
+        }
     }
 
-    override fun onColumnSettingsChanged() {
-        rebuildVisibleCols()
-        loadRows()
-    }
+    override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }
 
     override fun onLanguageChanged() {
         rebuildVisibleCols()
@@ -128,12 +142,19 @@ class FundPanel : JPanel(BorderLayout()),
         revalidate(); repaint()
     }
 
+    override fun onRefreshIntervalChanged() {
+        refreshTimer?.stop()
+        scheduleRefresh()
+    }
+
     private fun rebuildVisibleCols() {
         val enabled = state.fundVisibleColumns.toSet()
         visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
         table.rowSorter = TableRowSorter(tableModel)
         applyRenderers()
+        restoreColumnWidths()
+        installColumnWidthListener()
     }
 
     private fun applyRenderers() {
@@ -146,11 +167,76 @@ class FundPanel : JPanel(BorderLayout()),
             table.columnModel.getColumn(0).preferredWidth = 140
     }
 
+    private fun restoreColumnWidths() {
+        visibleCols.forEachIndexed { i, col ->
+            val saved = state.getColumnWidth("fund.${col.key}")
+            if (saved != null && i < table.columnModel.columnCount) {
+                table.columnModel.getColumn(i).preferredWidth = saved
+            }
+        }
+    }
+
+    private fun installColumnWidthListener() {
+        table.columnModel.addColumnModelListener(object : TableColumnModelListener {
+            override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
+                visibleCols.forEachIndexed { i, col ->
+                    if (i < table.columnModel.columnCount) {
+                        val w = table.columnModel.getColumn(i).width
+                        if (w > 0) state.setColumnWidth("fund.${col.key}", w)
+                    }
+                }
+            }
+            override fun columnAdded(e: TableColumnModelEvent) {}
+            override fun columnRemoved(e: TableColumnModelEvent) {}
+            override fun columnMoved(e: TableColumnModelEvent) {}
+            override fun columnSelectionChanged(e: javax.swing.event.ListSelectionEvent) {}
+        })
+    }
+
     private fun setupTable() {
         table.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         table.rowHeight = 24
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
+
+        table.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+            override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+        })
+    }
+
+    private fun showContextMenu(e: MouseEvent) {
+        val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+        table.setRowSelectionInterval(viewRow, viewRow)
+        val modelRow = table.convertRowIndexToModel(viewRow)
+        if (modelRow < 0 || modelRow >= rows.size) return
+        val (f, _) = rows[modelRow]
+
+        val popup = JPopupMenu()
+        popup.add(JMenuItem(L10n.btnEdit).also { it.addActionListener {
+            AddFundDialog(groupId = f.groupId, groups = state.fundGroups, existingFund = f) {
+                _, _, groupId, costNav, shares ->
+                state.updateFund(f.id, costNav, shares, groupId)
+                loadRows(); fetchQuotesAsync()
+            }.show()
+        }})
+        popup.add(JMenuItem(L10n.btnDelete).also { it.addActionListener {
+            if (JOptionPane.showConfirmDialog(this@FundPanel, L10n.dlgConfirmDelete(f.name),
+                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                state.deleteFund(f.id); loadRows()
+            }
+        }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnCopySymbol).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(f.code), null)
+        }})
+        popup.add(JMenuItem(L10n.btnCopyName).also { it.addActionListener {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(f.name), null)
+        }})
+        popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
+            BrowserUtil.browse("https://fund.eastmoney.com/${f.code}.html")
+        }})
+        popup.show(table, e.x, e.y)
     }
 
     private fun buildUI() {
@@ -163,12 +249,14 @@ class FundPanel : JPanel(BorderLayout()),
         val upBtn  = JButton("↑")
         val downBtn= JButton("↓")
         refreshBtn = JButton(L10n.btnRefresh)
+        filterField = SearchTextField().also { it.preferredSize = Dimension(120, 26) }
 
         toolbar.add(groupLbl); toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
         toolbar.add(editBtn);   toolbar.add(delBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
         toolbar.add(refreshBtn)
+        toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
         bottomBar.add(summaryLabel); bottomBar.add(statusLabel)
@@ -177,28 +265,30 @@ class FundPanel : JPanel(BorderLayout()),
         add(JBScrollPane(table), BorderLayout.CENTER)
         add(bottomBar, BorderLayout.SOUTH)
 
+        filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
+        })
+
         groupCombo.addActionListener {
             if (updatingCombo) return@addActionListener
             val idx = groupCombo.selectedIndex.takeIf { it >= 0 } ?: return@addActionListener
-            currentGroupId = groupIdList()[idx]
-            loadRows(); fetchQuotesAsync()
+            currentGroupId = groupIdList()[idx]; loadRows(); fetchQuotesAsync()
         }
 
         manageBtn.addActionListener {
-            ManageGroupsDialog(
-                groups   = state.fundGroups,
+            ManageGroupsDialog(groups = state.fundGroups,
                 onCreate = { name -> state.createFundGroup(name) },
                 onRename = { id, name -> state.updateFundGroup(id, name) },
                 onDelete = { id -> state.deleteFundGroup(id) },
-                onDone   = { refreshGroups() }
-            ).show()
+                onDone   = { refreshGroups() }).show()
         }
 
         addBtn.addActionListener {
             AddFundDialog(
                 groupId = currentGroupId.takeIf { !isSystemGroup(it) } ?: state.fundGroups.firstOrNull()?.id ?: "",
-                groups  = state.fundGroups,
-                existingFund = null
+                groups  = state.fundGroups, existingFund = null
             ) { code, name, groupId, costNav, shares ->
                 state.createFund(code, name, groupId, costNav, shares)
                 loadRows(); fetchQuotesAsync()
@@ -207,7 +297,8 @@ class FundPanel : JPanel(BorderLayout()),
 
         editBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val (f, _) = rows[row]
+            val modelRow = table.convertRowIndexToModel(row)
+            val (f, _) = rows[modelRow]
             AddFundDialog(groupId = f.groupId, groups = state.fundGroups, existingFund = f) {
                 _, _, groupId, costNav, shares ->
                 state.updateFund(f.id, costNav, shares, groupId)
@@ -217,7 +308,8 @@ class FundPanel : JPanel(BorderLayout()),
 
         delBtn.addActionListener {
             val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val (f, _) = rows[row]
+            val modelRow = table.convertRowIndexToModel(row)
+            val (f, _) = rows[modelRow]
             if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(f.name),
                     L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 state.deleteFund(f.id); loadRows()
@@ -229,22 +321,25 @@ class FundPanel : JPanel(BorderLayout()),
         refreshBtn.addActionListener { fetchQuotesAsync() }
     }
 
+    private fun updateFilter() {
+        val text = filterField.text.trim()
+        val sorter = table.rowSorter as? TableRowSorter<*> ?: return
+        sorter.rowFilter = if (text.isEmpty()) null else RowFilter.regexFilter("(?i)${Regex.escape(text)}")
+    }
+
     private fun moveRow(delta: Int) {
         val viewRow   = table.selectedRow.takeIf { it >= 0 } ?: return
         val modelRow  = table.convertRowIndexToModel(viewRow)
-        val items     = state.getFundsForGroup(currentGroupId)
         val targetIdx = modelRow + delta
+        val items     = state.getFundsForGroup(currentGroupId)
         if (targetIdx < 0 || targetIdx >= items.size) return
-
         state.funds.sortedBy { it.sortOrder }.forEachIndexed { i, f -> f.sortOrder = i }
-
         val fresh = state.getFundsForGroup(currentGroupId)
         val a = fresh[modelRow]; val b = fresh[targetIdx]
         val tmp = a.sortOrder
         state.funds.find { it.id == a.id }?.sortOrder = b.sortOrder
         state.funds.find { it.id == b.id }?.sortOrder = tmp
-
-        (table.rowSorter as? javax.swing.table.TableRowSorter<*>)?.sortKeys = emptyList()
+        (table.rowSorter as? TableRowSorter<*>)?.sortKeys = emptyList()
         loadRows()
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
         table.setRowSelectionInterval(newRow, newRow)
@@ -268,19 +363,14 @@ class FundPanel : JPanel(BorderLayout()),
             groupCombo.removeAllItems()
             names.forEach { groupCombo.addItem(it) }
             val idx = ids.indexOf(prevId).takeIf { it >= 0 } ?: 0
-            groupCombo.selectedIndex = idx
-            currentGroupId = ids[idx]
-        } finally {
-            updatingCombo = false
-        }
+            groupCombo.selectedIndex = idx; currentGroupId = ids[idx]
+        } finally { updatingCombo = false }
         loadRows()
     }
 
     private fun loadRows() {
         rows = state.getFundsForGroup(currentGroupId).map { it to quotes[it.code] }
-        tableModel.fireTableDataChanged()
-        applyRenderers()
-        updateSummary()
+        tableModel.fireTableDataChanged(); applyRenderers(); updateSummary()
     }
 
     private fun updateSummary() {
@@ -294,20 +384,22 @@ class FundPanel : JPanel(BorderLayout()),
     }
 
     fun fetchQuotesAsync() {
+        if (!panelActive) return
         val codes = rows.map { it.first.code }.distinct().ifEmpty { return }
         ApplicationManager.getApplication().executeOnPooledThread {
             val fetched = MarketDataService.getFundQuotes(codes)
             SwingUtilities.invokeLater {
                 quotes.putAll(fetched)
                 rows = rows.map { (f, _) -> f to quotes[f.code] }
-                tableModel.fireTableDataChanged()
-                applyRenderers()
-                updateSummary()
+                tableModel.fireTableDataChanged(); applyRenderers(); updateSummary()
             }
         }
     }
 
     private fun scheduleRefresh() {
-        Timer(30_000) { fetchQuotesAsync() }.also { it.isRepeats = true; it.start() }
+        val intervalMs = state.refreshIntervalFund * 1000L
+        refreshTimer = Timer(intervalMs.toInt()) { fetchQuotesAsync() }.also {
+            it.isRepeats = true; it.start()
+        }
     }
 }

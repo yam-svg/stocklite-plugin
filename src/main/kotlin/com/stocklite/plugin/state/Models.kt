@@ -10,7 +10,7 @@ class StockGroupData {
 
 class StockData {
     var id: String = ""
-    var symbol: String = ""  // e.g. "sh600519"
+    var symbol: String = ""
     var name: String = ""
     var groupId: String = ""
     var costPrice: Double = 0.0
@@ -27,7 +27,7 @@ class FundGroupData {
 
 class FundData {
     var id: String = ""
-    var code: String = ""    // e.g. "161725"
+    var code: String = ""
     var name: String = ""
     var groupId: String = ""
     var costNav: Double = 0.0
@@ -44,11 +44,29 @@ class FutureGroupData {
 
 class FutureData {
     var id: String = ""
-    var symbol: String = ""  // e.g. "nf_IF"
+    var symbol: String = ""
     var name: String = ""
     var groupId: String = ""
     var sortOrder: Int = 0
     var createdAt: Long = 0L
+}
+
+// ── 价格提醒（持久化）──
+class PriceAlertData {
+    var id: String = ""
+    var symbol: String = ""   // e.g. "sh600519"
+    var name: String = ""
+    var targetPrice: Double = 0.0
+    var alertType: String = "ABOVE"  // "ABOVE" | "BELOW"
+    var enabled: Boolean = true
+    var triggered: Boolean = false
+    var createdAt: Long = 0L
+}
+
+// ── 列宽记忆（持久化）──
+class ColumnWidthEntry {
+    var key: String = ""    // e.g. "stock.name", "fund.nav"
+    var width: Int = 80
 }
 
 // ── 行情数据（运行时，不持久化）──
@@ -66,7 +84,7 @@ data class StockQuote(
 data class FundQuote(
     val code: String,
     val name: String,
-    val nav: Double,           // 当前净值（估值或官方）
+    val nav: Double,
     val changePercent: Double,
     val date: String,
     val estimatedNav: Double? = null,
