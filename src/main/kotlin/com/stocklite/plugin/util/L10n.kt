@@ -45,6 +45,8 @@ object L10n {
     val btnCopySymbol   get() = s("复制代码", "Copy Symbol")
     val btnCopyName     get() = s("复制名称", "Copy Name")
     val btnOpenBrowser  get() = s("在浏览器中打开", "Open in Browser")
+    val btnClose        get() = s("关闭",     "Close")
+    val btnSend         get() = s("发送",     "Send")
     val btnExportData   get() = s("导出数据", "Export Data")
     val btnImportData   get() = s("导入数据", "Import Data")
     val lblGroup        get() = s("分组:",      "Group:")
@@ -170,6 +172,20 @@ object L10n {
     val settingsOptFundValue    get() = s("市值",     "Market Value")
     val settingsOptFundPnl      get() = s("盈亏",     "P&L")
     val settingsOptFundPnlPct   get() = s("盈亏%",    "P&L%")
+    // AI 分析面板
+    val btnAiDeepAnalysis get() = s("AI 深度分析",        "AI Deep Analysis")
+    val aiPanelTitle      get() = s("AI 分析",           "AI Analysis")
+    val aiAnalyzing       get() = s("正在分析，请稍候…",  "Analyzing, please wait…")
+    val aiNoApiKey        get() = s("请在 Settings → Tools → StockLite → AI 分析 中填写 DeepSeek API Key。",
+                                    "Please set your DeepSeek API Key in Settings → Tools → StockLite → AI Analysis.")
+    val aiNoData          get() = s("暂无行情数据，请等待刷新后重试。", "No market data yet. Please wait for the next refresh.")
+    val aiRefresh         get() = s("立即刷新分析",       "Refresh analysis now")
+    // Settings → AI
+    val settingsAiSection get() = s("AI 市场分析",        "AI Market Analysis")
+    val settingsAiApiKey  get() = s("DeepSeek API Key:", "DeepSeek API Key:")
+    val settingsAiModel   get() = s("模型:", "Model:")
+    val settingsAiHint    get() = s("填写后可在各面板底部展开 AI 分析栏，点击 ↻ 手动触发分析",
+                                    "Fill in to enable the AI analysis bar at the bottom of each panel. Click ↻ to analyze.")
     // 验证
     fun validationCostPositive() = s("成本价必须大于 0", "Cost price must be > 0")
     fun validationQtyNotNegative() = s("持仓数量不能为负数", "Quantity cannot be negative")

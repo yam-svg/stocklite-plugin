@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.*
@@ -34,6 +35,7 @@ class StockPanel : JPanel(BorderLayout()),
     StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
+    private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForStock)
 
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
@@ -278,8 +280,34 @@ class StockPanel : JPanel(BorderLayout()),
         popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
             BrowserUtil.browse(buildStockUrl(s.symbol))
         }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
+            com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
+                displayTitle = "${s.name} (${s.symbol})",
+                itemContext  = buildStockItemContext(s, q)
+            ).show()
+        }})
 
         popup.show(table, e.x, e.y)
+    }
+
+    private fun buildStockItemContext(s: StockData, q: StockQuote?): String {
+        val sb = StringBuilder()
+        sb.appendLine("名称：${s.name}")
+        sb.appendLine("代码：${s.symbol}")
+        if (q != null) {
+            val sign = if (q.changePercent >= 0) "+" else ""
+            sb.appendLine("现价：${"%.3f".format(q.price)}")
+            sb.appendLine("涨跌幅：$sign${"%.2f".format(q.changePercent)}%")
+            sb.appendLine("昨收：${"%.3f".format(q.prevClose)}")
+            if (s.costPrice > 0) {
+                sb.appendLine("持仓成本：${"%.3f".format(s.costPrice)}")
+                val pnlPct = (q.price - s.costPrice) / s.costPrice * 100
+                val pSign  = if (pnlPct >= 0) "+" else ""
+                sb.appendLine("持仓盈亏：$pSign${"%.2f".format(pnlPct)}%")
+            }
+        }
+        return sb.toString().trim()
     }
 
     private fun buildStockUrl(symbol: String): String {
@@ -325,9 +353,13 @@ class StockPanel : JPanel(BorderLayout()),
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
 
-        add(toolbar,      BorderLayout.NORTH)
-        add(centerWrapper,BorderLayout.CENTER)
-        add(bottomBar,    BorderLayout.SOUTH)
+        val mainWrapper = JPanel(BorderLayout())
+        mainWrapper.add(centerWrapper, BorderLayout.CENTER)
+        mainWrapper.add(aiPanel,       BorderLayout.SOUTH)
+
+        add(toolbar,     BorderLayout.NORTH)
+        add(mainWrapper, BorderLayout.CENTER)
+        add(bottomBar,   BorderLayout.SOUTH)
 
         // 快速筛选
         filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
@@ -478,8 +510,19 @@ class StockPanel : JPanel(BorderLayout()),
                 tableModel.fireTableDataChanged()
                 applyRenderers()
                 updateSummary()
+                aiPanel.updateContext(buildAiContext())
             }
         }
+    }
+
+    private fun buildAiContext(): String {
+        val valid = rows.filter { (_, q) -> q != null }.ifEmpty { return "" }
+        val sb = StringBuilder("A股/港股/美股行情（共 ${valid.size} 只）:\n")
+        for ((s, q) in valid) {
+            val sign = if (q!!.changePercent >= 0) "+" else ""
+            sb.appendLine("- ${s.name}(${s.symbol}): ${"%.3f".format(q.price)}  $sign${"%.2f".format(q.changePercent)}%")
+        }
+        return sb.toString().trim()
     }
 
     private fun scheduleRefresh() {

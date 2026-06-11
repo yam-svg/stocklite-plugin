@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.*
 import com.stocklite.plugin.ui.common.QuoteColumnType
@@ -92,6 +93,7 @@ class FundPanel : JPanel(BorderLayout()),
         }
     }
 
+    private val aiPanel      = AiAnalysisPanel(AiAnalysisService.promptForFund)
     private val table        = JBTable(tableModel)
     private val groupCombo   = JComboBox<String>()
     private var updatingCombo = false
@@ -210,7 +212,7 @@ class FundPanel : JPanel(BorderLayout()),
         table.setRowSelectionInterval(viewRow, viewRow)
         val modelRow = table.convertRowIndexToModel(viewRow)
         if (modelRow < 0 || modelRow >= rows.size) return
-        val (f, _) = rows[modelRow]
+        val (f, q) = rows[modelRow]
 
         val popup = JPopupMenu()
         popup.add(JMenuItem(L10n.btnEdit).also { it.addActionListener {
@@ -236,7 +238,38 @@ class FundPanel : JPanel(BorderLayout()),
         popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
             BrowserUtil.browse("https://fund.eastmoney.com/${f.code}.html")
         }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
+            com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
+                displayTitle = "${f.name} (${f.code})",
+                itemContext  = buildFundItemContext(f, q)
+            ).show()
+        }})
         popup.show(table, e.x, e.y)
+    }
+
+    private fun buildFundItemContext(f: com.stocklite.plugin.state.FundData,
+                                     q: com.stocklite.plugin.state.FundQuote?): String {
+        val sb = StringBuilder()
+        sb.appendLine("名称：${f.name}")
+        sb.appendLine("代码：${f.code}")
+        if (q != null) {
+            sb.appendLine("当前净值：${"%.4f".format(q.nav)}")
+            val offSign = if (q.changePercent >= 0) "+" else ""
+            sb.appendLine("官方涨跌：$offSign${"%.2f".format(q.changePercent)}%")
+            if (q.estimatedChangePercent != null) {
+                val estSign = if ((q.estimatedChangePercent ?: 0.0) >= 0) "+" else ""
+                sb.appendLine("今日估算：$estSign${"%.2f".format(q.estimatedChangePercent)}%")
+            }
+            if (!q.date.isNullOrBlank()) sb.appendLine("净值日期：${q.date}")
+            if (f.costNav > 0) {
+                sb.appendLine("成本净值：${"%.4f".format(f.costNav)}")
+                val pnlPct = (q.nav - f.costNav) / f.costNav * 100
+                val pSign  = if (pnlPct >= 0) "+" else ""
+                sb.appendLine("持仓盈亏：$pSign${"%.2f".format(pnlPct)}%")
+            }
+        }
+        return sb.toString().trim()
     }
 
     private fun buildUI() {
@@ -261,9 +294,16 @@ class FundPanel : JPanel(BorderLayout()),
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
         bottomBar.add(summaryLabel); bottomBar.add(statusLabel)
 
-        add(toolbar, BorderLayout.NORTH)
-        add(JBScrollPane(table), BorderLayout.CENTER)
-        add(bottomBar, BorderLayout.SOUTH)
+        val centerWrapper = JPanel(BorderLayout())
+        centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
+        centerWrapper.add(bottomBar, BorderLayout.SOUTH)
+
+        val mainWrapper = JPanel(BorderLayout())
+        mainWrapper.add(centerWrapper, BorderLayout.CENTER)
+        mainWrapper.add(aiPanel,       BorderLayout.SOUTH)
+
+        add(toolbar,     BorderLayout.NORTH)
+        add(mainWrapper, BorderLayout.CENTER)
 
         filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
             override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
@@ -392,6 +432,7 @@ class FundPanel : JPanel(BorderLayout()),
                 quotes.putAll(fetched)
                 rows = rows.map { (f, _) -> f to quotes[f.code] }
                 tableModel.fireTableDataChanged(); applyRenderers(); updateSummary()
+                aiPanel.updateContext(buildAiContext())
             }
         }
     }
@@ -401,5 +442,23 @@ class FundPanel : JPanel(BorderLayout()),
         refreshTimer = Timer(intervalMs.toInt()) { fetchQuotesAsync() }.also {
             it.isRepeats = true; it.start()
         }
+    }
+
+    private fun buildAiContext(): String {
+        if (rows.isEmpty()) return ""
+        val sb = StringBuilder("基金持仓行情（共 ${rows.size} 只）:\n")
+        for ((f, q) in rows) {
+            val nav     = q?.nav?.let { "${"%.4f".format(it)}" } ?: "--"
+            val offChg  = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
+            val estChg  = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
+            val date    = q?.date?.let { "净值日期:$it" } ?: ""
+            val pnl     = if (q != null && f.costNav > 0) {
+                val pct = (q.nav - f.costNav) / f.costNav * 100
+                val s   = if (pct >= 0) "+" else ""
+                "盈亏:$s${"%.2f".format(pct)}%"
+            } else ""
+            sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date  $pnl")
+        }
+        return sb.toString().trim()
     }
 }

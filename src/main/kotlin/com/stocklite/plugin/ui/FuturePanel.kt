@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.*
@@ -31,6 +32,7 @@ class FuturePanel : JPanel(BorderLayout()),
     StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
+    private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForFuture)
     private val state get() = StockliteState.getInstance()
     private var currentGroupId = SystemGroups.ALL_FUTURE_ID
     private var rows: List<Pair<FutureData, FutureQuote?>> = emptyList()
@@ -188,7 +190,7 @@ class FuturePanel : JPanel(BorderLayout()),
         table.setRowSelectionInterval(viewRow, viewRow)
         val modelRow = table.convertRowIndexToModel(viewRow)
         if (modelRow < 0 || modelRow >= rows.size) return
-        val (f, _) = rows[modelRow]
+        val (f, q) = rows[modelRow]
 
         val popup = JPopupMenu()
         popup.add(JMenuItem(L10n.btnDelete).also { it.addActionListener {
@@ -206,6 +208,22 @@ class FuturePanel : JPanel(BorderLayout()),
         }})
         popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
             BrowserUtil.browse(buildFutureUrl(f.symbol))
+        }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
+            val ctx = buildString {
+                appendLine("名称：${f.name}"); appendLine("合约：${f.symbol}")
+                if (q != null) {
+                    val sign = if (q.changePercent >= 0) "+" else ""
+                    appendLine("现价：${"%.2f".format(q.price)}")
+                    appendLine("涨跌幅：$sign${"%.2f".format(q.changePercent)}%")
+                    if (q.prevClose > 0) appendLine("昨结算：${"%.2f".format(q.prevClose)}")
+                }
+            }.trim()
+            com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
+                displayTitle = "${f.name} (${f.symbol})",
+                itemContext  = ctx
+            ).show()
         }})
         popup.show(table, e.x, e.y)
     }
@@ -246,9 +264,13 @@ class FuturePanel : JPanel(BorderLayout()),
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
 
-        add(toolbar,       BorderLayout.NORTH)
-        add(centerWrapper, BorderLayout.CENTER)
-        add(bottomBar,     BorderLayout.SOUTH)
+        val mainWrapper = JPanel(BorderLayout())
+        mainWrapper.add(centerWrapper, BorderLayout.CENTER)
+        mainWrapper.add(aiPanel,       BorderLayout.SOUTH)
+
+        add(toolbar,     BorderLayout.NORTH)
+        add(mainWrapper, BorderLayout.CENTER)
+        add(bottomBar,   BorderLayout.SOUTH)
 
         filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
             override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
@@ -353,8 +375,19 @@ class FuturePanel : JPanel(BorderLayout()),
                 rows = rows.map { (f, _) -> f to quotes[f.symbol] }
                 tableModel.fireTableDataChanged()
                 statusLabel.text = MarketTimeUtil.getMarketStatusText()
+                aiPanel.updateContext(buildAiContext())
             }
         }
+    }
+
+    private fun buildAiContext(): String {
+        val valid = rows.filter { (_, q) -> q != null }.ifEmpty { return "" }
+        val sb = StringBuilder("期货行情（共 ${valid.size} 个合约）:\n")
+        for ((f, q) in valid) {
+            val sign = if (q!!.changePercent >= 0) "+" else ""
+            sb.appendLine("- ${f.name}(${f.symbol}): ${"%.2f".format(q.price)}  $sign${"%.2f".format(q.changePercent)}%")
+        }
+        return sb.toString().trim()
     }
 
     private fun scheduleRefresh() {

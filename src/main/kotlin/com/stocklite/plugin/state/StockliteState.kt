@@ -42,6 +42,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true
 
+    // ── AI 分析 ──
+    var deepseekApiKey: String   = ""
+    var deepseekModel:  String   = "deepseek-chat"
+
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()
 

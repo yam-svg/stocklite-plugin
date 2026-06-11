@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.GlobalIndexQuote
@@ -28,6 +29,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     StockliteState.RefreshIntervalListener {
 
     private val chartPanel = InlineChartPanel()
+    private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForGlobal)
 
     private val MIN_INTERVAL_MS  = 5_000
     private val MAX_INTERVAL_MS  = 60_000
@@ -173,6 +175,21 @@ class GlobalPanel : JPanel(BorderLayout()),
         popup.add(JMenuItem(L10n.btnOpenBrowser).also { it.addActionListener {
             BrowserUtil.browse(buildIndexUrl(q.symbol))
         }})
+        popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
+            val sign   = if (q.changePercent >= 0) "+" else ""
+            val status = if (q.isOpen) "交易中" else "休市"
+            val ctx    = buildString {
+                appendLine("指数名称：${q.name}"); appendLine("代码：${q.symbol}")
+                appendLine("当前点位：${"%.2f".format(q.value)}")
+                appendLine("涨跌幅：$sign${"%.2f".format(q.changePercent)}%")
+                appendLine("市场状态：$status"); appendLine("所属市场：${q.market}")
+            }.trim()
+            com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
+                displayTitle = q.name,
+                itemContext  = ctx
+            ).show()
+        }})
         popup.show(table, e.x, e.y)
     }
 
@@ -201,8 +218,12 @@ class GlobalPanel : JPanel(BorderLayout()),
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
         centerWrapper.add(chartPanel, BorderLayout.SOUTH)
 
-        add(toolbar, BorderLayout.NORTH)
-        add(centerWrapper, BorderLayout.CENTER)
+        val mainWrapper = JPanel(BorderLayout())
+        mainWrapper.add(centerWrapper, BorderLayout.CENTER)
+        mainWrapper.add(aiPanel,       BorderLayout.SOUTH)
+
+        add(toolbar,     BorderLayout.NORTH)
+        add(mainWrapper, BorderLayout.CENTER)
 
         filterField.addDocumentListener(object : javax.swing.event.DocumentListener {
             override fun insertUpdate(e: javax.swing.event.DocumentEvent) = updateFilter()
@@ -240,9 +261,21 @@ class GlobalPanel : JPanel(BorderLayout()),
                     statusLabel.text = "${L10n.lblLastUpdate} $now   ${MarketTimeUtil.getMarketStatusText()}" +
                         if (currentIntervalMs > MIN_INTERVAL_MS)
                             "   (${L10n.statusInterval(currentIntervalMs / 1000)})" else ""
+                    aiPanel.updateContext(buildAiContext())
                 }
             }
         }
+    }
+
+    private fun buildAiContext(): String {
+        if (quotes.isEmpty()) return ""
+        val sb = StringBuilder("全球指数实时行情（共 ${quotes.size} 个）:\n")
+        for (q in quotes) {
+            val sign   = if (q.changePercent >= 0) "+" else ""
+            val status = if (q.isOpen) "[交易中]" else "[休市]"
+            sb.appendLine("- ${q.name}: ${"%.2f".format(q.value)}  $sign${"%.2f".format(q.changePercent)}%  $status")
+        }
+        return sb.toString().trim()
     }
 
     private fun startTimer() {

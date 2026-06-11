@@ -34,8 +34,18 @@ class StockliteConfigurable : Configurable {
     private val globalIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
-    private val alertsCheckBox   = JBCheckBox(L10n.settingsPriceAlerts)
+    private val alertsCheckBox       = JBCheckBox(L10n.settingsPriceAlerts)
     private val fundNavAlertCheckBox = JBCheckBox(L10n.settingsFundNavAlert)
+
+    // AI 分析
+    private val apiKeyField    = JPasswordField(30)
+    private val modelCombo     = JComboBox<String>()
+    private val fetchModelsBtn = JButton("↻").apply { toolTipText = "从 DeepSeek 获取可用模型列表" }
+    private val balanceLabel   = JLabel("").apply {
+        font = font.deriveFont(java.awt.Font.PLAIN, 11f)
+        foreground = java.awt.Color.GRAY
+    }
+    private val queryBalanceBtn = JButton("查询余额")
 
     // 股票可选列
     private val stockOptional get() = listOf(
@@ -121,6 +131,34 @@ class StockliteConfigurable : Configurable {
         gbc.gridy = row++; panel.add(alertsCheckBox,      gbc)
         gbc.gridy = row++; panel.add(fundNavAlertCheckBox, gbc)
 
+        // ── AI 分析 ──
+        sep(L10n.settingsAiSection, row); row += 2
+        gbc.gridy = row++
+        val aiKeyRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            add(JLabel(L10n.settingsAiApiKey))
+            add(Box.createHorizontalStrut(4))
+            add(apiKeyField)
+        }
+        panel.add(aiKeyRow, gbc)
+        gbc.gridy = row++
+        val aiModelRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            add(JLabel(L10n.settingsAiModel))
+            add(Box.createHorizontalStrut(4))
+            add(modelCombo)
+            add(Box.createHorizontalStrut(4))
+            add(fetchModelsBtn)
+        }
+        panel.add(aiModelRow, gbc)
+        fetchModelsBtn.addActionListener { loadModels(String(apiKeyField.password)) }
+        gbc.gridy = row++
+        val balanceRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            add(queryBalanceBtn); add(Box.createHorizontalStrut(8)); add(balanceLabel)
+        }
+        panel.add(balanceRow, gbc)
+        queryBalanceBtn.addActionListener { queryBalance(String(apiKeyField.password)) }
+        gbc.gridy = row++
+        panel.add(JLabel("<html><font color='gray'><i>${L10n.settingsAiHint}</i></font></html>"), gbc)
+
         // ── 数据管理 ──
         sep(L10n.settingsDataMgmt, row); row += 2
         gbc.gridy = row++
@@ -165,8 +203,10 @@ class StockliteConfigurable : Configurable {
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
-               alertsCheckBox.isSelected   != state.enablePriceAlerts ||
-               fundNavAlertCheckBox.isSelected != state.enableFundNavAlert
+               alertsCheckBox.isSelected      != state.enablePriceAlerts ||
+               fundNavAlertCheckBox.isSelected != state.enableFundNavAlert ||
+               String(apiKeyField.password)              != state.deepseekApiKey ||
+               modelCombo.selectedItem?.toString()       != state.deepseekModel
     }
 
     override fun apply() {
@@ -180,6 +220,8 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
         state.enablePriceAlerts  = alertsCheckBox.isSelected
         state.enableFundNavAlert = fundNavAlertCheckBox.isSelected
+        state.deepseekApiKey     = String(apiKeyField.password)
+        state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
         state.notifyColumnSettingsChanged()
         state.notifyLanguageChanged()
         state.notifyRefreshIntervalChanged()
@@ -198,5 +240,51 @@ class StockliteConfigurable : Configurable {
         globalIntervalSpinner.value = state.refreshIntervalGlobal
         alertsCheckBox.isSelected       = state.enablePriceAlerts
         fundNavAlertCheckBox.isSelected = state.enableFundNavAlert
+        apiKeyField.text                = state.deepseekApiKey
+        // 若 combo 为空（首次打开），先用保存的值填入作为占位；有 Key 时自动拉取列表
+        val savedModel = state.deepseekModel.ifBlank { "deepseek-chat" }
+        if (modelCombo.itemCount == 0) modelCombo.addItem(savedModel)
+        modelCombo.selectedItem = savedModel
+        if (state.deepseekApiKey.isNotBlank()) loadModels(state.deepseekApiKey)
+    }
+
+    /**
+     * 后台线程请求 DeepSeek /models，回调 EDT 更新 modelCombo。
+     * 保留当前已选模型；若列表中没有则追加。
+     */
+    private fun queryBalance(apiKey: String) {
+        if (apiKey.isBlank()) { balanceLabel.text = "请先填写 API Key"; return }
+        queryBalanceBtn.isEnabled = false
+        balanceLabel.text = "查询中…"
+        com.intellij.openapi.application.ApplicationManager.getApplication()
+            .executeOnPooledThread {
+                val result = com.stocklite.plugin.service.AiAnalysisService.fetchBalance(apiKey)
+                javax.swing.SwingUtilities.invokeLater {
+                    queryBalanceBtn.isEnabled = true
+                    balanceLabel.text = result ?: "查询失败，请检查 API Key 或网络"
+                    balanceLabel.foreground = if (result != null) java.awt.Color.GRAY
+                                             else java.awt.Color(0xCC, 0x33, 0x33)
+                }
+            }
+    }
+
+    private fun loadModels(apiKey: String) {
+        if (apiKey.isBlank()) return
+        fetchModelsBtn.isEnabled = false
+        val previousSelection = modelCombo.selectedItem?.toString()
+        com.intellij.openapi.application.ApplicationManager.getApplication()
+            .executeOnPooledThread {
+                val models = com.stocklite.plugin.service.AiAnalysisService.fetchModels(apiKey)
+                javax.swing.SwingUtilities.invokeLater {
+                    fetchModelsBtn.isEnabled = true
+                    if (models.isNullOrEmpty()) return@invokeLater
+                    modelCombo.removeAllItems()
+                    models.forEach { modelCombo.addItem(it) }
+                    // 恢复之前选中的模型（若仍在列表中）
+                    val target = previousSelection?.takeIf { models.contains(it) }
+                        ?: models.firstOrNull() ?: return@invokeLater
+                    modelCombo.selectedItem = target
+                }
+            }
     }
 }
