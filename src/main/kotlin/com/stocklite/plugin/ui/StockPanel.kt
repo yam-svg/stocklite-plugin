@@ -14,7 +14,6 @@ import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.dialogs.SetAlertDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
-import com.stocklite.plugin.util.AlertManager
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.*
@@ -479,8 +478,6 @@ class StockPanel : JPanel(BorderLayout()),
                 tableModel.fireTableDataChanged()
                 applyRenderers()
                 updateSummary()
-                // 价格提醒检测
-                AlertManager.checkAlerts(fetched.mapValues { it.value.price })
             }
         }
     }

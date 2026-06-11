@@ -13,6 +13,23 @@ import com.stocklite.plugin.state.StockliteState
 object AlertManager {
 
     /**
+     * 基金净值更新通知。
+     * 由 FundPanel 在检测到某支基金的 navDate 变为今日时调用。
+     * @param name       基金名称
+     * @param changePct  官方涨跌幅（%）
+     */
+    fun notifyFundNavUpdate(name: String, changePct: Double) {
+        if (!StockliteState.getInstance().enableFundNavAlert) return
+        val msg = L10n.dlgFundNavAlertMsg(name, changePct)
+        try {
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("StockLite Alerts")
+                .createNotification(L10n.dlgFundNavAlertTitle, msg, NotificationType.INFORMATION)
+                .notify(null)
+        } catch (_: Exception) {}
+    }
+
+    /**
      * @param quotes  Map<symbol, price>，本次刷新到的行情
      */
     fun checkAlerts(quotes: Map<String, Double>) {

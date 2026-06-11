@@ -40,6 +40,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     // ── 功能开关 ──
     var enablePriceAlerts: Boolean = true
+    var enableFundNavAlert: Boolean = true
 
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()

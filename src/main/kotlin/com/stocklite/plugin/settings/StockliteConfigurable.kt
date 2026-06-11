@@ -34,7 +34,8 @@ class StockliteConfigurable : Configurable {
     private val globalIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
-    private val alertsCheckBox = JBCheckBox(L10n.settingsPriceAlerts)
+    private val alertsCheckBox   = JBCheckBox(L10n.settingsPriceAlerts)
+    private val fundNavAlertCheckBox = JBCheckBox(L10n.settingsFundNavAlert)
 
     // 股票可选列
     private val stockOptional get() = listOf(
@@ -117,7 +118,8 @@ class StockliteConfigurable : Configurable {
 
         // ── 功能开关 ──
         sep(L10n.settingsFeatures, row); row += 2
-        gbc.gridy = row++; panel.add(alertsCheckBox, gbc)
+        gbc.gridy = row++; panel.add(alertsCheckBox,      gbc)
+        gbc.gridy = row++; panel.add(fundNavAlertCheckBox, gbc)
 
         // ── 数据管理 ──
         sep(L10n.settingsDataMgmt, row); row += 2
@@ -163,7 +165,8 @@ class StockliteConfigurable : Configurable {
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
-               alertsCheckBox.isSelected != state.enablePriceAlerts
+               alertsCheckBox.isSelected   != state.enablePriceAlerts ||
+               fundNavAlertCheckBox.isSelected != state.enableFundNavAlert
     }
 
     override fun apply() {
@@ -175,7 +178,8 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalStock  = stockIntervalSpinner.value  as Int
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
-        state.enablePriceAlerts = alertsCheckBox.isSelected
+        state.enablePriceAlerts  = alertsCheckBox.isSelected
+        state.enableFundNavAlert = fundNavAlertCheckBox.isSelected
         state.notifyColumnSettingsChanged()
         state.notifyLanguageChanged()
         state.notifyRefreshIntervalChanged()
@@ -192,6 +196,7 @@ class StockliteConfigurable : Configurable {
         stockIntervalSpinner.value  = state.refreshIntervalStock
         fundIntervalSpinner.value   = state.refreshIntervalFund
         globalIntervalSpinner.value = state.refreshIntervalGlobal
-        alertsCheckBox.isSelected = state.enablePriceAlerts
+        alertsCheckBox.isSelected       = state.enablePriceAlerts
+        fundNavAlertCheckBox.isSelected = state.enableFundNavAlert
     }
 }

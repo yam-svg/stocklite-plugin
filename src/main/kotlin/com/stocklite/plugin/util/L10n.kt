@@ -106,6 +106,16 @@ object L10n {
         s("${name} 价格 ${"%.3f".format(price)} 已${if (price >= target) "高于" else "低于"}目标价 ${"%.3f".format(target)}",
           "${name} price ${"%.3f".format(price)} ${if (price >= target) "crossed above" else "fell below"} target ${"%.3f".format(target)}")
     val dlgAlertNotifyTitle get() = s("价格提醒", "Price Alert")
+    // 基金净值更新提醒
+    val dlgFundNavAlertTitle get() = s("基金净值更新", "Fund NAV Updated")
+    fun dlgFundNavAlertMsg(name: String, changePct: Double): String {
+        val sign = if (changePct >= 0) "+" else ""
+        return s(
+            "${name} 今日官方净值已更新，涨跌幅 $sign${"%.2f".format(changePct)}%",
+            "${name} official NAV updated today: $sign${"%.2f".format(changePct)}%"
+        )
+    }
+    val settingsFundNavAlert get() = s("基金净值更新时通知", "Notify when fund NAV is published")
     // 导入导出
     val dlgExportTitle    get() = s("导出数据",    "Export Data")
     val dlgImportTitle    get() = s("导入数据",    "Import Data")

@@ -4,124 +4,178 @@
     <version>1.2.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
-    <description><![CDATA[<p><b>StockLite</b> — A real-time market data panel built natively into your JetBrains IDE.
-Monitor A-shares, funds, futures, and global indices without ever leaving your editor.</p>
+    <description><![CDATA[
+<p><b>StockLite</b> — A real-time market data panel built natively into your JetBrains IDE.
+Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever leaving your editor.</p>
 
-<h3>Key Features</h3>
-
-<h4>Stocks (A-shares)</h4>
+<h3>Stocks (A-shares / HK / US)</h3>
 <ul>
-  <li>Real-time quotes from Shanghai and Shenzhen exchanges, auto-refresh every 5 seconds</li>
-  <li>Portfolio tracking: cost price, quantity, floating P&amp;L, P&amp;L percentage</li>
+  <li>Real-time quotes: Shanghai &amp; Shenzhen A-shares via Sina API; HK stocks via Tencent API; US stocks via Yahoo Finance</li>
+  <li>Portfolio tracking: cost price, quantity, market value, floating P&amp;L, P&amp;L%</li>
   <li>Custom groups + virtual groups (All / My Holdings)</li>
-  <li>In-dialog search by name or ticker code</li>
+  <li>Search &amp; add by name or ticker (supports A-share, HK 5-digit code, US ticker)</li>
+  <li>Configurable visible columns; defaults to Name / Price / Change%</li>
+  <li>Right-click any row: Edit · Delete · Set Price Alert · Copy Symbol · Copy Name · Open in Browser</li>
+  <li>Quick filter bar: type to instantly narrow rows by name or symbol</li>
+  <li>Column widths are remembered and restored across sessions</li>
 </ul>
 
-<h4>Funds</h4>
+<h3>Funds</h3>
 <ul>
-  <li>EastMoney real-time NAV estimates, auto-refresh every 30 seconds</li>
-  <li>Dual change columns: <b>Official Change</b> (F10 historical NAV) + <b>Today Estimate</b> (intraday)</li>
-  <li>NAV date column: updates to today automatically once official NAV is published</li>
-  <li>Today Estimate shows <b>Official</b> indicator after official NAV is released</li>
-  <li>Automatic QDII fund detection with dedicated data channel</li>
+  <li>EastMoney real-time NAV estimates; auto-refresh every 30 seconds (configurable)</li>
+  <li>Dual change columns: <b>Official Change</b> (T-1 historical NAV) + <b>Today Estimate</b> (intraday)</li>
+  <li>Today Estimate automatically switches to <b>Official</b> label once the daily NAV is published</li>
+  <li>QDII fund auto-detection with dedicated data channel</li>
+  <li>Portfolio tracking identical to the Stocks module (cost NAV, shares, P&amp;L)</li>
+  <li>Right-click: Edit · Delete · Copy Code · Copy Name · Open in Browser (EastMoney fund page)</li>
 </ul>
 
-<h4>Futures</h4>
+<h3>Futures</h3>
 <ul>
-  <li>Domestic futures (index + commodity) and international futures (gold, oil, indices, etc.)</li>
-  <li>Pure market data board, 5-second auto-refresh</li>
-  <li>Click the Change% column for an intraday chart of any contract</li>
+  <li>Domestic futures (CSI index contracts + commodity) and international futures (gold, crude oil, overseas indices, etc.) in one board</li>
+  <li>5-second auto-refresh (configurable); pure market data — no position management</li>
+  <li>Right-click: Delete · Copy Symbol · Copy Name · Open in Browser (EastMoney futures page)</li>
+  <li>Click the Change% column to open an inline intraday chart at the panel bottom</li>
 </ul>
 
-<h4>Global Indices</h4>
+<h3>Global Indices</h3>
 <ul>
-  <li>11 major indices: CSI 300, SSE, SZSE, ChiNext, HSI, HSTECH, S&amp;P 500, Dow Jones, NASDAQ, Nikkei 225, KOSPI</li>
-  <li>Holiday-aware open/close status via Yahoo Finance marketState (not just timezone math)</li>
-  <li>5-second auto-refresh with automatic rate-limit backoff on HTTP 429</li>
+  <li>11 built-in indices: CSI 300, SSE, SZSE, ChiNext, HSI, HSTECH, S&amp;P 500, Dow Jones, NASDAQ, Nikkei 225, KOSPI</li>
+  <li>Holiday-aware open/closed status via Yahoo Finance <code>marketState</code> — no hard-coded timezone rules</li>
+  <li>Auto rate-limit backoff on HTTP 429 (up to 60 s), with gradual recovery</li>
+  <li>Right-click: Copy Name · Open in Browser (Yahoo Finance / EastMoney)</li>
 </ul>
 
-<h4>Customization (Settings &rarr; Tools &rarr; StockLite)</h4>
+<h3>Inline Charts</h3>
 <ul>
-  <li><b>Column visibility</b>: only Name, Price, and Change shown by default; enable extras as needed</li>
-  <li><b>Color schemes</b>: Red-up/Green-down (Chinese convention) &middot; Green-up/Red-down (Western) &middot; No color</li>
-  <li>All settings apply instantly without restarting the IDE</li>
+  <li>Click the <b>Change%</b> column on any row to open a chart panel embedded at the bottom — no pop-up window</li>
+  <li><b>Four periods</b>: Intraday · Daily K · Weekly K · Monthly K, switchable with one click</li>
+  <li>Intraday: Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
+  <li>Historical K-line: Y-axis shows absolute price; A-shares use Sina KLine API, others use Yahoo Finance</li>
+  <li>Colors follow the global scheme (Red-up/Green-down or Green-up/Red-down)</li>
+  <li>Crosshair tooltip: time + change% + raw price; powered by lightweight-charts v4.2.0 (TradingView OSS)</li>
 </ul>
 
-<h4>General</h4>
+<h3>Price Alerts</h3>
 <ul>
-  <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
-  <li>Data saved in IDE config directory — survives restarts</li>
-  <li>Click the <b>Change%</b> column on any stock, future, or global index to open an inline intraday chart at the panel bottom; click ✕ to close</li>
-  <li>Intraday chart Y-axis shows change% relative to previous close, with baseline at 0%; powered by lightweight-charts v4.2.0</li>
-  <li>Smart price decimal places: auto-detects 2 / 3 / 4 decimals (ETF-compatible)</li>
-  <li><b>Bilingual UI</b>: switch between Chinese (中文) and English in Settings &rarr; Tools &rarr; StockLite; all labels, columns, buttons, and dialogs update instantly</li>
-  <li>Click column headers to sort; use Up/Down buttons to reorder rows (persisted)</li>
-  <li>Data saved in IDE config directory — survives restarts</li>
-  <li>Pure native Kotlin/Swing, no Electron, lightweight and fast</li>
+  <li>Right-click any stock or fund row and choose <b>Set Alert</b></li>
+  <li>Specify a target price and direction (Above / Below); triggers an IDE balloon notification when hit</li>
+  <li>Each alert fires once and then deactivates — no repeated interruptions</li>
+  <li>Can be disabled globally in Settings &rarr; Tools &rarr; StockLite &rarr; Features</li>
+</ul>
+
+<h3>Data Management</h3>
+<ul>
+  <li><b>Export</b>: back up all stocks, funds, futures, groups, and settings to a JSON file</li>
+  <li><b>Import</b>: restore from a JSON backup (appends to existing data — nothing is overwritten)</li>
+  <li>Available in Settings &rarr; Tools &rarr; StockLite &rarr; Data Management</li>
+</ul>
+
+<h3>Settings (Settings &rarr; Tools &rarr; StockLite)</h3>
+<ul>
+  <li><b>Language</b>: Chinese (中文) / English — all labels, columns, buttons, and dialogs switch instantly, no restart needed</li>
+  <li><b>Color scheme</b>: Red-up/Green-down (Chinese convention) · Green-up/Red-down (Western) · No color</li>
+  <li><b>Refresh intervals</b>: configure stocks, funds, and global indices independently (seconds)</li>
+  <li><b>Column visibility</b>: toggle optional columns (Symbol, Qty, Cost, Market Value, P&amp;L, P&amp;L%) per panel</li>
+  <li><b>Price alerts toggle</b>: enable or disable IDE balloon notifications</li>
+  <li>All settings apply immediately — no restart required</li>
+</ul>
+
+<h3>General</h3>
+<ul>
+  <li>Click column headers to sort; ↑↓ buttons reorder rows (sort order persisted)</li>
+  <li>Column widths are remembered per column across sessions</li>
+  <li>Panel pauses auto-refresh when hidden, resumes immediately when shown — low background resource usage</li>
+  <li>Smart decimal places: auto-selects 2 / 3 / 4 decimals (ETF and low-price stock compatible)</li>
+  <li>Data stored in the IDE config directory (<code>stocklite.xml</code>) — survives IDE restarts</li>
+  <li>Pure native Kotlin/Swing — no Electron, no separate process, fast and lightweight</li>
 </ul>
 
 <hr/>
 
 <h3>中文介绍</h3>
 
-<p><b>StockLite</b> — 专为开发者设计的 IDE 内行情看板，无需离开编辑器，实时掌握 A 股、基金、期货和全球指数动态。</p>
+<p><b>StockLite</b> — 专为开发者设计的 IDE 内行情看板，无需离开编辑器，实时掌握 A 股、港股、美股、基金、期货和全球指数动态。</p>
 
-<h4>股票（沪深 A 股）</h4>
+<h3>股票（A 股 / 港股 / 美股）</h3>
 <ul>
-  <li>实时行情，每 5 秒自动刷新，数据来自新浪行情 API（支持 GBK 解码）</li>
-  <li>持仓管理：填写成本价和持股数量，自动计算浮动盈亏、盈亏百分比、总市值</li>
-  <li>自定义分组（新建/重命名/删除）+ 虚拟分组"全部"和"我的持仓"</li>
-  <li>搜索添加：在对话框中按名称或代码搜索，快速添加股票</li>
-  <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启成本价、持仓、市值、盈亏等列</li>
-  <li>点击"涨跌幅"列，在面板底部展开当日分钟级走势图，再次点击或按 ✕ 关闭</li>
+  <li>实时行情：沪深 A 股（新浪 API）、港股（腾讯 API）、美股（Yahoo Finance）</li>
+  <li>持仓管理：填写成本价和持股数量，自动计算总市值、浮动盈亏、盈亏百分比</li>
+  <li>自定义分组 + 虚拟分组"全部"和"我的持仓"</li>
+  <li>搜索添加：支持 A 股名称/代码、港股五位数代码、美股 Ticker</li>
+  <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启更多列</li>
+  <li>右键菜单：编辑 · 删除 · 设置到价提醒 · 复制代码 · 复制名称 · 在浏览器中打开</li>
+  <li>工具栏快速筛选：实时按名称或代码过滤表格行</li>
+  <li>列宽拖动后自动记忆，下次打开时恢复</li>
 </ul>
 
-<h4>基金</h4>
+<h3>基金</h3>
 <ul>
-  <li>实时估值，每 30 秒刷新，数据来自天天基金（支持普通基金和 QDII 基金专用通道）</li>
-  <li>双涨跌幅列：<b>官方涨跌</b>（历史净值，T-1 日）+ <b>今日估算</b>（盘中实时估算）</li>
-  <li>净值日期列：官方净值发布后自动更新为今日，"今日估算"同步标注"官方"字样</li>
-  <li>持仓管理与盈亏计算，与股票模块逻辑一致</li>
+  <li>实时估值，默认每 30 秒刷新（可配置），数据来自天天基金</li>
+  <li>双涨跌幅列：<b>官方涨跌</b>（T-1 历史净值）+ <b>今日估算</b>（盘中实时）</li>
+  <li>官方净值发布后，"今日估算"自动标注"官方"字样，净值日期同步更新为今日</li>
+  <li>自动识别 QDII 基金，切换专用数据通道</li>
+  <li>持仓管理与盈亏计算，逻辑与股票模块一致</li>
+  <li>右键菜单：编辑 · 删除 · 复制代码 · 复制名称 · 在浏览器中打开（天天基金页）</li>
 </ul>
 
-<h4>期货</h4>
+<h3>期货</h3>
 <ul>
   <li>国内期货（股指 + 商品）和国际期货（黄金、原油、海外指数等）统一看板</li>
-  <li>5 秒自动刷新，纯行情展示（不含方向/盈亏管理）</li>
-  <li>点击"涨跌幅"列，展开日内分钟线走势图（国内期货和国际期货使用不同数据源）</li>
+  <li>默认每 5 秒刷新（可配置），纯行情展示，不含持仓管理</li>
+  <li>右键菜单：删除 · 复制代码 · 复制名称 · 在浏览器中打开（东方财富期货页）</li>
+  <li>点击"涨跌幅"列，面板底部展开日内分钟线走势图</li>
 </ul>
 
-<h4>全球指数</h4>
+<h3>全球指数</h3>
 <ul>
   <li>内置 11 大指数：沪深 300、上证、深证、创业板、恒生、恒生科技、标普 500、道琼斯、纳斯达克、日经 225、韩国综合</li>
-  <li>通过 Yahoo Finance marketState 判断实际开/休市状态，节假日自动休市，无需手动维护时区规则</li>
-  <li>5 秒刷新，遇 HTTP 429 限流时自动指数退避（最长 60 秒），恢复后逐步缩短间隔</li>
-  <li>点击"涨跌幅"列，通过 Yahoo Finance 获取当日 5 分钟 K 线并展示走势图</li>
+  <li>通过 Yahoo Finance marketState 判断实际开/休市状态，节假日自动休市，无需维护时区规则</li>
+  <li>遇 HTTP 429 限流时自动指数退避（最长 60 秒），恢复后逐步缩短间隔</li>
+  <li>右键菜单：复制名称 · 在浏览器中打开（Yahoo Finance / 东方财富）</li>
 </ul>
 
-<h4>日内走势图</h4>
+<h3>内嵌走势图</h3>
 <ul>
-  <li>内嵌于各行情面板底部（高度 260px），无需弹窗，交互更直观</li>
-  <li>Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
-  <li>涨跌颜色跟随全局配色方案（红涨绿跌 / 绿涨红跌 / 无色）</li>
-  <li>鼠标悬停 Tooltip 显示：时间 + 涨跌幅% + 原始价格</li>
-  <li>同一 JBCefBrowser 实例复用，切换标的无重建开销</li>
-  <li>基于 lightweight-charts v4.2.0（TradingView 开源图表库）</li>
+  <li>点击任意标的的"涨跌幅"列，在面板底部内嵌展开走势图，无需弹窗</li>
+  <li><b>四档周期切换</b>：日内 · 日K · 周K · 月K，一键切换</li>
+  <li>日内图：Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
+  <li>历史 K 线：Y 轴显示绝对价格；A 股使用新浪 K 线 API，港美股及全球指数使用 Yahoo Finance</li>
+  <li>涨跌颜色跟随全局配色方案；鼠标悬停显示 Tooltip（时间 + 涨跌幅% + 原始价格）</li>
+  <li>图表基于 lightweight-charts v4.2.0（TradingView 开源库）</li>
 </ul>
 
-<h4>个性化设置（Settings → Tools → StockLite）</h4>
+<h3>到价提醒</h3>
 <ul>
-  <li>列显示控制：按需开启/关闭代码、持仓、成本价、市值、盈亏等列</li>
-  <li>涨跌配色方案三选一：红涨绿跌（A 股惯例）/ 绿涨红跌（欧美惯例）/ 无色（中性）</li>
-  <li>设置即时生效，无需重启 IDE</li>
+  <li>在股票或基金行上右键，选择"设置提醒"，填写目标价和方向（上穿 / 下穿）</li>
+  <li>到价时触发 IDE 右下角气泡通知，每条提醒仅触发一次，避免重复打扰</li>
+  <li>可在设置中全局关闭</li>
 </ul>
 
-<h4>通用</h4>
+<h3>数据管理</h3>
 <ul>
-  <li>列标题点击排序；↑↓ 按钮调整行顺序并持久化</li>
-  <li>价格自动适配小数位数（2/3/4 位），兼容 ETF、低价股等不同精度需求</li>
-  <li><b>中英文界面切换</b>：在 Settings → Tools → StockLite 中选择语言，所有标签页、列名、按钮、对话框即时切换，无需重启 IDE</li>
-  <li>数据存储在 IDE 配置目录（stocklite.xml），重启 IDE 数据不丢失</li>
+  <li><b>导出</b>：将所有股票、基金、期货、分组及设置保存为 JSON 文件</li>
+  <li><b>导入</b>：从 JSON 备份文件还原数据（追加模式，不覆盖现有数据）</li>
+  <li>入口：Settings → Tools → StockLite → 数据管理</li>
+</ul>
+
+<h3>设置（Settings → Tools → StockLite）</h3>
+<ul>
+  <li><b>界面语言</b>：中文 / English，所有文字即时切换，无需重启 IDE</li>
+  <li><b>涨跌配色</b>：红涨绿跌（A 股惯例）· 绿涨红跌（欧美惯例）· 无色</li>
+  <li><b>刷新间隔</b>：股票、基金、全球指数各自独立配置（秒）</li>
+  <li><b>列显示控制</b>：按需开启代码、持仓、成本价、市值、盈亏等可选列</li>
+  <li><b>到价提醒开关</b>：全局启用或禁用 IDE 气泡通知</li>
+  <li>所有设置即时生效，无需重启</li>
+</ul>
+
+<h3>通用</h3>
+<ul>
+  <li>列标题点击排序；↑↓ 按钮调整行位置并持久化</li>
+  <li>列宽记忆：拖动列宽后自动保存，下次恢复</li>
+  <li>面板隐藏时自动暂停刷新，切回时立即恢复，降低后台资源占用</li>
+  <li>价格小数位自动适配（2/3/4 位），兼容 ETF 及低价股</li>
+  <li>数据保存在 IDE 配置目录（<code>stocklite.xml</code>），重启不丢失</li>
   <li>纯原生 Kotlin/Swing 实现，无 Electron，无独立进程，轻量快速</li>
 </ul>
     ]]></description>
@@ -129,18 +183,17 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
     <change-notes><![CDATA[
 <h3>1.2.0</h3>
 <ul>
-  <li>新增价格提醒：达到目标价时触发 IDE 气泡通知，支持上穿 / 下穿两种模式</li>
-  <li>新增价格闪烁：行情更新时单元格短暂变色（涨红跌绿），跟随全局配色方案，可在设置中关闭</li>
-  <li>新增右键菜单：股票/基金/期货/全球指数均支持编辑、删除、设置提醒、复制代码/名称、在浏览器中打开</li>
-  <li>新增快速筛选：各面板工具栏新增搜索框，实时正则过滤表格行</li>
-  <li>新增列宽记忆：每列宽度拖动后自动持久化，下次打开时恢复</li>
-  <li>新增 K 线周期切换：图表面板支持 日内 / 日K / 周K / 月K 四档切换</li>
-  <li>新增港股 / 美股支持：股票搜索和行情获取扩展至港股（腾讯 API）和美股（Yahoo Finance）</li>
+  <li>新增港股 / 美股支持：搜索和行情获取扩展至港股（腾讯 API）和美股（Yahoo Finance）</li>
+  <li>新增到价提醒：达到目标价时触发 IDE 气泡通知，支持上穿 / 下穿两种触发方向</li>
+  <li>新增右键菜单：所有面板均支持右键 — 编辑、删除、设置提醒、复制代码/名称、在浏览器中打开</li>
+  <li>新增 K 线周期切换：图表面板支持日内 / 日K / 周K / 月K 四档一键切换</li>
+  <li>新增快速筛选：各面板工具栏新增搜索框，实时过滤表格行</li>
+  <li>新增列宽记忆：每列拖动宽度后自动持久化，重启 IDE 后恢复</li>
   <li>新增数据导入/导出：Settings → StockLite → 数据管理，支持 JSON 格式完整备份与还原</li>
-  <li>新增网络断线提示：各面板顶部在检测到断网时显示"⚠ 网络断开"标签</li>
   <li>新增刷新间隔设置：可在设置中分别配置股票、基金、全球指数的刷新频率（秒）</li>
   <li>新增输入验证：添加/编辑时对成本价、持仓数量、提醒目标价进行合法性校验</li>
-  <li>生命周期优化：面板隐藏时自动暂停刷新，显示时立即恢复，降低后台资源消耗</li>
+  <li>生命周期优化：面板隐藏时自动暂停刷新，切回时立即恢复，降低后台资源占用</li>
+  <li>修复"在浏览器中打开"功能：改用 BrowserUtil，修正 A 股/港股/期货/全球指数各自的目标页面地址</li>
 </ul>
 
 <h3>1.1.0</h3>
@@ -178,6 +231,10 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
                 icon="/icons/stocklite.svg"/>
         <applicationService
                 serviceImplementation="com.stocklite.plugin.state.StockliteState"/>
+        <applicationService
+                serviceImplementation="com.stocklite.plugin.service.FundNavWatcherService"/>
+        <applicationService
+                serviceImplementation="com.stocklite.plugin.service.StockAlertWatcherService"/>
         <applicationConfigurable
                 parentId="tools"
                 instance="com.stocklite.plugin.settings.StockliteConfigurable"
@@ -186,5 +243,6 @@ Monitor A-shares, funds, futures, and global indices without ever leaving your e
         <notificationGroup id="StockLite Alerts"
                            displayType="BALLOON"
                            isLogByDefault="true"/>
+        <postStartupActivity implementation="com.stocklite.plugin.StockliteStartupActivity"/>
     </extensions>
 </idea-plugin>
