@@ -110,6 +110,25 @@ data class GlobalIndexQuote(
     val market: String
 )
 
+/** 基金单只持股明细（来自东方财富季报数据） */
+data class FundHoldingItem(
+    val rank:       Int,
+    val stockCode:  String,
+    val stockName:  String,
+    val navPercent: Double,   // 占净值比例 (%)
+    val holdShares: String,   // 持仓股数，原始格式字符串（如 "1,234.56"，单位万股）
+    val holdValue:  String,   // 持仓市值，原始格式字符串（如 "56,789.00"，单位万元）
+    val change:     String    // 较上期变化（"增加"/"减少"/"新进"/"退出"/"不变" 或空）
+)
+
+data class FundHoldingsResult(
+    val reportDate:  String,                  // 报告期，如 "2024-03-31"
+    val reportLabel: String,                  // 如 "2024年第1季度"
+    val items:       List<FundHoldingItem>,
+    val totalCount:  Int,                     // 实际持仓股数（含未展示部分）
+    val error:       String? = null
+)
+
 data class StockSearchResult(val symbol: String, val name: String)
 data class FundSearchResult(val code: String, val name: String)
 data class FutureSearchResult(val symbol: String, val name: String)

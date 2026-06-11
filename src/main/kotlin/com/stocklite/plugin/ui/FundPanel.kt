@@ -21,6 +21,7 @@ import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
 import com.intellij.ide.BrowserUtil
 import javax.swing.*
 import javax.swing.event.TableColumnModelEvent
@@ -204,6 +205,27 @@ class FundPanel : JPanel(BorderLayout()),
         table.addMouseListener(object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
             override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
+            override fun mouseClicked(e: MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(e)) return
+                // 单击名称列 → 弹出持仓详情
+                val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
+                if (table.getColumnName(viewCol) != L10n.colName) return
+                val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+                val modelRow = table.convertRowIndexToModel(viewRow)
+                if (modelRow < 0 || modelRow >= rows.size) return
+                val (f, _) = rows[modelRow]
+                com.stocklite.plugin.ui.dialogs.FundHoldingsDialog(f.name, f.code).show()
+            }
+        })
+
+        // 鼠标悬停在名称列时显示手型光标
+        table.addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
+            override fun mouseMoved(e: MouseEvent) {
+                val col = table.columnAtPoint(e.point)
+                table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colName)
+                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                else Cursor.getDefaultCursor()
+            }
         })
     }
 

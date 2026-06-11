@@ -12,13 +12,17 @@ import javax.swing.Timer
  * 作为 ApplicationService 在 IDE 启动时自动注册，全程后台轮询，
  * 不依赖 FundPanel 是否打开，净值更新时主动推送 IDE 气泡通知。
  *
- * 轮询间隔与 Settings → 刷新间隔 → 基金 保持一致。
- * 首次轮询仅初始化日期快照，不触发通知（避免 IDE 启动时误报）。
+ * 去重策略：用 "code:navDate" 组合键记录已通知集合，
+ * 同一基金同一净值日期无论 date 字段如何在不同 poll 之间变动，
+ * 均只通知一次。避免多接口返回不同日期格式导致的重复通知。
  */
 class FundNavWatcherService : Disposable {
 
-    /** code -> 上次已知的净值日期（yyyy-MM-dd） */
-    private val prevNavDates = mutableMapOf<String, String>()
+    /**
+     * 已触发过通知的键集合，格式为 "code:yyyy-MM-dd"。
+     * 初始化时预填当日所有基金，保证 IDE 启动不误报。
+     */
+    private val notifiedKeys = mutableSetOf<String>()
 
     /** true = 首次轮询已完成，后续轮询可以做对比通知 */
     @Volatile private var initialized = false
@@ -28,12 +32,10 @@ class FundNavWatcherService : Disposable {
 
     init {
         // IDE 启动后延迟 15 秒再做第一次轮询，让 IDE 完成初始化
-        Timer(15_000) {
-            doPoll()
-        }.also { it.isRepeats = false; it.start() }
+        Timer(15_000) { doPoll() }.also { it.isRepeats = false; it.start() }
     }
 
-    // ── 轮询 ────────────────────────────────────────────────────────
+    // ── 轮询 ────────────────────────────────────────────────────────────
 
     private fun doPoll() {
         val state = StockliteState.getInstance()
@@ -52,22 +54,25 @@ class FundNavWatcherService : Disposable {
 
             SwingUtilities.invokeLater {
                 if (!initialized) {
-                    // 首次：只记录当前日期，不发通知
+                    // 首次：把当前所有 code:date 全部预填到 notifiedKeys，不发任何通知
                     fetched.forEach { (code, q) ->
                         val d = q.date?.take(10) ?: ""
-                        if (d.isNotEmpty()) prevNavDates[code] = d
+                        if (d.isNotEmpty()) notifiedKeys.add("$code:$d")
                     }
                     initialized = true
                 } else {
-                    // 后续：对比日期，有变化则通知
                     fetched.forEach { (code, q) ->
-                        val newDate  = q.date?.take(10) ?: ""
-                        val prevDate = prevNavDates[code]
-                        if (prevDate != null && newDate.isNotEmpty() && newDate != prevDate) {
+                        val d = q.date?.take(10) ?: ""
+                        if (d.isEmpty()) return@forEach          // 日期缺失，跳过
+
+                        val key = "$code:$d"
+                        if (key !in notifiedKeys) {
+                            // 这是该基金尚未通知过的新净值日期 → 发通知
+                            notifiedKeys.add(key)
                             val name = funds.find { it.code == code }?.name ?: code
                             AlertManager.notifyFundNavUpdate(name, q.changePercent)
                         }
-                        if (newDate.isNotEmpty()) prevNavDates[code] = newDate
+                        // 即使已在 notifiedKeys，也不需要做任何事：本次不通知，下次也不会
                     }
                 }
                 scheduleNext()
@@ -81,7 +86,7 @@ class FundNavWatcherService : Disposable {
         pollTimer.restart()
     }
 
-    // ── Disposable ──────────────────────────────────────────────────
+    // ── Disposable ──────────────────────────────────────────────────────
 
     override fun dispose() {
         pollTimer.stop()
