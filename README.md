@@ -34,6 +34,10 @@
 | 中英文界面切换（Settings → StockLite → 界面语言） | ✅          |
 | 基金持仓明细（右键 → 持仓明细，含涨跌幅列）       | ✅          |
 | AI 深度分析（DeepSeek，多轮对话，5 种专业 Prompt） | ✅          |
+| AI 联网搜索（Tavily 工具调用，可配置搜索轮次）     | ✅          |
+| AI 深度推理模式（deepseek-reasoner）          | ✅          |
+| AI 回复 HTML 富文本渲染（Markdown 格式化）      | ✅          |
+| AI 分析实时进度显示                          | ✅          |
 | 基金到价提醒去重（相邻刷新不重复弹出）            | ✅          |
 | 拖拽排序                      | ❌（已移除）     |
 | 资讯/新闻                     | ❌（已排除）     |
@@ -82,7 +86,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.3.0.zip`
+输出路径：`build/distributions/stocklite-plugin-1.4.0.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
@@ -136,6 +140,40 @@ src/main/kotlin/com/stocklite/plugin/
         ├── SetAlertDialog.kt       # 设置价格到价提醒
         └── ImportExportDialog.kt   # 数据导入/导出
 ```
+
+## 新功能说明（v1.4.0）
+
+### AI 对话富文本渲染
+AI 回复改用 `JTextPane` + HTML 渲染，完整支持 Markdown 格式：
+
+| AI 输出 | 渲染效果 |
+|--------|---------|
+| `**粗体**` | **粗体** |
+| `*斜体*` | *斜体* |
+| `` `代码` `` | 灰底等宽字体 |
+| `【标题】` | 蓝色加粗，段落标题突出显示 |
+| `- 条目` / `1. 条目` | `•` 列表项 |
+| 双空行 | 段落间距 |
+
+颜色跟随 IDE 亮色/暗色主题自动适配。
+
+### AI 分析进度显示
+等待 AI 回复时，对话区实时显示当前步骤：
+- `🤖 AI 正在思考（deepseek-chat）...` — 普通对话
+- `🔍 正在搜索：贵州茅台 2026年最新公告` — 联网搜索中
+- `💭 AI 正在整合搜索结果...` — 搜索完成，等待最终回答
+
+### AI 功能增强设置（Settings → StockLite → AI 功能增强）
+
+| 选项 | 说明 |
+|------|------|
+| 注入实时行情数据 | 在 System Prompt 末尾附加当前时间，AI 知道数据是实时的 |
+| 联网搜索 | 通过 Tavily API 让 AI 搜索最新新闻/公告，需填写 Tavily Key |
+| 最大搜索轮次 | AI 最多调用多少次搜索工具（2~20，默认 8），最后一轮强制输出文字 |
+| 深度推理模式 | 自动使用 `deepseek-reasoner` 模型，分析更深入但速度更慢 |
+| 最大输出 Token | 控制单次回复长度（200~4096，默认 1500） |
+
+Tavily 免费套餐：每月 1000 次请求，前往 [tavily.com](https://tavily.com) 注册获取 Key（以 `tvly-` 开头）。
 
 ## 新功能说明（v1.3.0）
 
