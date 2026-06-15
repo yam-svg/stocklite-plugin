@@ -494,8 +494,15 @@ class StockPanel : JPanel(BorderLayout()),
         val totalPnl   = rows.sumOf { (s, q) ->
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
         }
-        val sign = if (totalPnl >= 0) "+" else ""
-        summaryLabel.text = "${L10n.lblTotalValue} ${Fmt.value(totalValue)}   ${L10n.lblTotalPnl} $sign${Fmt.value(totalPnl)}"
+        val todayPnl   = rows.sumOf { (s, q) ->
+            if (s.quantity > 0) (q?.change ?: 0.0) * s.quantity else 0.0
+        }
+        fun sign(v: Double) = if (v >= 0) "+" else ""
+        summaryLabel.text = buildString {
+            append("${L10n.lblTotalValue} ${Fmt.value(totalValue)}")
+            append("   ${L10n.lblTotalPnl} ${sign(totalPnl)}${Fmt.value(totalPnl)}")
+            append("   ${L10n.lblTodayPnl} ${sign(todayPnl)}${Fmt.value(todayPnl)}")
+        }
         statusLabel.text  = MarketTimeUtil.getMarketStatusText()
     }
 

@@ -2,6 +2,7 @@ package com.stocklite.plugin.service
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.stocklite.plugin.state.FundQuote
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.AlertManager
 import javax.swing.SwingUtilities
@@ -75,6 +76,13 @@ class FundNavWatcherService : Disposable {
                         // 即使已在 notifiedKeys，也不需要做任何事：本次不通知，下次也不会
                     }
                 }
+
+                // 无论是否触发通知，都把最新 quotes 广播给 FundPanel 立即刷新列表
+                // 这解决了 Watcher 与 Panel 定时器不同步导致"通知弹出但列表未更新"的问题
+                if (fetched.isNotEmpty()) {
+                    StockliteState.getInstance().notifyFundQuotesRefreshed(fetched)
+                }
+
                 scheduleNext()
             }
         }

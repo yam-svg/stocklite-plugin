@@ -52,6 +52,7 @@ object L10n {
     val lblGroup        get() = s("分组:",      "Group:")
     val lblTotalValue   get() = s("总市值:",    "Total Value:")
     val lblTotalPnl     get() = s("总盈亏:",    "Total P&L:")
+    val lblTodayPnl     get() = s("今日盈亏:",  "Today P&L:")
     val lblGlobalTitle  get() = s("全球主要指数", "Global Indices")
     val lblLastUpdate   get() = s("上次更新:",  "Updated:")
     val lblFilter       get() = s("筛选:",      "Filter:")

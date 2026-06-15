@@ -98,6 +98,14 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     fun getAlertsForSymbol(symbol: String) = priceAlerts.filter { it.symbol == symbol }
 
+    // ── 基金行情刷新通知（Watcher 拿到新数据后广播，Panel 立即更新列表）──
+    interface FundQuotesRefreshListener { fun onFundQuotesRefreshed(quotes: Map<String, FundQuote>) }
+    @Transient private val fundQuotesListeners = mutableListOf<FundQuotesRefreshListener>()
+    fun addFundQuotesListener(l: FundQuotesRefreshListener) { fundQuotesListeners.add(l) }
+    fun removeFundQuotesListener(l: FundQuotesRefreshListener) { fundQuotesListeners.remove(l) }
+    fun notifyFundQuotesRefreshed(quotes: Map<String, FundQuote>) =
+        fundQuotesListeners.forEach { it.onFundQuotesRefreshed(quotes) }
+
     // ── 列设置变更通知 ──
     interface ColumnSettingsListener { fun onColumnSettingsChanged() }
     @Transient private val columnListeners = mutableListOf<ColumnSettingsListener>()

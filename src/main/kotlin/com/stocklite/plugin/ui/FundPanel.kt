@@ -32,7 +32,8 @@ import javax.swing.table.TableRowSorter
 class FundPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
     StockliteState.LanguageListener,
-    StockliteState.RefreshIntervalListener {
+    StockliteState.RefreshIntervalListener,
+    StockliteState.FundQuotesRefreshListener {
 
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
@@ -118,6 +119,7 @@ class FundPanel : JPanel(BorderLayout()),
         state.addColumnListener(this)
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
+        state.addFundQuotesListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
@@ -151,6 +153,11 @@ class FundPanel : JPanel(BorderLayout()),
     override fun onRefreshIntervalChanged() {
         refreshTimer?.stop()
         scheduleRefresh()
+    }
+
+    override fun onFundQuotesRefreshed(incoming: Map<String, FundQuote>) {
+        quotes.putAll(incoming)
+        loadRows()
     }
 
     private fun rebuildVisibleCols() {
@@ -439,12 +446,23 @@ class FundPanel : JPanel(BorderLayout()),
     }
 
     private fun updateSummary() {
-        val totalValue = rows.sumOf { (f, q) -> (q?.nav ?: 0.0) * f.shares }
+        val totalValue = rows.sumOf { (f, q) -> if (f.shares > 0) (q?.nav ?: 0.0) * f.shares else 0.0 }
         val totalPnl   = rows.sumOf { (f, q) ->
-            val n = q?.nav ?: 0.0; if (n > 0) (n - f.costNav) * f.shares else 0.0
+            val n = q?.nav ?: 0.0
+            if (f.shares > 0 && n > 0) (n - f.costNav) * f.shares else 0.0
         }
-        val sign = if (totalPnl >= 0) "+" else ""
-        summaryLabel.text = "${L10n.lblTotalValue} ${Fmt.value(totalValue)}   ${L10n.lblTotalPnl} $sign${Fmt.value(totalPnl)}"
+        val todayPnl   = rows.sumOf { (f, q) ->
+            if (f.shares <= 0 || q == null) return@sumOf 0.0
+            val n = q.nav; if (n <= 0) return@sumOf 0.0
+            val pct = (if (q.hasEstimate) q.estimatedChangePercent ?: q.changePercent else q.changePercent) / 100.0
+            n / (1 + pct) * pct * f.shares
+        }
+        fun sign(v: Double) = if (v >= 0) "+" else ""
+        summaryLabel.text = buildString {
+            append("${L10n.lblTotalValue} ${Fmt.value(totalValue)}")
+            append("   ${L10n.lblTotalPnl} ${sign(totalPnl)}${Fmt.value(totalPnl)}")
+            append("   ${L10n.lblTodayPnl} ${sign(todayPnl)}${Fmt.value(todayPnl)}")
+        }
         statusLabel.text  = MarketTimeUtil.getMarketStatusText()
     }
 
