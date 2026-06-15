@@ -59,13 +59,16 @@ class FundPanel : JPanel(BorderLayout()),
         ColDef("code",         L10n.colSymbol,     QuoteColumnType.PLAIN)        { f, _  -> f.code },
         ColDef("shares",       L10n.colShares,     QuoteColumnType.QTY)          { f, _  -> f.shares },
         ColDef("costNav",      L10n.colCostNav,    QuoteColumnType.PRICE4)       { f, _  -> f.costNav },
-        ColDef("marketValue",  L10n.colValue,      QuoteColumnType.VALUE)        { f, q  -> (q?.nav ?: 0.0) * f.shares },
+        ColDef("marketValue",  L10n.colValue,      QuoteColumnType.VALUE)        { f, q  ->
+            if (f.shares > 0) (q?.nav ?: 0.0) * f.shares else 0.0
+        },
         ColDef("pnl",          L10n.colPnl,        QuoteColumnType.PNL)          { f, q  ->
-            val n = q?.nav ?: 0.0; if (n > 0) (n - f.costNav) * f.shares else 0.0
+            val n = q?.nav ?: 0.0
+            if (f.shares > 0 && n > 0) (n - f.costNav) * f.shares else 0.0
         },
         ColDef("pnlPercent",   L10n.colPnlPct,    QuoteColumnType.PCT)          { f, q  ->
             val n = q?.nav ?: 0.0
-            if (n > 0 && f.costNav > 0) (n - f.costNav) / f.costNav * 100.0 else 0.0
+            if (f.shares > 0 && n > 0 && f.costNav > 0) (n - f.costNav) / f.costNav * 100.0 else 0.0
         },
     )
 
@@ -468,19 +471,41 @@ class FundPanel : JPanel(BorderLayout()),
 
     private fun buildAiContext(): String {
         if (rows.isEmpty()) return ""
-        val sb = StringBuilder("基金持仓行情（共 ${rows.size} 只）:\n")
-        for ((f, q) in rows) {
-            val nav     = q?.nav?.let { "${"%.4f".format(it)}" } ?: "--"
-            val offChg  = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
-            val estChg  = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
-            val date    = q?.date?.let { "净值日期:$it" } ?: ""
-            val pnl     = if (q != null && f.costNav > 0) {
-                val pct = (q.nav - f.costNav) / f.costNav * 100
-                val s   = if (pct >= 0) "+" else ""
-                "盈亏:$s${"%.2f".format(pct)}%"
-            } else ""
-            sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date  $pnl")
+
+        val holdings  = rows.filter { (f, _) -> f.shares > 0 }
+        val watchlist = rows.filter { (f, _) -> f.shares <= 0 }
+
+        val sb = StringBuilder()
+
+        if (holdings.isNotEmpty()) {
+            sb.appendLine("【我的基金持仓】（${holdings.size} 只）")
+            for ((f, q) in holdings) {
+                val nav    = q?.nav?.let { "%.4f".format(it) } ?: "--"
+                val offChg = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
+                val estChg = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
+                val date   = q?.date?.let { "净值日期:$it" } ?: ""
+                val pnlStr = if (q != null && f.costNav > 0) {
+                    val pct    = (q.nav - f.costNav) / f.costNav * 100
+                    val amount = (q.nav - f.costNav) * f.shares
+                    val s      = if (pct >= 0) "+" else ""
+                    "成本净值:${"%.4f".format(f.costNav)}  持有份额:${"%.2f".format(f.shares)}  盈亏:$s${"%.2f".format(amount)}($s${"%.2f".format(pct)}%)"
+                } else ""
+                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date  $pnlStr")
+            }
         }
+
+        if (watchlist.isNotEmpty()) {
+            if (holdings.isNotEmpty()) sb.appendLine()
+            sb.appendLine("【自选（未持仓）】（${watchlist.size} 只）")
+            for ((f, q) in watchlist) {
+                val nav    = q?.nav?.let { "%.4f".format(it) } ?: "--"
+                val offChg = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
+                val estChg = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
+                val date   = q?.date?.let { "净值日期:$it" } ?: ""
+                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date")
+            }
+        }
+
         return sb.toString().trim()
     }
 }

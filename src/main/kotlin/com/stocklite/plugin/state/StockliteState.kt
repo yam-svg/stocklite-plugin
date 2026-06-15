@@ -46,6 +46,20 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var deepseekApiKey: String   = ""
     var deepseekModel:  String   = "deepseek-chat"
 
+    // ── AI 功能增强 ──
+    /** 将当前时间 + 行情数据发送给 AI，让分析更准确 */
+    var aiInjectRealTimeData: Boolean = true
+    /** 允许 AI 调用 Tavily 联网搜索最新新闻/公告 */
+    var aiEnableWebSearch: Boolean = false
+    /** Tavily Search API Key（https://tavily.com 免费注册） */
+    var aiTavilyApiKey: String = ""
+    /** 联网搜索最大轮次（每轮可调用一次 web_search 工具） */
+    var aiWebSearchMaxRounds: Int = 8
+    /** 自动切换为 deepseek-reasoner 深度推理模型 */
+    var aiEnableDeepReasoning: Boolean = false
+    /** 单次 AI 回复最大 Token 数 */
+    var aiMaxTokens: Int = 1500
+
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()
 

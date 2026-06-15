@@ -190,38 +190,213 @@ object AiAnalysisService {
 
     /**
      * 多轮对话：传入完整历史消息列表，返回 AI 最新回复。
+     * 自动读取 StockliteState 中的增强功能开关：
+     *   - aiInjectRealTimeData  → 在 System Prompt 末尾附上当前时间
+     *   - aiEnableDeepReasoning → 强制使用 deepseek-reasoner 模型
+     *   - aiEnableWebSearch     → 通过 Tavily 工具调用实现联网搜索
+     *   - aiMaxTokens           → 控制单次最大输出 Token 数
+     *
      * @param systemPrompt  本次对话的系统提示词
      * @param history       历史消息 List<Pair<role, content>>，role 为 "user" 或 "assistant"
      * @param apiKey        DeepSeek API Key
      */
-    fun chat(systemPrompt: String, history: List<Pair<String, String>>, apiKey: String): String {
-        val model = StockliteState.getInstance().deepseekModel.ifBlank { "deepseek-chat" }
-        val body  = JSONObject().apply {
+    /**
+     * @param onProgress  进度回调，运行在调用方线程（后台线程），每个关键步骤调用一次。
+     *                    传入的字符串为可直接展示给用户的描述，如"🔍 正在搜索：贵州茅台最新公告"。
+     */
+    fun chat(
+        systemPrompt: String,
+        history: List<Pair<String, String>>,
+        apiKey: String,
+        onProgress: ((String) -> Unit)? = null
+    ): String {
+        val state     = StockliteState.getInstance()
+        val model     = if (state.aiEnableDeepReasoning) "deepseek-reasoner"
+                        else state.deepseekModel.ifBlank { "deepseek-chat" }
+        val maxTokens = state.aiMaxTokens.coerceIn(200, 4096)
+        val useSearch = state.aiEnableWebSearch && state.aiTavilyApiKey.isNotBlank()
+
+        // 实时数据注入：在 System Prompt 末尾追加当前分析时间
+        val effectiveSysPrompt = if (state.aiInjectRealTimeData) {
+            val now = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+            "$systemPrompt\n\n【当前分析时间】$now（以下行情数据均为实时数据）"
+        } else systemPrompt
+
+        val messages = buildMessages(effectiveSysPrompt, history)
+
+        return if (useSearch) {
+            onProgress?.invoke("🤖 AI 正在决定是否需要联网搜索...")
+            chatWithWebSearch(messages, apiKey, model, maxTokens, state.aiTavilyApiKey, onProgress)
+        } else {
+            val modelLabel = if (state.aiEnableDeepReasoning) "deepseek-reasoner（深度推理）" else model
+            onProgress?.invoke("🤖 AI 正在思考（$modelLabel）...")
+            chatSimple(messages, apiKey, model, maxTokens)
+        }
+    }
+
+    // ── 内部实现 ──────────────────────────────────────────────────────────
+
+    /** 构建 messages JSONArray（system + history） */
+    private fun buildMessages(systemPrompt: String, history: List<Pair<String, String>>): JSONArray =
+        JSONArray().apply {
+            put(JSONObject().apply { put("role", "system"); put("content", systemPrompt) })
+            history.forEach { (role, content) ->
+                put(JSONObject().apply { put("role", role); put("content", content) })
+            }
+        }
+
+    /** 普通对话（无工具） */
+    private fun chatSimple(
+        messages: JSONArray, apiKey: String, model: String, maxTokens: Int
+    ): String {
+        val body = JSONObject().apply {
             put("model",       model)
             put("stream",      false)
-            put("max_tokens",  700)
+            put("max_tokens",  maxTokens)
             put("temperature", 0.7)
-            put("messages", JSONArray().apply {
-                put(JSONObject().apply { put("role", "system"); put("content", systemPrompt) })
-                history.forEach { (role, content) ->
-                    put(JSONObject().apply { put("role", role); put("content", content) })
-                }
+            put("messages",    messages)
+        }.toString()
+        val (code, raw) = HttpUtil.post(API_URL, body, "Bearer $apiKey", TIMEOUT_MS)
+        return parseDeepSeekResponse(code, raw)
+    }
+
+    /**
+     * 联网搜索对话：使用 DeepSeek Function Calling + Tavily Search API。
+     * 流程：
+     *   1. 发送请求（携带 web_search 工具定义）
+     *   2. 若 finish_reason == "tool_calls"，执行 Tavily 搜索并将结果作为 tool message 回传
+     *   3. 最多循环 4 次，直到 AI 给出最终文本回复
+     */
+    private fun chatWithWebSearch(
+        messages: JSONArray, apiKey: String, model: String, maxTokens: Int, tavilyKey: String,
+        onProgress: ((String) -> Unit)? = null
+    ): String {
+        val tools = JSONArray().put(JSONObject().apply {
+            put("type", "function")
+            put("function", JSONObject().apply {
+                put("name", "web_search")
+                put("description", "搜索互联网，获取最新的金融新闻、公告、财报、评级等信息")
+                put("parameters", JSONObject().apply {
+                    put("type", "object")
+                    put("properties", JSONObject().apply {
+                        put("query", JSONObject().apply {
+                            put("type", "string")
+                            put("description", "搜索关键词，建议包含股票/基金名称或代码，以及具体问题")
+                        })
+                    })
+                    put("required", JSONArray().put("query"))
+                })
             })
+        })
+
+        // 复制 messages，避免修改原始引用
+        val current = JSONArray().apply {
+            for (i in 0 until messages.length()) put(messages.get(i))
+        }
+
+        val maxRounds = StockliteState.getInstance().aiWebSearchMaxRounds.coerceIn(2, 20)
+        for (round in 0 until maxRounds) {
+            // 最后一轮强制 tool_choice=none，让 AI 必须给出文字回复而非继续搜索
+            val isLastRound = round == maxRounds - 1
+            val toolChoice  = if (isLastRound) "none" else "auto"
+
+            val body = JSONObject().apply {
+                put("model",       model)
+                put("stream",      false)
+                put("max_tokens",  maxTokens)
+                put("temperature", 0.7)
+                put("messages",    current)
+                put("tools",       tools)
+                put("tool_choice", toolChoice)
+            }.toString()
+
+            val (code, raw) = HttpUtil.post(API_URL, body, "Bearer $apiKey", TIMEOUT_MS)
+            if (code != 200 || raw == null) return parseDeepSeekResponse(code, raw)
+
+            val obj    = try { JSONObject(raw) } catch (_: Exception) { return "解析响应失败，请稍后重试。" }
+            val choice = obj.optJSONArray("choices")?.optJSONObject(0) ?: return "解析响应失败。"
+            val msg    = choice.optJSONObject("message")               ?: return "解析响应失败。"
+
+            if (choice.optString("finish_reason") != "tool_calls") {
+                // AI 已给出最终回复
+                return msg.optString("content", "").trim()
+            }
+
+            // 处理工具调用
+            val toolCalls = msg.optJSONArray("tool_calls") ?: return "工具调用解析失败。"
+
+            // 将 assistant 消息（含 tool_calls）追加到历史
+            current.put(JSONObject().apply {
+                put("role",       "assistant")
+                put("content",    msg.opt("content") ?: JSONObject.NULL)
+                put("tool_calls", toolCalls)
+            })
+
+            // 执行每个 tool call 并回传结果
+            for (i in 0 until toolCalls.length()) {
+                val call   = toolCalls.getJSONObject(i)
+                val callId = call.optString("id")
+                val args   = call.optJSONObject("function")?.optString("arguments") ?: continue
+                val query  = try { JSONObject(args).optString("query") } catch (_: Exception) { continue }
+                onProgress?.invoke("🔍 正在搜索：$query")
+                val result = tavilySearch(query, tavilyKey)
+                current.put(JSONObject().apply {
+                    put("role",         "tool")
+                    put("tool_call_id", callId)
+                    put("content",      result)
+                })
+            }
+            onProgress?.invoke("💭 AI 正在整合搜索结果...")
+        }
+        // 理论上不会到达这里（最后一轮已强制 none），保留作为兜底
+        return "分析失败，请重试。"
+    }
+
+    /**
+     * 调用 Tavily Search API。
+     * @return 格式化的搜索结果文本，供 DeepSeek 作为 tool result 消费
+     */
+    private fun tavilySearch(query: String, apiKey: String): String {
+        val body = JSONObject().apply {
+            put("api_key",       apiKey)
+            put("query",         query)
+            put("search_depth",  "basic")
+            put("max_results",   5)
+            put("include_answer", true)
         }.toString()
 
-        val (code, raw) = HttpUtil.post(API_URL, body, "Bearer $apiKey", TIMEOUT_MS)
-        return when {
-            code == -1   -> "网络请求失败，请检查网络连接。"
-            code == 401  -> "API Key 无效或已过期，请在设置中更新。"
-            code == 402  -> "DeepSeek 账户余额不足，请充值后重试。"
-            code == 429  -> "请求过于频繁，请稍后再试。"
-            code != 200  -> "请求失败（HTTP $code）。"
-            raw  == null -> "响应为空，请稍后重试。"
-            else -> try {
-                JSONObject(raw).getJSONArray("choices").getJSONObject(0)
-                    .getJSONObject("message").getString("content").trim()
-            } catch (_: Exception) { "解析响应失败，请稍后重试。" }
-        }
+        val (code, raw) = HttpUtil.post("https://api.tavily.com/search", body, null, 15_000)
+        if (code != 200 || raw == null) return "搜索失败（HTTP $code），跳过联网搜索。"
+
+        return try {
+            val obj = JSONObject(raw)
+            val sb  = StringBuilder()
+            val answer = obj.optString("answer")
+            if (answer.isNotBlank()) sb.append("【搜索摘要】$answer\n\n")
+            val results = obj.optJSONArray("results") ?: return sb.toString().ifBlank { "无搜索结果。" }
+            for (i in 0 until minOf(results.length(), 5)) {
+                val r = results.getJSONObject(i)
+                sb.append("标题：${r.optString("title")}\n")
+                sb.append("内容：${r.optString("content").take(400)}\n")
+                sb.append("来源：${r.optString("url")}\n\n")
+            }
+            sb.toString().ifBlank { "无搜索结果。" }
+        } catch (_: Exception) { "解析搜索结果失败。" }
+    }
+
+    /** 统一处理 DeepSeek HTTP 响应，返回可展示的文本 */
+    private fun parseDeepSeekResponse(code: Int, raw: String?): String = when {
+        code == -1   -> "网络请求失败，请检查网络连接。"
+        code == 401  -> "API Key 无效或已过期，请在设置中更新。"
+        code == 402  -> "DeepSeek 账户余额不足，请充值后重试。"
+        code == 429  -> "请求过于频繁，请稍后再试。"
+        code != 200  -> "请求失败（HTTP $code）。"
+        raw  == null -> "响应为空，请稍后重试。"
+        else -> try {
+            JSONObject(raw).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content").trim()
+        } catch (_: Exception) { "解析响应失败，请稍后重试。" }
     }
 
     /**

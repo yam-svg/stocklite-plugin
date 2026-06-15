@@ -47,6 +47,33 @@ class StockliteConfigurable : Configurable {
     }
     private val queryBalanceBtn = JButton("查询余额")
 
+    // AI 功能增强
+    private val aiInjectDataCheckBox = JBCheckBox(
+        "<html>注入实时行情数据<br><font color='gray' size='2'>将当前价格、涨跌幅等发送给 AI，提升分析准确性</font></html>"
+    )
+    private val aiWebSearchCheckBox = JBCheckBox(
+        "<html>联网搜索（需要 Tavily API Key）<br><font color='gray' size='2'>让 AI 搜索相关新闻、公告、财报等最新信息</font></html>"
+    )
+    private val tavilyKeyField       = JPasswordField(25)
+    private val webSearchRoundsSpinner = JSpinner(SpinnerNumberModel(8, 2, 20, 1))
+    private val tavilyLinkLabel = JLabel(
+        "<html><a href='https://tavily.com'>免费获取 Tavily Key</a></html>"
+    ).apply {
+        cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                try { java.awt.Desktop.getDesktop().browse(java.net.URI("https://tavily.com")) }
+                catch (_: Exception) {}
+            }
+        })
+    }
+    private val aiDeepReasonCheckBox = JBCheckBox(
+        "<html>深度推理模式（自动使用 deepseek-reasoner）<br><font color='gray' size='2'>分析更深入，但速度更慢、消耗 Token 更多</font></html>"
+    )
+    private val aiMaxTokensSpinner = JSpinner(SpinnerNumberModel(1500, 200, 4096, 100))
+    // Tavily Key 行，整体显示/隐藏
+    private lateinit var tavilyRow: JPanel
+
     // 股票可选列
     private val stockOptional get() = listOf(
         "symbol"      to L10n.settingsOptStockSymbol,
@@ -159,6 +186,43 @@ class StockliteConfigurable : Configurable {
         gbc.gridy = row++
         panel.add(JLabel("<html><font color='gray'><i>${L10n.settingsAiHint}</i></font></html>"), gbc)
 
+        // ── AI 功能增强 ──
+        sep("AI 功能增强", row); row += 2
+        gbc.gridy = row++; panel.add(aiInjectDataCheckBox, gbc)
+        gbc.gridy = row++; panel.add(aiWebSearchCheckBox, gbc)
+
+        tavilyRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+            add(JLabel("Tavily Key："))
+            add(tavilyKeyField)
+            add(Box.createHorizontalStrut(6))
+            add(tavilyLinkLabel)
+            add(Box.createHorizontalStrut(16))
+            add(JLabel("最大搜索轮次："))
+            webSearchRoundsSpinner.preferredSize = java.awt.Dimension(60, webSearchRoundsSpinner.preferredSize.height)
+            add(webSearchRoundsSpinner)
+            add(Box.createHorizontalStrut(4))
+            add(JLabel("<html><font color='gray'>（2 ~ 20）</font></html>"))
+        }
+        gbc.gridy = row++; gbc.insets = Insets(0, 24, 2, 8)
+        panel.add(tavilyRow, gbc)
+        gbc.insets = Insets(2, 8, 2, 8)
+
+        gbc.gridy = row++; panel.add(aiDeepReasonCheckBox, gbc)
+
+        gbc.gridy = row++
+        val maxTokensRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            add(JLabel("最大输出 Token："))
+            add(Box.createHorizontalStrut(4))
+            aiMaxTokensSpinner.preferredSize = java.awt.Dimension(80, aiMaxTokensSpinner.preferredSize.height)
+            add(aiMaxTokensSpinner)
+            add(Box.createHorizontalStrut(6))
+            add(JLabel("<html><font color='gray'>（200 ~ 4096）</font></html>"))
+        }
+        panel.add(maxTokensRow, gbc)
+
+        // 联网搜索开关联动 Tavily Key 行的显示
+        aiWebSearchCheckBox.addActionListener { updateTavilyVisibility() }
+
         // ── 数据管理 ──
         sep(L10n.settingsDataMgmt, row); row += 2
         gbc.gridy = row++
@@ -205,8 +269,14 @@ class StockliteConfigurable : Configurable {
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
                alertsCheckBox.isSelected      != state.enablePriceAlerts ||
                fundNavAlertCheckBox.isSelected != state.enableFundNavAlert ||
-               String(apiKeyField.password)              != state.deepseekApiKey ||
-               modelCombo.selectedItem?.toString()       != state.deepseekModel
+               String(apiKeyField.password)        != state.deepseekApiKey ||
+               modelCombo.selectedItem?.toString() != state.deepseekModel  ||
+               aiInjectDataCheckBox.isSelected  != state.aiInjectRealTimeData  ||
+               aiWebSearchCheckBox.isSelected      != state.aiEnableWebSearch        ||
+               String(tavilyKeyField.password)     != state.aiTavilyApiKey           ||
+               (webSearchRoundsSpinner.value as Int) != state.aiWebSearchMaxRounds   ||
+               aiDeepReasonCheckBox.isSelected  != state.aiEnableDeepReasoning ||
+               (aiMaxTokensSpinner.value as Int) != state.aiMaxTokens
     }
 
     override fun apply() {
@@ -222,6 +292,12 @@ class StockliteConfigurable : Configurable {
         state.enableFundNavAlert = fundNavAlertCheckBox.isSelected
         state.deepseekApiKey     = String(apiKeyField.password)
         state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
+        state.aiInjectRealTimeData  = aiInjectDataCheckBox.isSelected
+        state.aiEnableWebSearch     = aiWebSearchCheckBox.isSelected
+        state.aiTavilyApiKey        = String(tavilyKeyField.password)
+        state.aiWebSearchMaxRounds  = webSearchRoundsSpinner.value as Int
+        state.aiEnableDeepReasoning = aiDeepReasonCheckBox.isSelected
+        state.aiMaxTokens           = aiMaxTokensSpinner.value as Int
         state.notifyColumnSettingsChanged()
         state.notifyLanguageChanged()
         state.notifyRefreshIntervalChanged()
@@ -246,6 +322,19 @@ class StockliteConfigurable : Configurable {
         if (modelCombo.itemCount == 0) modelCombo.addItem(savedModel)
         modelCombo.selectedItem = savedModel
         if (state.deepseekApiKey.isNotBlank()) loadModels(state.deepseekApiKey)
+        // AI 功能增强
+        aiInjectDataCheckBox.isSelected  = state.aiInjectRealTimeData
+        aiWebSearchCheckBox.isSelected   = state.aiEnableWebSearch
+        tavilyKeyField.text              = state.aiTavilyApiKey
+        webSearchRoundsSpinner.value     = state.aiWebSearchMaxRounds
+        aiDeepReasonCheckBox.isSelected  = state.aiEnableDeepReasoning
+        aiMaxTokensSpinner.value         = state.aiMaxTokens
+        if (::tavilyRow.isInitialized) updateTavilyVisibility()
+    }
+
+    /** Tavily Key 行跟随联网搜索开关显示/隐藏 */
+    private fun updateTavilyVisibility() {
+        if (::tavilyRow.isInitialized) tavilyRow.isVisible = aiWebSearchCheckBox.isSelected
     }
 
     /**

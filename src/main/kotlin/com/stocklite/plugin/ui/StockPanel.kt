@@ -517,11 +517,39 @@ class StockPanel : JPanel(BorderLayout()),
 
     private fun buildAiContext(): String {
         val valid = rows.filter { (_, q) -> q != null }.ifEmpty { return "" }
-        val sb = StringBuilder("A股/港股/美股行情（共 ${valid.size} 只）:\n")
-        for ((s, q) in valid) {
-            val sign = if (q!!.changePercent >= 0) "+" else ""
-            sb.appendLine("- ${s.name}(${s.symbol}): ${"%.3f".format(q.price)}  $sign${"%.2f".format(q.changePercent)}%")
+
+        val holdings  = valid.filter { (s, _) -> s.quantity > 0 }
+        val watchlist = valid.filter { (s, _) -> s.quantity <= 0 }
+
+        val sb = StringBuilder()
+
+        if (holdings.isNotEmpty()) {
+            sb.appendLine("【我的持仓】（${holdings.size} 只）")
+            for ((s, q) in holdings) {
+                val chgSign = if (q!!.changePercent >= 0) "+" else ""
+                val price   = q.price
+                val pnl     = if (price > 0) (price - s.costPrice) * s.quantity else 0.0
+                val pnlPct  = if (price > 0 && s.costPrice > 0)
+                                  (price - s.costPrice) / s.costPrice * 100.0 else 0.0
+                val pnlSign = if (pnl >= 0) "+" else ""
+                sb.appendLine(
+                    "- ${s.name}(${s.symbol}): ${"%.3f".format(price)}  " +
+                    "$chgSign${"%.2f".format(q.changePercent)}%  " +
+                    "成本${"%.3f".format(s.costPrice)}  持仓${"%.0f".format(s.quantity)}股  " +
+                    "盈亏$pnlSign${"%.2f".format(pnl)}($pnlSign${"%.2f".format(pnlPct)}%)"
+                )
+            }
         }
+
+        if (watchlist.isNotEmpty()) {
+            if (holdings.isNotEmpty()) sb.appendLine()
+            sb.appendLine("【自选（未持仓）】（${watchlist.size} 只）")
+            for ((s, q) in watchlist) {
+                val sign = if (q!!.changePercent >= 0) "+" else ""
+                sb.appendLine("- ${s.name}(${s.symbol}): ${"%.3f".format(q.price)}  $sign${"%.2f".format(q.changePercent)}%")
+            }
+        }
+
         return sb.toString().trim()
     }
 
