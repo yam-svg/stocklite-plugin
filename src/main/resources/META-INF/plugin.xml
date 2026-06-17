@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.4.0</version>
+    <version>1.5.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -25,7 +25,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>EastMoney real-time NAV estimates; auto-refresh every 30 seconds (configurable)</li>
   <li>Dual change columns: <b>Official Change</b> (T-1 historical NAV) + <b>Today Estimate</b> (intraday)</li>
   <li>Today Estimate automatically switches to <b>Official</b> label once the daily NAV is published</li>
-  <li>QDII fund auto-detection with dedicated data channel</li>
+  <li>QDII fund auto-detection; unified data pipeline merges EastMoney fundgz + F10 by date, always showing the most recent official NAV</li>
+  <li>QDII funds do not show intraday estimates (unreliable for overseas-NAV funds)</li>
   <li>Portfolio tracking identical to the Stocks module (cost NAV, shares, P&amp;L)</li>
   <li>Right-click: Edit · Delete · Copy Code · Copy Name · Open in Browser (EastMoney fund page)</li>
 </ul>
@@ -130,7 +131,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>实时估值，默认每 30 秒刷新（可配置），数据来自天天基金</li>
   <li>双涨跌幅列：<b>官方涨跌</b>（T-1 历史净值）+ <b>今日估算</b>（盘中实时）</li>
   <li>官方净值发布后，"今日估算"自动标注"官方"字样，净值日期同步更新为今日</li>
-  <li>自动识别 QDII 基金，切换专用数据通道</li>
+  <li>自动识别 QDII 基金；统一数据通道整合 fundgz + F10，按日期取最新官方净值，不再交替显示</li>
+  <li>QDII 基金不展示今日估算（境外基金估值不准确）</li>
   <li>持仓管理与盈亏计算，逻辑与股票模块一致</li>
   <li>右键菜单：编辑 · 删除 · 复制代码 · 复制名称 · 在浏览器中打开（天天基金页）</li>
 </ul>
@@ -213,6 +215,14 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.5.0</h3>
+<ul>
+  <li>新增全球模块股指期货席位持仓：在全球指数列表底部展示 IF/IH/IC/IM 四品种主力前二十多空净变化（手）及中信席位多空净变化，数据来自东方财富结算后席位数据</li>
+  <li>修复国内基金净值日期显示：开盘后不再错误展示当日估值时间作为净值更新日期，净值日期始终与官方涨跌幅对应</li>
+  <li>QDII 基金数据整合重构：fundgz 与 F10 双源合并，按净值日期取最新数据，彻底消除净值更新时段数据交替显示问题</li>
+  <li>QDII 基金移除今日估算展示：境外基金日内估算数据不准确，现一律只展示官方净值与官方涨跌幅</li>
+</ul>
+
 <h3>1.4.0</h3>
 <ul>
   <li>AI 对话面板改为 HTML 富文本渲染：**粗体**、*斜体*、`代码`、【标题】高亮、列表项自动识别，AI 回复原样展示，不再是纯文本</li>

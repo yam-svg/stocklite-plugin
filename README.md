@@ -86,7 +86,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.4.0.zip`
+输出路径：`build/distributions/stocklite-plugin-1.5.0.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
@@ -140,6 +140,29 @@ src/main/kotlin/com/stocklite/plugin/
         ├── SetAlertDialog.kt       # 设置价格到价提醒
         └── ImportExportDialog.kt   # 数据导入/导出
 ```
+
+## 新功能说明（v1.5.0）
+
+### 股指期货席位持仓（全球模块）
+全球指数列表底部新增席位持仓行，展示 A 股收盘后各主力机构在股指期货上的多空变化，辅助判断下一交易日方向：
+
+| 字段   | 说明                                    |
+|------|-----------------------------------------|
+| 主力多  | IF+IH+IC+IM 合计，排行榜前二十多头席位净变化（手）  |
+| 主力空  | IF+IH+IC+IM 合计，排行榜前二十空头席位净变化（手）  |
+| 中信多  | 中信期货/中信建投合计多头净变化（手）              |
+| 中信空  | 中信期货/中信建投合计空头净变化（手）              |
+
+数据来源：东方财富 `datacenter-web.eastmoney.com`（结算后更新，当日无数据时自动回退至最近四个交易日）。
+
+### 基金净值日期修复
+- 国内基金在开盘后不再把当日估值时间（如 `09:30:00`）当成净值更新日期显示
+- 净值日期始终来自 fundgz `jzrq` 字段或 F10 官方历史净值表，确保与官方涨跌幅对应同一份数据
+
+### QDII 基金数据整合
+- 重构为统一双源流程：所有基金先走 fundgz 获取估算和名称，QDII 再额外调用 F10 获取官方净值
+- 按净值日期比较，取较新的那份数据，彻底消除净值更新时段数据交替闪烁问题
+- QDII 基金不再展示今日估算（境外基金估算不准确，已移除）
 
 ## 新功能说明（v1.4.0）
 
