@@ -217,7 +217,6 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     <change-notes><![CDATA[
 <h3>1.5.0</h3>
 <ul>
-  <li>新增全球模块股指期货席位持仓：在全球指数列表底部展示 IF/IH/IC/IM 四品种主力前二十多空净变化（手）及中信席位多空净变化，数据来自东方财富结算后席位数据</li>
   <li>修复国内基金净值日期显示：开盘后不再错误展示当日估值时间作为净值更新日期，净值日期始终与官方涨跌幅对应</li>
   <li>QDII 基金数据整合重构：fundgz 与 F10 双源合并，按净值日期取最新数据，彻底消除净值更新时段数据交替显示问题</li>
   <li>QDII 基金移除今日估算展示：境外基金日内估算数据不准确，现一律只展示官方净值与官方涨跌幅</li>
