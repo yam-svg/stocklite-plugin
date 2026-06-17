@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.5.0</version>
+    <version>1.5.1</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -215,7 +215,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.5.0</h3>
+<h3>1.5.1</h3>
 <ul>
   <li>修复国内基金净值日期显示：开盘后不再错误展示当日估值时间作为净值更新日期，净值日期始终与官方涨跌幅对应</li>
   <li>QDII 基金数据整合重构：fundgz 与 F10 双源合并，按净值日期取最新数据，彻底消除净值更新时段数据交替显示问题</li>
