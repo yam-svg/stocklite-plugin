@@ -301,7 +301,7 @@ object MarketDataService {
             FundQuote(
                 code = fundCode, name = name, nav = nav,
                 changePercent = 0.0,  // 由 F10 补全
-                date = jzrq.ifEmpty { gztime.ifEmpty { today() } },
+                date = jzrq,
                 estimatedNav = gsz, estimatedChangePercent = gszzl,
                 hasEstimate = gsz != null && isToday
             )
@@ -395,7 +395,7 @@ object MarketDataService {
         return q.copy(
             nav = p.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble(),
             changePercent = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-            date = q.date.ifEmpty { p.date }
+            date = p.date.ifEmpty { q.date }
         )
     }
 
