@@ -197,10 +197,13 @@ object MarketDataService {
     private val QDII_CACHE_TTL   = 30_000L
     private val KNOWN_QDII_CODES = setOf("017437")
     private val QDII_NAME_KW = listOf("qdii","全球","海外","纳斯达克","标普","道琼斯","日经","恒生","msci","nasdaq","s&p","dow","hang seng")
+    // 运行时识别为 QDII 的代码（名称匹配），持久跨调用，避免每次缓存过期重复判断
+    private val detectedQdiiCodes = mutableSetOf<String>()
 
     private fun normFundCode(raw: String) = raw.trim().let { Regex("\\d{6}").find(it)?.value ?: it }
     private fun isQDIIByCode(code: String) = normFundCode(code) in KNOWN_QDII_CODES
     private fun isQDIIByName(name: String?) = name?.lowercase()?.let { n -> QDII_NAME_KW.any { n.contains(it) } } == true
+    private fun isQDII(code: String) = isQDIIByCode(code) || code in detectedQdiiCodes
 
     fun getFundQuotes(codes: List<String>): Map<String, FundQuote> {
         if (codes.isEmpty()) return emptyMap()
@@ -208,76 +211,76 @@ object MarketDataService {
         val results = mutableMapOf<String, FundQuote>()
         val now = System.currentTimeMillis()
 
-        // ── 检查缓存 ──
-        val uncachedNormal = mutableListOf<String>()
-        val uncachedQdii   = mutableListOf<String>()
+        // ── 缓存命中 ──
+        val uncached = mutableListOf<String>()
         for (code in unique) {
+            val ttl = if (isQDII(code)) QDII_CACHE_TTL else FUND_CACHE_TTL
             val cached = fundCache[code]
-            val ttl = if (isQDIIByCode(code)) QDII_CACHE_TTL else FUND_CACHE_TTL
-            if (cached != null && now - cached.second < ttl) {
-                results[code] = cached.first
-            } else {
-                if (isQDIIByCode(code)) uncachedQdii.add(code) else uncachedNormal.add(code)
-            }
+            if (cached != null && now - cached.second < ttl) results[code] = cached.first
+            else uncached.add(code)
         }
-        if (uncachedNormal.isEmpty() && uncachedQdii.isEmpty()) return results
+        if (uncached.isEmpty()) return results
 
-        // ── 普通基金 tier-1：EastMoney fundgz ──
-        for (code in uncachedNormal) {
+        // ── 第一步：全部走 fundgz（获取估算 + 名称 + 官方净值日期） ──
+        for (code in uncached) {
             fetchFundgz(code)?.let { q ->
-                results[code] = q; fundCache[code] = q to now
+                results[code] = q
+                if (isQDIIByName(q.name)) detectedQdiiCodes.add(code)
             }
         }
 
-        // ── 普通基金 tier-2：新浪备用 ──
-        val needSina = uncachedNormal.filter { !results.containsKey(it) }
+        // ── 第二步：Sina 备用（fundgz 失败的） ──
+        val needSina = uncached.filter { !results.containsKey(it) }
         if (needSina.isNotEmpty()) fetchFundsSina(needSina).forEach { (c, q) ->
-            results[c] = q; fundCache[c] = q to now
+            results[c] = q
+            if (isQDIIByName(q.name)) detectedQdiiCodes.add(c)
         }
 
-        // ── 名称识别 QDII ──
-        for (code in uncachedNormal.filter { results.containsKey(it) }) {
-            val q = results[code] ?: continue
-            if (!isQDIIByCode(code) && isQDIIByName(q.name)) {
-                results.remove(code); fundCache.remove(code)
-                if (code !in uncachedQdii) uncachedQdii.add(code)
-            }
+        // ── 第三步：F10 增强
+        //   QDII：F10 是官方涨跌权威来源，必须获取
+        //   普通基金：仅 changePercent == 0 时补全
+        //   合并原则：日期更新的数据胜出；QDII 同时保留 fundgz 的估算字段 ──
+        val needF10 = uncached.filter { code ->
+            val q = results[code]
+            q == null || isQDII(code) || !q.changePercent.isFinite() || q.changePercent == 0.0
         }
-
-        // ── QDII：EastMoney F10 优先 ──
-        for (code in uncachedQdii) {
-            val name = fetchFundName(code) ?: "基金$code"
-            fetchF10Nav(code)?.let { parsed ->
-                val q = buildOfficialQuote(code, name, parsed)
-                results[code] = q; fundCache[code] = q to now
-            }
-        }
-        // QDII 备用 fundgz
-        for (code in uncachedQdii.filter { !results.containsKey(it) }) {
-            fetchFundgz(code)?.let { q -> results[code] = q; fundCache[code] = q to now }
-        }
-        // QDII 最终备用 Sina
-        val stillMissQdii = uncachedQdii.filter { !results.containsKey(it) }
-        if (stillMissQdii.isNotEmpty()) fetchFundsSina(stillMissQdii).forEach { (c, q) ->
-            results[c] = q; fundCache[c] = q to now
-        }
-
-        // ── 补全官方涨跌幅（F10 二次增强） ──
-        for (code in unique.filter { results[it]?.let { q -> !q.changePercent.isFinite() || q.changePercent == 0.0 } == true }) {
-            fetchF10Nav(code)?.let { p ->
-                results[code]?.let { q ->
-                    val enriched = enrichWithF10(q, p)
-                    results[code] = enriched; fundCache[code] = enriched to now
+        for (code in needF10) {
+            val f10 = fetchF10Nav(code) ?: continue
+            val existing = results[code]
+            if (existing == null) {
+                results[code] = buildOfficialQuote(code, "基金$code", f10)
+            } else {
+                // 日期比较：YYYY-MM-DD 格式下字典序即时间序
+                val f10Newer = f10.date.isNotEmpty() && f10.date >= existing.date
+                val prevNav  = f10.prevNav.takeIf { it.isFinite() && it > 0 } ?: 0.0
+                val changePct = when {
+                    f10.changePercent.isFinite() -> f10.changePercent
+                    prevNav > 0 -> (f10.nav - prevNav) / prevNav * 100
+                    else -> existing.changePercent
                 }
+                results[code] = existing.copy(
+                    nav                     = if (f10Newer) f10.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble() else existing.nav,
+                    changePercent           = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
+                    date                    = if (f10Newer) f10.date else existing.date,
+                    // QDII 估算数据不可靠，一律清除
+                    estimatedNav            = if (isQDII(code)) null else existing.estimatedNav,
+                    estimatedChangePercent  = if (isQDII(code)) null else existing.estimatedChangePercent,
+                    hasEstimate             = if (isQDII(code)) false else existing.hasEstimate
+                )
             }
         }
 
-        // ── 通用兜底 ──
-        for (code in unique.filter { !results.containsKey(it) }) {
-            fetchF10Nav(code)?.let { p ->
-                val q = buildOfficialQuote(code, "基金$code", p)
-                results[code] = q; fundCache[code] = q to now
+        // ── QDII 兜底清除估算（F10 失败时 fundgz 的估算字段可能残留） ──
+        for (code in uncached.filter { isQDII(it) }) {
+            results[code]?.let { q ->
+                if (q.hasEstimate || q.estimatedNav != null)
+                    results[code] = q.copy(estimatedNav = null, estimatedChangePercent = null, hasEstimate = false)
             }
+        }
+
+        // ── 写缓存 ──
+        for (code in uncached) {
+            results[code]?.let { fundCache[code] = it to now }
         }
 
         return results
