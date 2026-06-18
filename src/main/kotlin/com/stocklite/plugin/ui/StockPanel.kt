@@ -89,8 +89,6 @@ class StockPanel : JPanel(BorderLayout()),
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
-    private lateinit var editBtn:    JButton
-    private lateinit var delBtn:     JButton
     private lateinit var refreshBtn: JButton
     private lateinit var filterField: SearchTextField
 
@@ -127,8 +125,6 @@ class StockPanel : JPanel(BorderLayout()),
         groupLbl.text   = L10n.lblGroup
         manageBtn.text  = L10n.btnManageGroups
         addBtn.text     = L10n.btnAddStock
-        editBtn.text    = L10n.btnEdit
-        delBtn.text     = L10n.btnDelete
         refreshBtn.text = L10n.btnRefresh
         updateSummary()
         revalidate(); repaint()
@@ -331,8 +327,6 @@ class StockPanel : JPanel(BorderLayout()),
         groupLbl     = JLabel(L10n.lblGroup)
         manageBtn    = JButton(L10n.btnManageGroups)
         addBtn       = JButton(L10n.btnAddStock)
-        editBtn      = JButton(L10n.btnEdit)
-        delBtn       = JButton(L10n.btnDelete)
         val upBtn    = JButton("↑")
         val downBtn  = JButton("↓")
         refreshBtn   = JButton(L10n.btnRefresh)
@@ -340,7 +334,6 @@ class StockPanel : JPanel(BorderLayout()),
 
         toolbar.add(groupLbl);  toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
-        toolbar.add(editBtn);   toolbar.add(delBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
         toolbar.add(refreshBtn)
         toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
@@ -396,28 +389,6 @@ class StockPanel : JPanel(BorderLayout()),
                 state.createStock(symbol, name, groupId, cost, qty)
                 loadRows(); fetchQuotesAsync()
             }.show()
-        }
-
-        editBtn.addActionListener {
-            val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val modelRow = table.convertRowIndexToModel(row)
-            val (s, _) = rows[modelRow]
-            AddStockDialog(groupId = s.groupId, groups = state.stockGroups, existingStock = s) {
-                _, _, groupId, cost, qty ->
-                if (qty < 0) { JOptionPane.showMessageDialog(this, L10n.validationQtyNotNegative()); return@AddStockDialog }
-                state.updateStock(s.id, cost, qty, groupId)
-                loadRows(); fetchQuotesAsync()
-            }.show()
-        }
-
-        delBtn.addActionListener {
-            val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val modelRow = table.convertRowIndexToModel(row)
-            val (s, _) = rows[modelRow]
-            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(s.name),
-                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-                state.deleteStock(s.id); loadRows()
-            }
         }
 
         upBtn.addActionListener   { moveRow(-1) }

@@ -73,7 +73,6 @@ class FuturePanel : JPanel(BorderLayout()),
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
-    private lateinit var delBtn:     JButton
     private lateinit var refreshBtn: JButton
     private lateinit var filterField: SearchTextField
 
@@ -102,7 +101,6 @@ class FuturePanel : JPanel(BorderLayout()),
         groupLbl.text   = L10n.lblGroup
         manageBtn.text  = L10n.btnManageGroups
         addBtn.text     = L10n.btnAddFuture
-        delBtn.text     = L10n.btnDelete
         refreshBtn.text = L10n.btnRefresh
         statusLabel.text = MarketTimeUtil.getMarketStatusText()
         revalidate(); repaint()
@@ -244,7 +242,6 @@ class FuturePanel : JPanel(BorderLayout()),
         groupLbl   = JLabel(L10n.lblGroup)
         manageBtn  = JButton(L10n.btnManageGroups)
         addBtn     = JButton(L10n.btnAddFuture)
-        delBtn     = JButton(L10n.btnDelete)
         val upBtn  = JButton("↑")
         val downBtn= JButton("↓")
         refreshBtn = JButton(L10n.btnRefresh)
@@ -252,7 +249,6 @@ class FuturePanel : JPanel(BorderLayout()),
 
         toolbar.add(groupLbl); toolbar.add(groupCombo)
         toolbar.add(manageBtn); toolbar.add(addBtn)
-        toolbar.add(delBtn)
         toolbar.add(upBtn);  toolbar.add(downBtn)
         toolbar.add(refreshBtn)
         toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
@@ -301,16 +297,6 @@ class FuturePanel : JPanel(BorderLayout()),
                 state.createFuture(symbol, name, groupId)
                 loadRows(); fetchQuotesAsync()
             }.show()
-        }
-
-        delBtn.addActionListener {
-            val row = table.selectedRow.takeIf { it >= 0 } ?: return@addActionListener
-            val modelRow = table.convertRowIndexToModel(row)
-            val (f, _) = rows[modelRow]
-            if (JOptionPane.showConfirmDialog(this, L10n.dlgConfirmDelete(f.name),
-                    L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-                state.deleteFuture(f.id); loadRows()
-            }
         }
 
         upBtn.addActionListener   { moveRow(-1) }
