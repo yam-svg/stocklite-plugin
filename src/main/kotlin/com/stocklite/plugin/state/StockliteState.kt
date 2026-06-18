@@ -60,6 +60,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     /** 单次 AI 回复最大 Token 数 */
     var aiMaxTokens: Int = 1500
 
+    // ── 全球指数自定义排序（存储 symbol 顺序） ──
+    var globalIndexOrder: MutableList<String> = ArrayList()
+
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()
 

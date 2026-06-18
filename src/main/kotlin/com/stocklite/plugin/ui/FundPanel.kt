@@ -233,6 +233,10 @@ class FundPanel : JPanel(BorderLayout()),
                 else Cursor.getDefaultCursor()
             }
         })
+
+        com.stocklite.plugin.ui.common.TableRowDragHandler.install(table) { from, to ->
+            moveRowTo(from, to)
+        }
     }
 
     private fun showContextMenu(e: MouseEvent) {
@@ -388,6 +392,19 @@ class FundPanel : JPanel(BorderLayout()),
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
         table.setRowSelectionInterval(newRow, newRow)
         table.scrollRectToVisible(table.getCellRect(newRow, 0, true))
+    }
+
+    private fun moveRowTo(fromModelRow: Int, toModelRow: Int) {
+        state.funds.sortedBy { it.sortOrder }.forEachIndexed { i, f -> f.sortOrder = i }
+        val groupItems = state.getFundsForGroup(currentGroupId)
+        if (fromModelRow !in groupItems.indices || toModelRow !in groupItems.indices) return
+        val sortOrders = groupItems.map { g -> state.funds.find { it.id == g.id }!!.sortOrder }.sorted()
+        val mutable = groupItems.toMutableList()
+        mutable.add(toModelRow, mutable.removeAt(fromModelRow))
+        mutable.forEachIndexed { i, data -> state.funds.find { it.id == data.id }?.sortOrder = sortOrders[i] }
+        loadRows()
+        table.setRowSelectionInterval(toModelRow, toModelRow)
+        table.scrollRectToVisible(table.getCellRect(toModelRow, 0, true))
     }
 
     private fun groupIdList() = listOf(SystemGroups.ALL_FUND_ID, SystemGroups.HOLDING_FUND_ID) +

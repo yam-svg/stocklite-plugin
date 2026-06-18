@@ -220,6 +220,10 @@ class StockPanel : JPanel(BorderLayout()),
                 else Cursor.getDefaultCursor()
             }
         })
+
+        com.stocklite.plugin.ui.common.TableRowDragHandler.install(table) { from, to ->
+            moveRowTo(from, to)
+        }
     }
 
     private fun showContextMenu(e: MouseEvent) {
@@ -426,6 +430,19 @@ class StockPanel : JPanel(BorderLayout()),
         val newRow = targetIdx.coerceIn(0, tableModel.rowCount - 1)
         table.setRowSelectionInterval(newRow, newRow)
         table.scrollRectToVisible(table.getCellRect(newRow, 0, true))
+    }
+
+    private fun moveRowTo(fromModelRow: Int, toModelRow: Int) {
+        state.stocks.sortedBy { it.sortOrder }.forEachIndexed { i, s -> s.sortOrder = i }
+        val groupItems = state.getStocksForGroup(currentGroupId)
+        if (fromModelRow !in groupItems.indices || toModelRow !in groupItems.indices) return
+        val sortOrders = groupItems.map { g -> state.stocks.find { it.id == g.id }!!.sortOrder }.sorted()
+        val mutable = groupItems.toMutableList()
+        mutable.add(toModelRow, mutable.removeAt(fromModelRow))
+        mutable.forEachIndexed { i, data -> state.stocks.find { it.id == data.id }?.sortOrder = sortOrders[i] }
+        loadRows()
+        table.setRowSelectionInterval(toModelRow, toModelRow)
+        table.scrollRectToVisible(table.getCellRect(toModelRow, 0, true))
     }
 
     private fun groupIdList() = listOf(SystemGroups.ALL_STOCK_ID, SystemGroups.HOLDING_STOCK_ID) +

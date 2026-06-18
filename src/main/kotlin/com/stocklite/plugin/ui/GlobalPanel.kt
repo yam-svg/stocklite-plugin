@@ -159,6 +159,20 @@ class GlobalPanel : JPanel(BorderLayout()),
                 else Cursor.getDefaultCursor()
             }
         })
+
+        com.stocklite.plugin.ui.common.TableRowDragHandler.install(table) { from, to ->
+            if (from != to && from in quotes.indices && to in quotes.indices) {
+                val mutable = quotes.toMutableList()
+                mutable.add(to, mutable.removeAt(from))
+                quotes = mutable
+                val state = StockliteState.getInstance()
+                state.globalIndexOrder.clear()
+                state.globalIndexOrder.addAll(quotes.map { it.symbol })
+                tableModel.fireTableDataChanged()
+                table.setRowSelectionInterval(to, to)
+                table.scrollRectToVisible(table.getCellRect(to, 0, true))
+            }
+        }
     }
 
     private fun showContextMenu(e: MouseEvent) {
@@ -254,7 +268,13 @@ class GlobalPanel : JPanel(BorderLayout()),
                         currentIntervalMs = (currentIntervalMs - RECOVERY_STEP_MS).coerceAtLeast(MIN_INTERVAL_MS)
                         restartTimer()
                     }
-                    quotes = result.quotes
+                    val order = StockliteState.getInstance().globalIndexOrder
+                    quotes = if (order.isEmpty()) result.quotes else {
+                        val map = result.quotes.associateBy { it.symbol }
+                        val known = order.mapNotNull { map[it] }
+                        val newOnes = result.quotes.filter { it.symbol !in order }
+                        known + newOnes
+                    }
                     tableModel.fireTableDataChanged()
                     val now = java.time.LocalTime.now()
                         .let { String.format("%02d:%02d:%02d", it.hour, it.minute, it.second) }
