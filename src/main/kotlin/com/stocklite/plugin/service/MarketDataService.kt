@@ -192,12 +192,8 @@ object MarketDataService {
     // 基金行情（移植自 registerFundQuoteHandlers — 完整多级备用逻辑）
     // ══════════════════════════════════════════════════════════════
 
-    private val fundCache = mutableMapOf<String, Pair<FundQuote, Long>>()
-    private val FUND_CACHE_TTL   = 60_000L
-    private val QDII_CACHE_TTL   = 30_000L
     private val KNOWN_QDII_CODES = setOf("017437")
     private val QDII_NAME_KW = listOf("qdii","全球","海外","纳斯达克","标普","道琼斯","日经","恒生","msci","nasdaq","s&p","dow","hang seng")
-    // 运行时识别为 QDII 的代码（名称匹配），持久跨调用，避免每次缓存过期重复判断
     private val detectedQdiiCodes = mutableSetOf<String>()
 
     private fun normFundCode(raw: String) = raw.trim().let { Regex("\\d{6}").find(it)?.value ?: it }
@@ -209,20 +205,9 @@ object MarketDataService {
         if (codes.isEmpty()) return emptyMap()
         val unique = codes.map { normFundCode(it) }.distinct().filter { it.isNotEmpty() }
         val results = mutableMapOf<String, FundQuote>()
-        val now = System.currentTimeMillis()
-
-        // ── 缓存命中 ──
-        val uncached = mutableListOf<String>()
-        for (code in unique) {
-            val ttl = if (isQDII(code)) QDII_CACHE_TTL else FUND_CACHE_TTL
-            val cached = fundCache[code]
-            if (cached != null && now - cached.second < ttl) results[code] = cached.first
-            else uncached.add(code)
-        }
-        if (uncached.isEmpty()) return results
 
         // ── 第一步：全部走 fundgz（获取估算 + 名称 + 官方净值日期） ──
-        for (code in uncached) {
+        for (code in unique) {
             fetchFundgz(code)?.let { q ->
                 results[code] = q
                 if (isQDIIByName(q.name)) detectedQdiiCodes.add(code)
@@ -230,7 +215,7 @@ object MarketDataService {
         }
 
         // ── 第二步：Sina 备用（fundgz 失败的） ──
-        val needSina = uncached.filter { !results.containsKey(it) }
+        val needSina = unique.filter { !results.containsKey(it) }
         if (needSina.isNotEmpty()) fetchFundsSina(needSina).forEach { (c, q) ->
             results[c] = q
             if (isQDIIByName(q.name)) detectedQdiiCodes.add(c)
@@ -238,9 +223,9 @@ object MarketDataService {
 
         // ── 第三步：F10 增强
         //   QDII：F10 是官方涨跌权威来源，必须获取
-        //   普通基金：仅 changePercent == 0 时补全
-        //   合并原则：日期更新的数据胜出；QDII 同时保留 fundgz 的估算字段 ──
-        val needF10 = uncached.filter { code ->
+        //   普通基金：fundgz 不返回官方涨跌幅（changePercent 固定为 0），均需 F10 补全
+        //   合并原则：日期更新的数据胜出；F10 未更新时不覆盖 fundgz 的净值日期 ──
+        val needF10 = unique.filter { code ->
             val q = results[code]
             q == null || isQDII(code) || !q.changePercent.isFinite() || q.changePercent == 0.0
         }
@@ -250,19 +235,18 @@ object MarketDataService {
             if (existing == null) {
                 results[code] = buildOfficialQuote(code, "基金$code", f10)
             } else {
-                // 日期比较：YYYY-MM-DD 格式下字典序即时间序
-                val f10Newer = f10.date.isNotEmpty() && f10.date >= existing.date
-                val prevNav  = f10.prevNav.takeIf { it.isFinite() && it > 0 } ?: 0.0
+                val prevNav   = f10.prevNav.takeIf { it.isFinite() && it > 0 } ?: 0.0
                 val changePct = when {
                     f10.changePercent.isFinite() -> f10.changePercent
-                    prevNav > 0 -> (f10.nav - prevNav) / prevNav * 100
-                    else -> existing.changePercent
+                    prevNav > 0                  -> (f10.nav - prevNav) / prevNav * 100
+                    else                         -> existing.changePercent
                 }
                 results[code] = existing.copy(
-                    nav                     = if (f10Newer) f10.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble() else existing.nav,
+                    // nav 和 changePercent 取 F10（官方精度），与 Electron 版一致
+                    nav                     = if (f10.nav > 0) f10.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble() else existing.nav,
                     changePercent           = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-                    date                    = if (f10Newer) f10.date else existing.date,
-                    // QDII 估算数据不可靠，一律清除
+                    // date 永远来自 fundgz（existing.date），不让 F10 的 CDN 不稳定性影响日期展示
+                    date                    = existing.date,
                     estimatedNav            = if (isQDII(code)) null else existing.estimatedNav,
                     estimatedChangePercent  = if (isQDII(code)) null else existing.estimatedChangePercent,
                     hasEstimate             = if (isQDII(code)) false else existing.hasEstimate
@@ -271,16 +255,11 @@ object MarketDataService {
         }
 
         // ── QDII 兜底清除估算（F10 失败时 fundgz 的估算字段可能残留） ──
-        for (code in uncached.filter { isQDII(it) }) {
+        for (code in unique.filter { isQDII(it) }) {
             results[code]?.let { q ->
                 if (q.hasEstimate || q.estimatedNav != null)
                     results[code] = q.copy(estimatedNav = null, estimatedChangePercent = null, hasEstimate = false)
             }
-        }
-
-        // ── 写缓存 ──
-        for (code in uncached) {
-            results[code]?.let { fundCache[code] = it to now }
         }
 
         return results
