@@ -110,6 +110,8 @@ class FundPanel : JPanel(BorderLayout()),
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
+    private lateinit var upBtn:      JButton
+    private lateinit var downBtn:    JButton
     private lateinit var refreshBtn: JButton
     private lateinit var filterField: SearchTextField
 
@@ -309,15 +311,18 @@ class FundPanel : JPanel(BorderLayout()),
         groupLbl   = JLabel(L10n.lblGroup)
         manageBtn  = JButton(L10n.btnManageGroups)
         addBtn     = JButton(L10n.btnAddFund)
-        val upBtn  = JButton("↑")
-        val downBtn= JButton("↓")
+        upBtn      = JButton("↑")
+        downBtn    = JButton("↓")
         refreshBtn = JButton(L10n.btnRefresh)
         filterField = SearchTextField().also { it.preferredSize = Dimension(120, 26) }
 
+        upBtn.isVisible   = false
+        downBtn.isVisible = false
+
         toolbar.add(groupLbl); toolbar.add(groupCombo)
-        toolbar.add(manageBtn); toolbar.add(addBtn)
-        toolbar.add(upBtn);     toolbar.add(downBtn)
         toolbar.add(refreshBtn)
+        toolbar.add(manageBtn); toolbar.add(addBtn)
+        toolbar.add(upBtn);    toolbar.add(downBtn)
         toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
         val bottomBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 2))
@@ -367,6 +372,13 @@ class FundPanel : JPanel(BorderLayout()),
         upBtn.addActionListener   { moveRow(-1) }
         downBtn.addActionListener { moveRow(+1) }
         refreshBtn.addActionListener { fetchQuotesAsync() }
+
+        table.selectionModel.addListSelectionListener {
+            val hasSelection = table.selectedRow >= 0
+            upBtn.isVisible   = hasSelection
+            downBtn.isVisible = hasSelection
+            toolbar.revalidate(); toolbar.repaint()
+        }
     }
 
     private fun updateFilter() {
