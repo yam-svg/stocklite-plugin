@@ -245,8 +245,8 @@ object MarketDataService {
                     // nav 和 changePercent 取 F10（官方精度），与 Electron 版一致
                     nav                     = if (f10.nav > 0) f10.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble() else existing.nav,
                     changePercent           = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-                    // date 永远来自 fundgz（existing.date），不让 F10 的 CDN 不稳定性影响日期展示
-                    date                    = existing.date,
+                    // 取两者中较新的日期：F10 已更新时用 F10 日期，F10 CDN 旧节点返回旧日期时保持 fundgz 日期不退
+                    date                    = maxOf(existing.date, f10.date.ifEmpty { existing.date }),
                     estimatedNav            = if (isQDII(code)) null else existing.estimatedNav,
                     estimatedChangePercent  = if (isQDII(code)) null else existing.estimatedChangePercent,
                     hasEstimate             = if (isQDII(code)) false else existing.hasEstimate
