@@ -319,5 +319,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
                            displayType="BALLOON"
                            isLogByDefault="true"/>
         <postStartupActivity implementation="com.stocklite.plugin.StockliteStartupActivity"/>
+        <statusBarWidgetFactory implementation="com.stocklite.plugin.ui.PortfolioStatusWidgetFactory"
+                                id="StockLite.Portfolio"
+                                order="first"/>
     </extensions>
 </idea-plugin>

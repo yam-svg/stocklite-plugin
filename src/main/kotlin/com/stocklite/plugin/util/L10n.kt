@@ -118,7 +118,8 @@ object L10n {
             "${name} official NAV updated today: $sign${"%.2f".format(changePct)}%"
         )
     }
-    val settingsFundNavAlert get() = s("基金净值更新时通知", "Notify when fund NAV is published")
+    val settingsFundNavAlert    get() = s("基金净值更新时通知", "Notify when fund NAV is published")
+    val settingsPortfolioBar   get() = s("在 IDE 状态栏显示持仓盈亏（需有持仓股票）", "Show portfolio P&L in IDE status bar (requires stock holdings)")
     // 导入导出
     val dlgExportTitle    get() = s("导出数据",    "Export Data")
     val dlgImportTitle    get() = s("导入数据",    "Import Data")

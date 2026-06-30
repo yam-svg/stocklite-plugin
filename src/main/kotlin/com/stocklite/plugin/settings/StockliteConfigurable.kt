@@ -4,6 +4,7 @@ import com.intellij.openapi.options.Configurable
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.ui.PortfolioStatusWidget
 import com.stocklite.plugin.ui.dialogs.ImportExportDialog
 import com.stocklite.plugin.util.L10n
 import java.awt.GridBagConstraints
@@ -34,8 +35,9 @@ class StockliteConfigurable : Configurable {
     private val globalIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
-    private val alertsCheckBox       = JBCheckBox(L10n.settingsPriceAlerts)
-    private val fundNavAlertCheckBox = JBCheckBox(L10n.settingsFundNavAlert)
+    private val alertsCheckBox          = JBCheckBox(L10n.settingsPriceAlerts)
+    private val fundNavAlertCheckBox    = JBCheckBox(L10n.settingsFundNavAlert)
+    private val portfolioBarCheckBox    = JBCheckBox(L10n.settingsPortfolioBar)
 
     // AI 分析
     private val apiKeyField    = JPasswordField(30)
@@ -155,8 +157,9 @@ class StockliteConfigurable : Configurable {
 
         // ── 功能开关 ──
         sep(L10n.settingsFeatures, row); row += 2
-        gbc.gridy = row++; panel.add(alertsCheckBox,      gbc)
+        gbc.gridy = row++; panel.add(alertsCheckBox,       gbc)
         gbc.gridy = row++; panel.add(fundNavAlertCheckBox, gbc)
+        gbc.gridy = row++; panel.add(portfolioBarCheckBox, gbc)
 
         // ── AI 分析 ──
         sep(L10n.settingsAiSection, row); row += 2
@@ -267,8 +270,9 @@ class StockliteConfigurable : Configurable {
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
-               alertsCheckBox.isSelected      != state.enablePriceAlerts ||
+               alertsCheckBox.isSelected       != state.enablePriceAlerts ||
                fundNavAlertCheckBox.isSelected != state.enableFundNavAlert ||
+               portfolioBarCheckBox.isSelected != state.enablePortfolioStatusBar ||
                String(apiKeyField.password)        != state.deepseekApiKey ||
                modelCombo.selectedItem?.toString() != state.deepseekModel  ||
                aiInjectDataCheckBox.isSelected  != state.aiInjectRealTimeData  ||
@@ -288,8 +292,10 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalStock  = stockIntervalSpinner.value  as Int
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
-        state.enablePriceAlerts  = alertsCheckBox.isSelected
-        state.enableFundNavAlert = fundNavAlertCheckBox.isSelected
+        state.enablePriceAlerts        = alertsCheckBox.isSelected
+        state.enableFundNavAlert       = fundNavAlertCheckBox.isSelected
+        state.enablePortfolioStatusBar = portfolioBarCheckBox.isSelected
+        if (!state.enablePortfolioStatusBar) PortfolioStatusWidget.update(0.0, 0.0, 0.0, emptyList())
         state.deepseekApiKey     = String(apiKeyField.password)
         state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
         state.aiInjectRealTimeData  = aiInjectDataCheckBox.isSelected
@@ -316,6 +322,7 @@ class StockliteConfigurable : Configurable {
         globalIntervalSpinner.value = state.refreshIntervalGlobal
         alertsCheckBox.isSelected       = state.enablePriceAlerts
         fundNavAlertCheckBox.isSelected = state.enableFundNavAlert
+        portfolioBarCheckBox.isSelected = state.enablePortfolioStatusBar
         apiKeyField.text                = state.deepseekApiKey
         // 若 combo 为空（首次打开），先用保存的值填入作为占位；有 Key 时自动拉取列表
         val savedModel = state.deepseekModel.ifBlank { "deepseek-chat" }

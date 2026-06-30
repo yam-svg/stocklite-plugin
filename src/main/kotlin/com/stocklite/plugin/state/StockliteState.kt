@@ -41,6 +41,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // ── 功能开关 ──
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true
+    var enablePortfolioStatusBar: Boolean = true
 
     // ── AI 分析 ──
     var deepseekApiKey: String   = ""

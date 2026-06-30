@@ -503,7 +503,32 @@ class StockPanel : JPanel(BorderLayout()),
             append("   ${L10n.lblTotalPnl} ${sign(totalPnl)}${Fmt.value(totalPnl)}")
             append("   ${L10n.lblTodayPnl} ${sign(todayPnl)}${Fmt.value(todayPnl)}")
         }
-        statusLabel.text  = MarketTimeUtil.getMarketStatusText()
+        statusLabel.text = MarketTimeUtil.getMarketStatusText()
+
+        // 推送全量持仓到 IDE 状态栏 widget（不受当前分组过滤影响）
+        if (!state.enablePortfolioStatusBar) {
+            PortfolioStatusWidget.update(0.0, 0.0, 0.0, emptyList())
+            return
+        }
+        val allHoldings = state.stocks
+            .filter { it.quantity > 0 }
+            .map { s ->
+                val q = quotes[s.symbol]
+                val price = q?.price ?: 0.0
+                PortfolioStatusWidget.HoldingRow(
+                    name      = s.name,      symbol   = s.symbol,
+                    qty       = s.quantity,  price    = price,    cost = s.costPrice,
+                    changePct = q?.changePercent ?: 0.0,
+                    pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
+                    todayPnl  = (q?.change ?: 0.0) * s.quantity
+                )
+            }
+        PortfolioStatusWidget.update(
+            totalValue = allHoldings.sumOf { it.price * it.qty },
+            totalPnl   = allHoldings.sumOf { it.pnl },
+            todayPnl   = allHoldings.sumOf { it.todayPnl },
+            holdings   = allHoldings
+        )
     }
 
     fun fetchQuotesAsync() {
