@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
 import com.stocklite.plugin.service.FundNavWatcherService
+import com.stocklite.plugin.service.PortfolioWatcherService
 import com.stocklite.plugin.service.StockAlertWatcherService
 
 /**
@@ -20,5 +21,6 @@ class StockliteStartupActivity : StartupActivity.DumbAware {
         // 仅访问服务以触发实例化；init 块内的 Timer 负责后续轮询
         app.getService(FundNavWatcherService::class.java)
         app.getService(StockAlertWatcherService::class.java)
+        app.getService(PortfolioWatcherService::class.java)
     }
 }

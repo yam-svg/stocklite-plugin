@@ -322,6 +322,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
                 serviceImplementation="com.stocklite.plugin.service.FundNavWatcherService"/>
         <applicationService
                 serviceImplementation="com.stocklite.plugin.service.StockAlertWatcherService"/>
+        <applicationService
+                serviceImplementation="com.stocklite.plugin.service.PortfolioWatcherService"/>
         <applicationConfigurable
                 parentId="tools"
                 instance="com.stocklite.plugin.settings.StockliteConfigurable"
