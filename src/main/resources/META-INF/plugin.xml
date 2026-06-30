@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.5.2</version>
+    <version>1.5.3</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -215,6 +215,12 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.5.3</h3>
+<ul>
+  <li>新增 IDE 状态栏持仓概览：有持仓股票时，IDE 底部状态栏实时显示总盈亏与今日盈亏；点击弹出持仓明细（名称、代码、现价、涨跌幅、持仓盈亏、今日盈亏），数据跨分组汇总</li>
+  <li>新增设置项：Settings → StockLite → 功能开关 → "在 IDE 状态栏显示持仓盈亏"，可随时开关此功能，默认开启</li>
+</ul>
+
 <h3>1.5.2</h3>
 <ul>
   <li>修复基金净值日期显示：官方涨跌幅已更新但净值日期仍显示昨日的问题——改为取 fundgz 与 F10 两源中较新的日期，F10 率先更新时日期随之正确显示，F10 CDN 旧节点返回旧日期时也不会将已正确的日期往回拉</li>

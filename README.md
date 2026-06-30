@@ -86,7 +86,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.5.2.zip`
+输出路径：`build/distributions/stocklite-plugin-1.5.3.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
@@ -141,7 +141,7 @@ src/main/kotlin/com/stocklite/plugin/
         └── ImportExportDialog.kt   # 数据导入/导出
 ```
 
-## 新功能说明（v1.5.2）
+## 新功能说明（v1.5.3）
 
 ### 基金净值日期修复
 - 国内基金在开盘后不再把当日估值时间（如 `09:30:00`）当成净值更新日期显示
