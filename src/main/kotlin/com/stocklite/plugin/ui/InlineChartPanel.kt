@@ -243,10 +243,19 @@ class InlineChartPanel : JPanel(BorderLayout()) {
 
         val hasPrev = isIntraday && prevClose > 0.0
         val prevJs  = "%.6f".format(prevClose)
-        // For OHLC history, ChartPoint.value is the close price
-        val rawJs   = points.joinToString(",") { """{"time":${it.time},"price":${it.value}}""" }
+        // 蜡烛图仅用于日/周/月K线；日内走势保持折线/面积图。
+        // 且只有当绝大多数数据点都带真实开高低收时才画蜡烛图，否则保留折线/面积图（不伪造K线）
+        val ohlcCount = points.count { it.hasOhlc }
+        val hasOhlc = !isIntraday && points.isNotEmpty() && ohlcCount >= points.size * 0.8
+        fun num(d: Double) = if (d.isFinite()) "%.6f".format(d) else "null"
+        val rawJs = points.joinToString(",") {
+            """{"time":${it.time},"price":${it.value},"open":${num(it.open)},"high":${num(it.high)},"low":${num(it.low)}}"""
+        }
         val prevCloseLabel = L10n.chartPrevClose.replace("'", "\\'")
-        // For daily/weekly/monthly, use candlestick-style area (close only) with absolute price on Y-axis
+        val lblOpen  = L10n.chartOpen.replace("'", "\\'")
+        val lblHigh  = L10n.chartHigh.replace("'", "\\'")
+        val lblLow   = L10n.chartLow.replace("'", "\\'")
+        val lblClose = L10n.chartClose.replace("'", "\\'")
         val timeVisible = if (isIntraday) "true" else "false"
 
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -264,12 +273,10 @@ body{background:#1e1e2e;overflow:hidden;}
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
-  var PREV=$prevJs, HAS=${if (hasPrev) "true" else "false"};
+  var PREV=$prevJs, HAS=${if (hasPrev) "true" else "false"}, HAS_OHLC=${if (hasOhlc) "true" else "false"};
+  var ISINTRADAY=${if (isIntraday) "true" else "false"};
   var UP='${pal.upL}', DN='${pal.dnL}';
   var raw=[$rawJs];
-  var data=raw.map(function(d){
-    return{time:d.time,value:HAS?((d.price-PREV)/PREV*100):d.price,price:d.price};
-  });
   var priceMap={};raw.forEach(function(d){priceMap[d.time]=d.price;});
 
   var el=document.getElementById('chart'), tip=document.getElementById('tip');
@@ -280,13 +287,30 @@ body{background:#1e1e2e;overflow:hidden;}
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
     timeScale:{timeVisible:$timeVisible,secondsVisible:false,borderColor:'#3a3a5a'},
     rightPriceScale:{borderColor:'#3a3a5a'},
-    localization:{priceFormatter:HAS
+    localization:{priceFormatter:(HAS&&!HAS_OHLC)
       ?function(p){return(p>=0?'+':'')+p.toFixed(2)+'%';}
       :function(p){return p.toFixed(3);}},
   });
 
   var series;
-  if(HAS){
+  if(HAS_OHLC){
+    // 真实K线：蜡烛图，绝对价格坐标（不做涨跌幅换算，避免失真）
+    // K线固定“涨红跌绿”，不随涨跌颜色方案切换（该方案仅影响普通折线/面积图）
+    var CU='#ef5350', CD='#26a69a';
+    series=chart.addCandlestickSeries({
+      upColor:CU, downColor:CD, borderUpColor:CU, borderDownColor:CD,
+      wickUpColor:CU, wickDownColor:CD, priceLineVisible:false, lastValueVisible:true,
+    });
+    series.setData(raw.map(function(d){
+      var o=d.open!=null?d.open:d.price, h=d.high!=null?d.high:d.price, l=d.low!=null?d.low:d.price;
+      return{time:d.time,open:o,high:Math.max(h,o,d.price),low:Math.min(l,o,d.price),close:d.price};
+    }));
+    if(HAS){
+      series.createPriceLine({price:PREV,color:'#666688',lineWidth:1,
+        lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'$prevCloseLabel'});
+    }
+  } else if(HAS){
+    var data=raw.map(function(d){return{time:d.time,value:(d.price-PREV)/PREV*100};});
     series=chart.addBaselineSeries({
       baseValue:{type:'price',price:0},
       topLineColor:UP, topFillColor1:'${pal.upF1}', topFillColor2:'${pal.upF2}',
@@ -295,25 +319,38 @@ body{background:#1e1e2e;overflow:hidden;}
     });
     series.createPriceLine({price:0,color:'#666688',lineWidth:1,
       lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'$prevCloseLabel'});
+    series.setData(data);
   } else {
+    var data=raw.map(function(d){return{time:d.time,value:d.price};});
     series=chart.addAreaSeries({lineColor:UP,topColor:'${pal.upF1}',bottomColor:'${pal.upF2}',
       lineWidth:2,priceLineVisible:false,lastValueVisible:true});
+    series.setData(data);
   }
 
-  series.setData(data.map(function(d){return{time:d.time,value:d.value};}));
   chart.timeScale().fitContent();
 
   chart.subscribeCrosshairMove(function(p){
     if(!p.point||!p.time){tip.style.display='none';return;}
     var sd=p.seriesData&&p.seriesData.get(series);
     if(!sd){tip.style.display='none';return;}
+    var dt=new Date(p.time*1000);
+    var ts=ISINTRADAY
+      ?(String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'))
+      :(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'));
+    if(HAS_OHLC){
+      var col=sd.close>=sd.open?CU:CD;
+      tip.innerHTML='<span style="color:#888aaa">'+ts+'</span><br/>'
+        +'<b style="color:'+col+'">'
+        +'$lblOpen '+sd.open.toFixed(3)+'&nbsp;&nbsp;$lblHigh '+sd.high.toFixed(3)+'<br/>'
+        +'$lblLow '+sd.low.toFixed(3)+'&nbsp;&nbsp;$lblClose '+sd.close.toFixed(3)+'</b>';
+      tip.style.display='block';
+      return;
+    }
     var val=sd.value!==undefined?sd.value:(sd.lowerValue!==undefined?sd.lowerValue:null);
     if(val===null){tip.style.display='none';return;}
     var price=priceMap[p.time];
     var col=HAS?(val>=0?UP:DN):'#cdd6f4';
     var sign=val>=0?'+':'';
-    var dt=new Date(p.time*1000);
-    var ts=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
       +(HAS?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+val.toFixed(2)+'%</b>':'')
       +(price!=null?'&nbsp;&nbsp;<span>'+price.toFixed(3)+'</span>':'');

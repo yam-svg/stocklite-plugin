@@ -5,11 +5,23 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.WeekFields
 import java.util.TimeZone
 
 object ChartDataService {
 
-    data class ChartPoint(val time: Long, val value: Double)
+    /**
+     * @param value 收盘价（历史遗留字段名，各处仍按“最新价”语义使用）
+     * @param open/high/low 真实开高低价；数据源不提供时为 NaN，前端据此回退为折线/面积图，不伪造K线
+     */
+    data class ChartPoint(
+        val time: Long, val value: Double,
+        val open: Double = Double.NaN, val high: Double = Double.NaN, val low: Double = Double.NaN
+    ) {
+        val hasOhlc: Boolean get() = open.isFinite() && high.isFinite() && low.isFinite()
+    }
 
     private val CN_SINA_MAP = mapOf(
         "000001.SS" to "sh000001",
@@ -56,11 +68,20 @@ object ChartDataService {
 
     /**
      * 历史 K 线（日/周/月），供图表面板切换周期使用。
-     * @param symbol  A 股 "sh600519"，全球指数 "^GSPC"，基金 "fund_161725"（暂不支持），期货略（使用 intraday）
+     * @param symbol  A 股 "sh600519"，全球指数 "^GSPC"，期货 "nf_IF0"/"hf_NQ"，基金 "fund_161725"（暂不支持）
      * @param period  "daily" | "weekly" | "monthly"
      * @param count   数据点数量
      */
     fun getHistoryKLine(symbol: String, period: String, count: Int): List<ChartPoint> {
+        // 期货（国内/外盘）→ 新浪期货日K接口；周/月无原生接口，本地重采样
+        if (symbol.startsWith("nf_", true) || symbol.startsWith("hf_", true)) {
+            val normalized = normalizeFuture(symbol)
+            val daily = if (normalized.startsWith("nf_"))
+                fetchDomesticFutureDailyHistory(normalized.removePrefix("nf_"))
+            else
+                fetchGlobalFutureDailyHistory(normalized.removePrefix("hf_"))
+            return resampleDaily(daily, period, count)
+        }
         // A 股 / 国内指数 → 新浪
         if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
             val scale = when (period) {
@@ -109,7 +130,10 @@ object ChartDataService {
                 val close  = obj.optString("close", "").toDoubleOrNull() ?: continue
                 if (!dayStr.startsWith(today)) continue
                 val t = runCatching { sdfShanghai.get().parse(dayStr)!!.time / 1000L }.getOrNull() ?: continue
-                list.add(ChartPoint(t, close))
+                val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
+                val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
+                val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
+                list.add(ChartPoint(t, close, open, high, low))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -130,7 +154,10 @@ object ChartDataService {
                 // 历史 K 线只有日期部分 "2026-06-09"，补 00:00:00
                 val dateStr = if (dayStr.length == 10) "$dayStr 00:00:00" else dayStr
                 val t = runCatching { sdfShanghai.get().parse(dateStr)!!.time / 1000L }.getOrNull() ?: continue
-                list.add(ChartPoint(t, close))
+                val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
+                val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
+                val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
+                list.add(ChartPoint(t, close, open, high, low))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -152,7 +179,34 @@ object ChartDataService {
                 val price  = obj.optDouble("c", Double.NaN)
                 if (!dayStr.startsWith(today) || !price.isFinite() || price <= 0) continue
                 val t = runCatching { sdfShanghai.get().parse(dayStr)!!.time / 1000L }.getOrNull() ?: continue
-                list.add(ChartPoint(t, price))
+                val open = obj.optDouble("o", Double.NaN)
+                val high = obj.optDouble("h", Double.NaN)
+                val low  = obj.optDouble("l", Double.NaN)
+                list.add(ChartPoint(t, price, open, high, low))
+            }
+            list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** 国内期货日K线（供周期切换的日/周/月使用；周/月由 resampleDaily 本地聚合） */
+    private fun fetchDomesticFutureDailyHistory(contract: String): List<ChartPoint> {
+        val url = "https://stock2.finance.sina.com.cn/futures/api/json.php/" +
+            "InnerFuturesNewService.getDailyKLine?symbol=$contract"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until arr.length()) {
+                val obj    = arr.getJSONObject(i)
+                val dayStr = obj.optString("d", "")
+                val close  = obj.optDouble("c", Double.NaN)
+                if (dayStr.isEmpty() || !close.isFinite() || close <= 0) continue
+                val dateStr = if (dayStr.length == 10) "$dayStr 00:00:00" else dayStr
+                val t = runCatching { sdfShanghai.get().parse(dateStr)!!.time / 1000L }.getOrNull() ?: continue
+                val open = obj.optDouble("o", Double.NaN)
+                val high = obj.optDouble("h", Double.NaN)
+                val low  = obj.optDouble("l", Double.NaN)
+                list.add(ChartPoint(t, close, open, high, low))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -188,6 +242,58 @@ object ChartDataService {
         } catch (_: Exception) { emptyList() }
     }
 
+    /**
+     * 外盘期货日K线（供周期切换的日/周/月使用；周/月由 resampleDaily 本地聚合）。
+     * 注：新浪该接口不提供成交量/持仓量（恒为 0），仅日期+OHLC 可用。
+     */
+    private fun fetchGlobalFutureDailyHistory(contract: String): List<ChartPoint> {
+        val url = "https://stock2.finance.sina.com.cn/futures/api/json.php/" +
+            "GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=$contract"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until arr.length()) {
+                val obj     = arr.getJSONObject(i)
+                val dateStr = obj.optString("date", "")
+                val close   = obj.optString("close", "").toDoubleOrNull() ?: continue
+                if (dateStr.isEmpty() || close <= 0) continue
+                val t = runCatching { sdfShanghai.get().parse("$dateStr 00:00:00")!!.time / 1000L }.getOrNull() ?: continue
+                val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
+                val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
+                val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
+                list.add(ChartPoint(t, close, open, high, low))
+            }
+            list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** 期货日K → 周/月本地重采样（新浪期货接口无原生周/月K线） */
+    private fun resampleDaily(daily: List<ChartPoint>, period: String, count: Int): List<ChartPoint> {
+        if (period != "weekly" && period != "monthly") return daily.takeLast(count)
+        val zone = ZoneId.of("Asia/Shanghai")
+        val buckets = linkedMapOf<String, MutableList<ChartPoint>>()
+        for (p in daily) {
+            val date = Instant.ofEpochSecond(p.time).atZone(zone).toLocalDate()
+            val key = if (period == "weekly") {
+                val wf = WeekFields.ISO
+                "${date.get(wf.weekBasedYear())}-W${date.get(wf.weekOfWeekBasedYear())}"
+            } else {
+                "${date.year}-${date.monthValue}"
+            }
+            buckets.getOrPut(key) { mutableListOf() }.add(p)
+        }
+        return buckets.values.map { bucket ->
+            ChartPoint(
+                time  = bucket.last().time,
+                value = bucket.last().value,
+                open  = bucket.first().open,
+                high  = bucket.mapNotNull { it.high.takeIf(Double::isFinite) }.maxOrNull() ?: Double.NaN,
+                low   = bucket.mapNotNull { it.low.takeIf(Double::isFinite) }.minOrNull() ?: Double.NaN
+            )
+        }.takeLast(count)
+    }
+
     private fun parseGlobalFutureRow(values: List<String>, currentDate: String): Pair<String, Double> {
         if (values.size >= 10) {
             val date     = values[0].ifEmpty { currentDate }
@@ -213,14 +319,21 @@ object ChartDataService {
             val result = JSONObject(raw).optJSONObject("chart")
                 ?.optJSONArray("result")?.optJSONObject(0) ?: return emptyList()
             val timestamps = result.optJSONArray("timestamp") ?: return emptyList()
-            val closes = result.optJSONObject("indicators")
-                ?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close") ?: return emptyList()
+            val quote = result.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0) ?: return emptyList()
+            val closes = quote.optJSONArray("close") ?: return emptyList()
+            val opens  = quote.optJSONArray("open")
+            val highs  = quote.optJSONArray("high")
+            val lows   = quote.optJSONArray("low")
             val list = mutableListOf<ChartPoint>()
             for (i in 0 until timestamps.length()) {
                 val t = timestamps.optLong(i, -1L)
                 if (closes.isNull(i)) continue
                 val c = closes.optDouble(i, Double.NaN)
-                if (t > 0 && c.isFinite()) list.add(ChartPoint(t, c))
+                if (t <= 0 || !c.isFinite()) continue
+                val o = if (opens != null && !opens.isNull(i)) opens.optDouble(i, Double.NaN) else Double.NaN
+                val h = if (highs != null && !highs.isNull(i)) highs.optDouble(i, Double.NaN) else Double.NaN
+                val l = if (lows  != null && !lows.isNull(i))  lows.optDouble(i, Double.NaN)  else Double.NaN
+                list.add(ChartPoint(t, c, o, h, l))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -240,14 +353,21 @@ object ChartDataService {
             val result = JSONObject(raw).optJSONObject("chart")
                 ?.optJSONArray("result")?.optJSONObject(0) ?: return emptyList()
             val timestamps = result.optJSONArray("timestamp") ?: return emptyList()
-            val closes = result.optJSONObject("indicators")
-                ?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close") ?: return emptyList()
+            val quote = result.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0) ?: return emptyList()
+            val closes = quote.optJSONArray("close") ?: return emptyList()
+            val opens  = quote.optJSONArray("open")
+            val highs  = quote.optJSONArray("high")
+            val lows   = quote.optJSONArray("low")
             val list = mutableListOf<ChartPoint>()
             for (i in 0 until timestamps.length()) {
                 val t = timestamps.optLong(i, -1L)
                 if (closes.isNull(i)) continue
                 val c = closes.optDouble(i, Double.NaN)
-                if (t > 0 && c.isFinite()) list.add(ChartPoint(t, c))
+                if (t <= 0 || !c.isFinite()) continue
+                val o = if (opens != null && !opens.isNull(i)) opens.optDouble(i, Double.NaN) else Double.NaN
+                val h = if (highs != null && !highs.isNull(i)) highs.optDouble(i, Double.NaN) else Double.NaN
+                val l = if (lows  != null && !lows.isNull(i))  lows.optDouble(i, Double.NaN)  else Double.NaN
+                list.add(ChartPoint(t, c, o, h, l))
             }
             list.takeLast(maxCount)
         } catch (_: Exception) { emptyList() }

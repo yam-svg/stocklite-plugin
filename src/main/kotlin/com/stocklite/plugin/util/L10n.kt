@@ -136,6 +136,10 @@ object L10n {
     val chartPeriodDaily    get() = s("日K",  "Daily")
     val chartPeriodWeekly   get() = s("周K",  "Weekly")
     val chartPeriodMonthly  get() = s("月K",  "Monthly")
+    val chartOpen  get() = s("开", "O")
+    val chartHigh  get() = s("高", "H")
+    val chartLow   get() = s("低", "L")
+    val chartClose get() = s("收", "C")
     // 设置
     val settingsLanguage    get() = s("界面语言",           "Interface Language")
     val settingsLangZh      get() = s("中文",               "中文 (Chinese)")
