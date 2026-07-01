@@ -194,7 +194,36 @@ object MarketDataService {
 
     private val KNOWN_QDII_CODES = setOf("017437")
     private val QDII_NAME_KW = listOf("qdii","全球","海外","纳斯达克","标普","道琼斯","日经","恒生","msci","nasdaq","s&p","dow","hang seng")
-    private val detectedQdiiCodes = mutableSetOf<String>()
+    // 面板自身的刷新定时器和 FundNavWatcherService 的后台轮询会各自在独立线程上并发调用
+    // getFundQuotes，此处以及下方水位线缓存必须使用线程安全集合，否则并发读写可能
+    // 抛出 ConcurrentModificationException 导致某轮抓取静默失败。
+    private val detectedQdiiCodes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * 官方净值水位线：记录每个基金代码"已确认"的最新官方净值（nav/changePercent/date）。
+     * fundgz、Sina、F10 均走 CDN，边缘节点数据不同步时偶发返回滞后快照，
+     * 若不加约束会导致净值在新旧数据之间来回跳变。这里跨轮次记忆已知最优结果，
+     * 任何一次抓取若日期落后于水位线，则用水位线纠正，只允许官方净值随时间前进、不倒退。
+     */
+    private val officialQuoteHighWaterMark = java.util.concurrent.ConcurrentHashMap<String, FundQuote>()
+
+    private fun advanceHighWaterMark(code: String, computed: FundQuote): FundQuote {
+        // 用 compute 保证"读水位线 → 比较 → 写回"整体原子，避免面板定时器与
+        // Watcher 后台轮询同时为同一 code 调用本方法时出现的检查后再写竞态。
+        var result = computed
+        officialQuoteHighWaterMark.compute(code) { _, prevBest: FundQuote? ->
+            if (prevBest != null && !(computed.date.isNotEmpty() && computed.date >= prevBest.date)) {
+                // 本次官方日期落后于已知最优（命中滞后 CDN 节点等）——
+                // 官方字段用水位线纠正，估值类字段仍保留本轮抓取结果（这些字段本就逐轮刷新）。
+                result = computed.copy(nav = prevBest.nav, changePercent = prevBest.changePercent, date = prevBest.date)
+                prevBest
+            } else {
+                result = computed
+                computed
+            }
+        }
+        return result
+    }
 
     private fun normFundCode(raw: String) = raw.trim().let { Regex("\\d{6}").find(it)?.value ?: it }
     private fun isQDIIByCode(code: String) = normFundCode(code) in KNOWN_QDII_CODES
@@ -234,6 +263,10 @@ object MarketDataService {
             val existing = results[code]
             if (existing == null) {
                 results[code] = buildOfficialQuote(code, "基金$code", f10)
+            } else if (f10.date.isNotEmpty() && existing.date.isNotEmpty() && f10.date < existing.date) {
+                // F10 命中滞后 CDN 节点，返回的报告期比已掌握的还旧：
+                // 只是跳过本次增强，不能让它的旧净值和 existing 的新日期拼到一起。
+                continue
             } else {
                 val prevNav   = f10.prevNav.takeIf { it.isFinite() && it > 0 } ?: 0.0
                 val changePct = when {
@@ -260,6 +293,12 @@ object MarketDataService {
                 if (q.hasEstimate || q.estimatedNav != null)
                     results[code] = q.copy(estimatedNav = null, estimatedChangePercent = null, hasEstimate = false)
             }
+        }
+
+        // ── 官方净值水位线：跨轮次纠正，杜绝面板定时器与后台 Watcher 并发轮询时
+        //    谁先返回谁生效导致的净值新旧来回跳变（不影响本轮抓到的估值字段）──
+        for (code in unique) {
+            results[code]?.let { results[code] = advanceHighWaterMark(code, it) }
         }
 
         return results
