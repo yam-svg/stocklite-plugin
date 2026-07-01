@@ -88,15 +88,66 @@ object MarketDataService {
         }
     }
 
+    /**
+     * 判断市场当前是否开盘：先看星期，再看当天是否为交易日（含节假日，见 isTodayTradingDay），
+     * 最后再核对是否落在交易时段内。
+     */
     fun isMarketOpenByTimezone(market: String, timezone: String): Boolean {
         val now = ZonedDateTime.now(ZoneId.of(timezone))
         val dow = now.dayOfWeek.value  // 1=Mon..7=Sun
         if (dow == 6 || dow == 7) return false
+        if (!isTodayTradingDay(market, timezone, System.currentTimeMillis())) return false
         val current = now.hour * 60 + now.minute
         val (start, end, lunch) = getSessionMinutes(market)
         if (current < start || current > end) return false
         if (lunch != null && current >= lunch.first && current <= lunch.second) return false
         return true
+    }
+
+    /** 各市场用于判断"今天是否为交易日"的代表性 Yahoo 标的（同一市场共用一次请求结果） */
+    private val MARKET_CALENDAR_SYMBOL = mapOf(
+        "US" to "^GSPC", "UK" to "^FTSE", "DE" to "^GDAXI", "FR" to "^FCHI",
+        "JP" to "^N225", "KR" to "^KS11", "TW" to "^TWII", "IN" to "^BSESN",
+        "HK" to "^HSI", "CN" to "000001.SS",
+    )
+    private val marketTradingDayCache = mutableMapOf<String, Pair<Boolean, Long>>()
+    private val MARKET_CALENDAR_CACHE_TTL = 30 * 60_000L  // 30 分钟；是否交易日只在日期边界变化
+
+    /**
+     * 判断某市场"今天"是否为交易日（含节假日）。
+     * 用 v8/finance/chart（已在其它地方大量使用、无需鉴权）的 currentTradingPeriod 字段——
+     * 该字段始终指向最近一个真实交易时段，若其日期不是"今天"，说明今天休市（周末或节假日）。
+     * 请求失败 / 无代表标的时，退回"只看星期"。同一市场内多个标的共用同一份结果，且缓存 30 分钟，
+     * 避免每次刷新都发请求。
+     */
+    private fun isTodayTradingDay(market: String, timezone: String, now: Long): Boolean {
+        val weekdayFallback = ZonedDateTime.now(ZoneId.of(timezone)).dayOfWeek.value.let { it != 6 && it != 7 }
+
+        val cached = marketTradingDayCache[market]
+        if (cached != null && now - cached.second < MARKET_CALENDAR_CACHE_TTL) return cached.first
+
+        val symbol = MARKET_CALENDAR_SYMBOL[market] ?: return weekdayFallback
+        val enc = URLEncoder.encode(resolveYahooSymbol(symbol), "UTF-8")
+        val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1d&range=5d")
+            ?: return cached?.first ?: weekdayFallback
+
+        val isTradingDay = try {
+            val result = JSONObject(raw).getJSONObject("chart").getJSONArray("result").getJSONObject(0)
+            val meta = result.getJSONObject("meta")
+            val gmtOffset = meta.optLong("gmtoffset", 0)
+            val regularStart = meta.optJSONObject("currentTradingPeriod")
+                ?.optJSONObject("regular")?.optLong("start", -1) ?: -1L
+            if (regularStart <= 0) weekdayFallback
+            else {
+                val periodDate = java.time.Instant.ofEpochSecond(regularStart + gmtOffset)
+                    .atZone(ZoneId.of("UTC")).toLocalDate()
+                val today = ZonedDateTime.now(ZoneId.of(timezone)).toLocalDate()
+                periodDate == today
+            }
+        } catch (_: Exception) { weekdayFallback }
+
+        marketTradingDayCache[market] = isTradingDay to now
+        return isTradingDay
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -505,9 +556,7 @@ object MarketDataService {
     // ══════════════════════════════════════════════════════════════
 
     private val globalPrevCloseCache  = mutableMapOf<String, Pair<Double, Long>>()
-    private val marketStateCache       = mutableMapOf<String, Pair<Boolean, Long>>()
     private val GLOBAL_CACHE_TTL       = 60_000L
-    private val MARKET_STATE_CACHE_TTL = 60_000L  // 开/休状态缓存 1 分钟
 
     /** 全球指数行情结果，附带限流标志供面板自适应退避 */
     data class GlobalQuoteResult(
@@ -519,9 +568,6 @@ object MarketDataService {
         val quoteMap = mutableMapOf<String, Pair<Double, Double>>()
         val now = System.currentTimeMillis()
         var yahooRateLimited = false
-
-        // 0. 优先用 Yahoo 批量接口获取所有指数的市场状态（含节假日判断）
-        val marketStates = fetchYahooMarketStates(now)
 
         // 1. 腾讯港股实时（HK 指数）
         for (sym in listOf("^HSI", "^HSTECH")) {
@@ -557,55 +603,14 @@ object MarketDataService {
         val quotes = GLOBAL_INDEXES.map { item ->
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             val (price, pct) = (sinaKey?.let { quoteMap[it] } ?: quoteMap[item.symbol]) ?: (0.0 to 0.0)
-            // 优先使用 Yahoo marketState（含节假日），其次回退时区计算
-            val isOpen = marketStates[item.symbol]
-                ?: isMarketOpenByTimezone(item.market, item.timezone)
             GlobalIndexQuote(
                 symbol = item.symbol, name = "${item.nameCn} (${item.nameEn})",
                 value = price, changePercent = pct,
-                isOpen = isOpen,
+                isOpen = isMarketOpenByTimezone(item.market, item.timezone),
                 market = item.market
             )
         }
         return GlobalQuoteResult(quotes, yahooRateLimited)
-    }
-
-    /**
-     * 通过 Yahoo Finance v7/quote 批量接口获取所有指数的市场状态（单次请求）。
-     * - marketState = "REGULAR" → 交易中（isOpen = true）
-     * - marketState = "PRE"/"POST"/"CLOSED" → 休市/节假日（isOpen = false）
-     * 结果缓存 1 分钟，失败时返回缓存值，缓存也无时回退到 isMarketOpenByTimezone。
-     */
-    private fun fetchYahooMarketStates(now: Long): Map<String, Boolean> {
-        // 全部命中缓存则直接返回
-        val cached = GLOBAL_INDEXES.mapNotNull { item ->
-            val c = marketStateCache[item.symbol]
-            if (c != null && now - c.second < MARKET_STATE_CACHE_TTL) item.symbol to c.first else null
-        }.toMap()
-        if (cached.size == GLOBAL_INDEXES.size) return cached
-
-        // Yahoo symbol 到我们 symbol 的反向映射
-        val yahooToOurs = GLOBAL_INDEXES.associate { resolveYahooSymbol(it.symbol) to it.symbol }
-        val symbolList = yahooToOurs.keys.joinToString(",")
-        val url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=$symbolList"
-        val raw = HttpUtil.get(url) ?: return cached  // 网络失败 → 返回现有缓存
-
-        return try {
-            val results = JSONObject(raw)
-                .getJSONObject("quoteResponse")
-                .optJSONArray("result") ?: return cached
-            val result = cached.toMutableMap()
-            for (i in 0 until results.length()) {
-                val obj      = results.getJSONObject(i)
-                val yahooSym = obj.optString("symbol")
-                val ourSym   = yahooToOurs[yahooSym] ?: continue
-                val state    = obj.optString("marketState", "CLOSED")
-                val isOpen   = state == "REGULAR"
-                result[ourSym] = isOpen
-                marketStateCache[ourSym] = isOpen to now
-            }
-            result
-        } catch (_: Exception) { cached }
     }
 
     private data class HkQuote(val price: Double, val changePct: Double, val prevClose: Double)
