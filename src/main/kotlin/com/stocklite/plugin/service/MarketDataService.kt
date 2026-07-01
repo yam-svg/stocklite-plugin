@@ -660,8 +660,10 @@ object MarketDataService {
             val price = if (marketPrice.isFinite() && marketPrice > 0) marketPrice
                         else latestClose ?: return null
 
-            // 前收
-            var prevClose = extractPrevCloseFromIntraday(result)
+            // 前收：分钟线数据点校验通过才采信，否则依次退回 Yahoo 官方字段
+            // （previousClose 是 Yahoo 页面展示涨跌幅所用的口径，比 chartPreviousClose 更准确）
+            var prevClose = extractPrevCloseFromIntraday(result, symbol)
+            if (!prevClose.isFinite() || prevClose <= 0) prevClose = meta.optDouble("previousClose", Double.NaN)
             if (!prevClose.isFinite() || prevClose <= 0) prevClose = meta.optDouble("chartPreviousClose", Double.NaN)
             if (!prevClose.isFinite() || prevClose <= 0) prevClose = meta.optDouble("regularMarketPreviousClose", Double.NaN)
             if (!prevClose.isFinite() || prevClose <= 0) {
@@ -676,28 +678,43 @@ object MarketDataService {
         } catch (_: Exception) { null }
     }
 
-    /** 移植 extractPreviousCloseFromIntraday */
-    private fun extractPrevCloseFromIntraday(result: JSONObject): Double {
+    /**
+     * 移植 extractPreviousCloseFromIntraday，并加一道校验：
+     * 只有当"前一交易日最后一个分钟线数据点"确实接近该市场官方收盘时间时才采信，
+     * 否则回退到 chartPreviousClose 等官方字段更可靠。
+     * 起因：韩国综合指数（^KS11）等标的 Yahoo 分钟线经常在收盘前提前截断
+     *（如实际 15:30 收盘，数据却止于 14:59），若直接取"最后一个点"当前收，
+     * 会把前收算低/算高，涨跌幅随之出现明显偏差。
+     */
+    private fun extractPrevCloseFromIntraday(result: JSONObject, symbol: String): Double {
         val gmtOffset = result.getJSONObject("meta").optLong("gmtoffset", 0)
         val timestamps = result.optJSONArray("timestamp") ?: return Double.NaN
         val closes = result.getJSONObject("indicators").getJSONArray("quote")
             .getJSONObject(0).getJSONArray("close")
 
-        data class DayClose(val day: String, val close: Double)
         val dayMap = linkedMapOf<String, Double>()
+        val dayLastMinuteOfDay = mutableMapOf<String, Int>()
 
         for (i in 0 until minOf(timestamps.length(), closes.length())) {
             val ts    = timestamps.optLong(i, -1).takeIf { it > 0 } ?: continue
             val close = closes.optDouble(i).takeIf { it.isFinite() && it > 0 } ?: continue
             val exchMs = (ts + gmtOffset) * 1000
-            val day = java.time.Instant.ofEpochMilli(exchMs)
-                .atZone(ZoneId.of("UTC")).toLocalDate().toString()
+            val zdt = java.time.Instant.ofEpochMilli(exchMs).atZone(ZoneId.of("UTC"))
+            val day = zdt.toLocalDate().toString()
             dayMap[day] = close
+            dayLastMinuteOfDay[day] = zdt.hour * 60 + zdt.minute
         }
 
         val days = dayMap.keys.toList()
         if (days.size < 2) return Double.NaN
-        return dayMap[days[days.size - 2]] ?: Double.NaN
+        val prevDay   = days[days.size - 2]
+        val prevClose = dayMap[prevDay] ?: return Double.NaN
+
+        val market = GLOBAL_INDEXES.find { it.symbol == symbol }?.market ?: return prevClose
+        val sessionEnd  = getSessionMinutes(market).second
+        val lastMinute  = dayLastMinuteOfDay[prevDay] ?: return Double.NaN
+        if (sessionEnd - lastMinute > 15) return Double.NaN
+        return prevClose
     }
 
     // ══════════════════════════════════════════════════════════════
