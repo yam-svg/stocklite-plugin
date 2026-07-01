@@ -212,6 +212,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         symbol == "399001.SZ" -> "https://quote.eastmoney.com/zs399001.html"
         symbol == "399006.SZ" -> "https://quote.eastmoney.com/zs399006.html"
         symbol == "000300.SS" -> "https://quote.eastmoney.com/zs000300.html"
+        symbol == "000688.SS" -> "https://quote.eastmoney.com/zs000688.html"
         symbol == "^HSI"      -> "https://finance.yahoo.com/quote/%5EHSI/"
         symbol == "^HSTECH"   -> "https://finance.yahoo.com/quote/%5EHSTECH/"
         symbol.startsWith("^") -> "https://finance.yahoo.com/quote/${symbol.replace("^", "%5E")}/"

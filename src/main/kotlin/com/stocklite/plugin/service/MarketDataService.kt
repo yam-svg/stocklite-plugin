@@ -28,14 +28,21 @@ object MarketDataService {
         GlobalIndexConfig("^GSPC",    "SPX",    "S&P 500",         "标普500",    "US", "America/New_York"),
         GlobalIndexConfig("^DJI",     "DJI",    "Dow Jones",       "道琼斯",     "US", "America/New_York"),
         GlobalIndexConfig("^IXIC",    "IXIC",   "NASDAQ",          "纳斯达克",   "US", "America/New_York"),
+        GlobalIndexConfig("^VIX",     "VIX",    "CBOE VIX",        "VIX恐慌指数", "US", "America/New_York"),
+        GlobalIndexConfig("^FTSE",    "FTSE",   "FTSE 100",        "英国富时100","UK", "Europe/London"),
+        GlobalIndexConfig("^GDAXI",   "DAX",    "DAX",             "德国DAX",    "DE", "Europe/Berlin"),
+        GlobalIndexConfig("^FCHI",    "CAC40",  "CAC 40",          "法国CAC40",  "FR", "Europe/Paris"),
         GlobalIndexConfig("^N225",    "N225",   "Nikkei 225",      "日经225",    "JP", "Asia/Tokyo"),
         GlobalIndexConfig("^KS11",    "KOSPI",  "KOSPI",           "韩国综合指数","KR", "Asia/Seoul"),
+        GlobalIndexConfig("^TWII",    "TWII",   "TAIEX",           "台湾加权指数","TW", "Asia/Taipei"),
+        GlobalIndexConfig("^BSESN",   "SENSEX", "SENSEX",          "印度SENSEX", "IN", "Asia/Kolkata"),
         GlobalIndexConfig("^HSI",     "HSI",    "Hang Seng",       "恒生指数",   "HK", "Asia/Hong_Kong"),
         GlobalIndexConfig("^HSTECH",  "HSTECH", "Hang Seng TECH",  "恒生科技指数","HK","Asia/Hong_Kong"),
         GlobalIndexConfig("000001.SS","SSE",    "SSE Composite",   "上证指数",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("399001.SZ","SZSE",   "SZSE Component",  "深证成指",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("399006.SZ","CYB",    "ChiNext",         "创业板指",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000300.SS","CSI300", "CSI 300",         "沪深300",    "CN", "Asia/Shanghai"),
+        GlobalIndexConfig("000688.SS","STAR50", "STAR 50",         "科创50",     "CN", "Asia/Shanghai"),
     )
 
     private val SINA_SYMBOL_MAP = mapOf(
@@ -49,6 +56,7 @@ object MarketDataService {
         "399001.SZ" to "sz399001",
         "399006.SZ" to "sz399006",
         "000300.SS" to "sh000300",
+        "000688.SS" to "sh000688",
     )
 
     private val YAHOO_SYMBOL_MAP = mapOf("^HSTECH" to "HSTECH.HK")
@@ -71,6 +79,11 @@ object MarketDataService {
             "JP" -> Triple(9*60,    15*60, 11*60+30 to 12*60+30)
             "KR" -> Triple(9*60,    15*60+30, null)
             "US" -> Triple(9*60+30, 16*60, null)
+            "UK" -> Triple(8*60,    16*60+30, null)
+            "DE" -> Triple(9*60,    17*60+30, null)
+            "FR" -> Triple(9*60,    17*60+30, null)
+            "TW" -> Triple(9*60,    13*60+30, null)
+            "IN" -> Triple(9*60+15, 15*60+30, null)
             else -> Triple(9*60,    16*60, null)
         }
     }

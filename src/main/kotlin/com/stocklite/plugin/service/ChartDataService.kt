@@ -15,7 +15,8 @@ object ChartDataService {
         "000001.SS" to "sh000001",
         "399001.SZ" to "sz399001",
         "399006.SZ" to "sz399006",
-        "000300.SS" to "sh000300"
+        "000300.SS" to "sh000300",
+        "000688.SS" to "sh000688"
     )
 
     private val sdfShanghai: ThreadLocal<SimpleDateFormat> = ThreadLocal.withInitial {
