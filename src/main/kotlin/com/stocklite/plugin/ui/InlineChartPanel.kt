@@ -278,6 +278,12 @@ body{background:#1e1e2e;overflow:hidden;}
   var UP='${pal.upL}', DN='${pal.dnL}';
   var raw=[$rawJs];
   var priceMap={};raw.forEach(function(d){priceMap[d.time]=d.price;});
+  // 每根K线相对上一根收盘价的涨跌幅，用于蜡烛图悬浮提示
+  var pctMap={};
+  for(var pi=1;pi<raw.length;pi++){
+    var prevC=raw[pi-1].price;
+    if(prevC>0) pctMap[raw[pi].time]=(raw[pi].price-prevC)/prevC*100;
+  }
 
   var el=document.getElementById('chart'), tip=document.getElementById('tip');
   var chart=LightweightCharts.createChart(el,{
@@ -339,7 +345,10 @@ body{background:#1e1e2e;overflow:hidden;}
       :(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'));
     if(HAS_OHLC){
       var col=sd.close>=sd.open?CU:CD;
-      tip.innerHTML='<span style="color:#888aaa">'+ts+'</span><br/>'
+      var pct=pctMap[p.time];
+      var pctTxt=(pct!=null)?('&nbsp;&nbsp;'+(pct>=0?'+':'')+pct.toFixed(2)+'%'):'';
+      tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
+        +'<b style="color:'+col+'">'+pctTxt+'</b><br/>'
         +'<b style="color:'+col+'">'
         +'$lblOpen '+sd.open.toFixed(3)+'&nbsp;&nbsp;$lblHigh '+sd.high.toFixed(3)+'<br/>'
         +'$lblLow '+sd.low.toFixed(3)+'&nbsp;&nbsp;$lblClose '+sd.close.toFixed(3)+'</b>';
