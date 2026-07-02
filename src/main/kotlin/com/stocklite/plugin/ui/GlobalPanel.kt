@@ -98,6 +98,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val chipTurnover = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipCapTier  = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFlow     = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipFuturesPosition = JLabel("--").apply { font = font.deriveFont(11f) }
 
     // 领涨/领跌板块各展示 TOP6，固定 3行×2列 网格——不依赖自动换行，格子尺寸恒定，避免内容被截断
     private val topSectorCells    = List(6) { JLabel("--").apply { font = font.deriveFont(10f) } }
@@ -108,6 +109,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     // 固定行数/固定网格——不依赖 FlowLayout 自动换行（换行后高度不会正确撑开，会把后面内容截掉）
     private val breadthRow1 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
     private val breadthRow2 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    private val breadthRow3 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
     private val breadthPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
@@ -423,6 +425,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         breadthRow1.add(chipTurnover)
         breadthRow2.add(chipCapTier)
         breadthRow2.add(chipFlow)
+        breadthRow3.add(chipFuturesPosition)
 
         val topGrid = JPanel(GridLayout(3, 2, 10, 1))
         topSectorCells.forEach { topGrid.add(it) }
@@ -438,10 +441,11 @@ class GlobalPanel : JPanel(BorderLayout()),
             add(bottomGrid, BorderLayout.CENTER)
         }
 
-        listOf(breadthRow1, breadthRow2, topSection, bottomSection)
+        listOf(breadthRow1, breadthRow2, breadthRow3, topSection, bottomSection)
             .forEach { it.alignmentX = Component.LEFT_ALIGNMENT }
         breadthPanel.add(breadthRow1)
         breadthPanel.add(breadthRow2)
+        breadthPanel.add(breadthRow3)
         breadthPanel.add(topSection)
         breadthPanel.add(bottomSection)
     }
@@ -488,6 +492,29 @@ class GlobalPanel : JPanel(BorderLayout()),
             if (d.mainNetInflow != null) "<html>${L10n.lblMainFlow} ${flowSpan(d.mainNetInflow, up, dn)}</html>"
             else "${L10n.lblMainFlow} --"
 
+        // 只展示"当日净操作"（Δ空-Δ多，正=净加空）；持仓存量和分品种明细移到悬浮提示
+        chipFuturesPosition.text = d.futuresPosition?.let { fp ->
+            val citicOp = fp.citicShortChange - fp.citicLongChange
+            val mainOp  = fp.mainForceShortChange - fp.mainForceLongChange
+            if (citicOp.isFinite() && mainOp.isFinite())
+                "<html>${L10n.lblFuturesPosition}(${fp.tradeDate}) " +
+                    "${L10n.lblCitic}${netOpSpan(citicOp, up, dn)} ${L10n.lblMainForce}${netOpSpan(mainOp, up, dn)}</html>"
+            else "${L10n.lblFuturesPosition} --"
+        } ?: "${L10n.lblFuturesPosition} --"
+        chipFuturesPosition.toolTipText = d.futuresPosition?.let { fp ->
+            val citicNet = fp.citicLong - fp.citicShort
+            val mainNet  = fp.mainForceLong - fp.mainForceShort
+            fun net(v: Double) = "${if (v >= 0) "净多" else "净空"}${"%.0f".format(kotlin.math.abs(v))}手"
+            "<html>当前持仓：${L10n.lblCitic}${net(citicNet)}，${L10n.lblMainForce}${net(mainNet)}" +
+                (if (fp.citicByVariety.isNotEmpty())
+                    "<br/>${L10n.lblCitic}${L10n.tipVarietyDetail}：<br/>" +
+                        fp.citicByVariety.joinToString("<br/>") { v ->
+                            val label = if (v.netAddShort >= 0) "净加空" else "净加多"
+                            "${v.code} ${v.name}：$label${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                        }
+                 else "") + "</html>"
+        }
+
         updateSectorCells(topSectorCells, d.topSectors, up, dn)
         updateSectorCells(bottomSectorCells, d.bottomSectors, up, dn)
     }
@@ -509,6 +536,14 @@ class GlobalPanel : JPanel(BorderLayout()),
         val color = if (v >= 0) upHex else dnHex
         val sign  = if (v >= 0) "+" else ""
         return "<b style='color:$color'>$sign${fmtYuanBig(v)}</b>"
+    }
+
+    /** 当日净操作显示：正=净加空（跌色，看空倾向），负=净加多（涨色），如 "加空3551手" / "加多769手" */
+    private fun netOpSpan(netAddShort: Double, upHex: String, dnHex: String): String {
+        val bearish = netAddShort >= 0
+        val color = if (bearish) dnHex else upHex
+        val label = if (bearish) "加空" else "加多"
+        return "<b style='color:$color'>$label${"%.0f".format(kotlin.math.abs(netAddShort))}手</b>"
     }
 
     private fun colorHex(color: Color): String = String.format("#%06X", color.rgb and 0xFFFFFF)
@@ -539,7 +574,23 @@ class GlobalPanel : JPanel(BorderLayout()),
                 sb.append("领涨板块TOP${d.topSectors.size}：${d.topSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
             if (d.bottomSectors.isNotEmpty())
                 sb.append("领跌板块TOP${d.bottomSectors.size}：${d.bottomSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
-            if (d.mainNetInflow != null) sb.append("主力资金净${if (d.mainNetInflow >= 0) "流入" else "流出"}${fmtYuanBig(kotlin.math.abs(d.mainNetInflow))}")
+            if (d.mainNetInflow != null) sb.append("主力资金净${if (d.mainNetInflow >= 0) "流入" else "流出"}${fmtYuanBig(kotlin.math.abs(d.mainNetInflow))} ")
+            d.futuresPosition?.let { fp ->
+                val citicNet = fp.citicLong - fp.citicShort
+                val mainNet  = fp.mainForceLong - fp.mainForceShort
+                fun chg(l: Double, s: Double) =
+                    if (l.isFinite() && s.isFinite()) "（较上一交易日多单${"%+.0f".format(l)}/空单${"%+.0f".format(s)}）" else ""
+                sb.append("股指期货龙虎榜(${fp.tradeDate}收盘后，四大期指IH/IF/IC/IM全合约合计)：" +
+                    "中信净${if (citicNet >= 0) "多" else "空"}${"%.0f".format(kotlin.math.abs(citicNet))}手" +
+                    chg(fp.citicLongChange, fp.citicShortChange) +
+                    "，前20名会员合计净${if (mainNet >= 0) "多" else "空"}${"%.0f".format(kotlin.math.abs(mainNet))}手" +
+                    chg(fp.mainForceLongChange, fp.mainForceShortChange))
+                if (fp.citicByVariety.isNotEmpty()) {
+                    sb.append("；中信分品种：" + fp.citicByVariety.joinToString("、") { v ->
+                        "${v.name}净加${if (v.netAddShort >= 0) "空" else "多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                    })
+                }
+            }
             sb.appendLine().appendLine()
         }
         for (q in quotes) {

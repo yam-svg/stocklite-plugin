@@ -135,8 +135,39 @@ data class MarketBreadthData(
     /** 领跌行业板块 TOP6（同上过滤规则） */
     val bottomSectors: List<SectorPct> = emptyList(),
     /** 主力资金净流入（沪深两市合计），单位：元，负数为净流出 */
-    val mainNetInflow: Double? = null
+    val mainNetInflow: Double? = null,
+    /** 沪深300股指期货（主力合约）收盘后龙虎榜：中信期货(代客) 与前20名会员合计的多空持仓 */
+    val futuresPosition: IndexFuturesPosition? = null
 )
+
+/**
+ * 股指期货会员持仓龙虎榜快照（中金所官方数据，东方财富镜像）。
+ * 统计口径：四大期指（IH/IF/IC/IM）全部合约月份合计，与东财"品种合计"口径一致，非仅主力合约。
+ * @param tradeDate 数据对应的交易日"MM-dd"，非当日说明当日尚未收盘结算、仍是上一交易日数据
+ * @param citicLong/citicShort 中信期货(代客) 持多单/空单量（手）
+ * @param citicLongChange/citicShortChange 中信较上一交易日的多单/空单增减（手）
+ * @param mainForceLong/mainForceShort 前20名会员（"本日合计"，即龙虎榜官方汇总口径）持多单/空单量（手）
+ * @param mainForceLongChange/mainForceShortChange 前20名会员合计较上一交易日的多单/空单增减（手）
+ * @param citicByVariety 中信各品种净加空明细
+ */
+data class IndexFuturesPosition(
+    val tradeDate: String,
+    val citicLong: Double,
+    val citicShort: Double,
+    val citicLongChange: Double,
+    val citicShortChange: Double,
+    val mainForceLong: Double,
+    val mainForceShort: Double,
+    val mainForceLongChange: Double = Double.NaN,
+    val mainForceShortChange: Double = Double.NaN,
+    val citicByVariety: List<VarietyNetChange> = emptyList()
+)
+
+/**
+ * 单个期指品种的净加空手数。
+ * @param netAddShort Δ空单-Δ多单：正=净加空（看空倾向增强），负=净加多/减空
+ */
+data class VarietyNetChange(val code: String, val name: String, val netAddShort: Double)
 
 data class SectorPct(val name: String, val pct: Double)
 

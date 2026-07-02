@@ -837,6 +837,101 @@ object MarketDataService {
         } catch (_: Exception) { null }
     }
 
+    /** 四大股指期货品种 */
+    private val INDEX_FUTURES_VARIETIES = linkedMapOf(
+        "IH" to "上证50", "IF" to "沪深300", "IC" to "中证500", "IM" to "中证1000"
+    )
+
+    /** 最近一个已披露龙虎榜数据的交易日（"yyyy-MM-dd"）。当日收盘结算后即为当日，盘中则为上一交易日 */
+    private fun fetchLatestFuturesTradeDate(): String? {
+        val filter = URLEncoder.encode("(MEMBER_NAME_ABBR=\"本日合计\")(TYPE=\"2\")(TRADE_CODE=\"IF\")", "UTF-8")
+        val raw = HttpUtil.get(
+            "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FUTU_DAILYPOSITION" +
+                "&columns=TRADE_DATE&filter=$filter&sortColumns=TRADE_DATE&sortTypes=-1&pageNumber=1&pageSize=1&source=WEB&client=WEB"
+        ) ?: return null
+        return try {
+            JSONObject(raw).getJSONObject("result").getJSONArray("data").getJSONObject(0)
+                .optString("TRADE_DATE", "").takeIf { it.length >= 10 }?.substring(0, 10)
+        } catch (_: Exception) { null }
+    }
+
+    private data class FuturesAgg(
+        val long: Double, val short: Double, val dLong: Double, val dShort: Double,
+        /** 品种代码 -> [多, 空, Δ多, Δ空] */
+        val byVariety: Map<String, DoubleArray>
+    )
+
+    /**
+     * 按会员名聚合指定交易日的持仓：覆盖四大期指（IH/IF/IC/IM）的全部合约月份（如 IF2607+IF2609+IF2612），
+     * 与东财/豆包等平台"品种合计"口径一致，而非仅主力合约。持仓/增减字段为 null 的行按 0 计（交易所仅披露进入
+     * 对应榜单前20的数据，未上榜部分本就不可得，各平台同此口径）。
+     */
+    private fun fetchFuturesAgg(memberName: String, type: String, date: String): FuturesAgg? {
+        val filter = URLEncoder.encode("(MEMBER_NAME_ABBR=\"$memberName\")(TYPE=\"$type\")(TRADE_DATE='$date')", "UTF-8")
+        val raw = HttpUtil.get(
+            "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FUTU_DAILYPOSITION" +
+                "&columns=TRADE_CODE,LONG_POSITION,SHORT_POSITION,LP_CHANGE,SP_CHANGE" +
+                "&filter=$filter&pageNumber=1&pageSize=200&source=WEB&client=WEB"
+        ) ?: return null
+        return try {
+            val arr = JSONObject(raw).getJSONObject("result").getJSONArray("data")
+            val byVariety = mutableMapOf<String, DoubleArray>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val variety = o.optString("TRADE_CODE", "")
+                if (variety !in INDEX_FUTURES_VARIETIES) continue
+                val acc = byVariety.getOrPut(variety) { DoubleArray(4) }
+                acc[0] += o.optDouble("LONG_POSITION", 0.0).takeIf { it.isFinite() } ?: 0.0
+                acc[1] += o.optDouble("SHORT_POSITION", 0.0).takeIf { it.isFinite() } ?: 0.0
+                acc[2] += o.optDouble("LP_CHANGE", 0.0).takeIf { it.isFinite() } ?: 0.0
+                acc[3] += o.optDouble("SP_CHANGE", 0.0).takeIf { it.isFinite() } ?: 0.0
+            }
+            if (byVariety.isEmpty()) return null
+            FuturesAgg(
+                long   = byVariety.values.sumOf { it[0] },
+                short  = byVariety.values.sumOf { it[1] },
+                dLong  = byVariety.values.sumOf { it[2] },
+                dShort = byVariety.values.sumOf { it[3] },
+                byVariety = byVariety
+            )
+        } catch (_: Exception) { null }
+    }
+
+    private var futuresPositionCache: IndexFuturesPosition? = null
+    private var futuresPositionCacheTime = 0L
+    private val FUTURES_POSITION_CACHE_TTL = 10 * 60_000L  // 龙虎榜每日结算后才更新一次，10分钟缓存足够
+
+    /**
+     * 股指期货收盘后龙虎榜：中信期货(代客) 及前20名会员合计("本日合计"官方汇总行)的多空持仓，
+     * 覆盖四大期指全部合约月份。日期取最近一个已披露的交易日，由 tradeDate 如实反映，不做"待收盘"猜测。
+     */
+    private fun fetchIndexFuturesPosition(): IndexFuturesPosition? {
+        val now = System.currentTimeMillis()
+        futuresPositionCache?.let {
+            if (now - futuresPositionCacheTime < FUTURES_POSITION_CACHE_TTL) return it
+        }
+
+        val date = fetchLatestFuturesTradeDate() ?: return futuresPositionCache
+        val citic = fetchFuturesAgg("中信期货(代客)", "0", date) ?: return futuresPositionCache
+        val total = fetchFuturesAgg("本日合计", "2", date) ?: return futuresPositionCache
+
+        val result = IndexFuturesPosition(
+            tradeDate = date.substring(5),
+            citicLong = citic.long, citicShort = citic.short,
+            citicLongChange = citic.dLong, citicShortChange = citic.dShort,
+            mainForceLong = total.long, mainForceShort = total.short,
+            mainForceLongChange = total.dLong, mainForceShortChange = total.dShort,
+            citicByVariety = INDEX_FUTURES_VARIETIES.mapNotNull { (code, name) ->
+                citic.byVariety[code]?.let { v ->
+                    VarietyNetChange(code, name, netAddShort = v[3] - v[2])
+                }
+            }
+        )
+        futuresPositionCache = result
+        futuresPositionCacheTime = now
+        return result
+    }
+
     /**
      * 获取A股大盘概览。各子项独立请求、独立容错——任意一项失败只影响该项（显示为 null/"--"），
      * 不影响其它已成功获取的数据，也不影响全球指数行情本身。
@@ -848,6 +943,7 @@ object MarketDataService {
         val capTier = fetchCapTierPct()
         val sectors = fetchSectorLeaders()
         val flow    = fetchMainCapitalFlow()
+        val futuresPosition = fetchIndexFuturesPosition()
         return MarketBreadthData(
             upCount = breadth?.first, downCount = breadth?.second, flatCount = breadth?.third,
             limitUpCount = limits?.first, limitDownCount = limits?.second,
@@ -855,7 +951,8 @@ object MarketDataService {
             largeCapPct = capTier?.first, midCapPct = capTier?.second, smallCapPct = capTier?.third,
             topSectors = sectors?.first?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
             bottomSectors = sectors?.second?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
-            mainNetInflow = flow
+            mainNetInflow = flow,
+            futuresPosition = futuresPosition
         )
     }
 
