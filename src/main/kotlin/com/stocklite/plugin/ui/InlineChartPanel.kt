@@ -46,7 +46,9 @@ class InlineChartPanel : JPanel(BorderLayout()) {
 
     init {
         isVisible = false
-        preferredSize = Dimension(0, PANEL_HEIGHT)
+        // 隐藏时高度归零——BorderLayout 在计算首选尺寸时不会区分可见性，
+        // 固定高度会导致父容器即使图表未打开也一直预留这块空间（出现空白区域）。
+        preferredSize = Dimension(0, 0)
         border = BorderFactory.createMatteBorder(1, 0, 0, 0, Color(0x3A3A5A))
 
         // ── 标题栏 ──
@@ -122,15 +124,19 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         currentPeriod = PERIOD_INTRADAY
         highlightPeriodBtn(PERIOD_INTRADAY)
 
+        preferredSize = Dimension(0, PANEL_HEIGHT)
         isVisible = true
         revalidate(); repaint()
+        (parent as? JComponent)?.revalidate()
         loadCurrentPeriod()
     }
 
     fun close() {
         loadId++
         isVisible = false
+        preferredSize = Dimension(0, 0)
         revalidate(); repaint()
+        (parent as? JComponent)?.revalidate()
     }
 
     fun disposeResources() { browser?.dispose(); browser = null }

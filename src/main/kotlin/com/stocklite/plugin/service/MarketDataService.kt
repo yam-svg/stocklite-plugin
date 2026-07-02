@@ -731,6 +731,135 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
+    // A股大盘概览（东方财富 push2 系列免费接口，均实测确认无需登录/鉴权）
+    // ══════════════════════════════════════════════════════════════
+
+    private const val EM_UT = "bd1d9ddb04089700cf9c27f6f7426281"
+
+    /** 涨跌家数（沪深两市合计）：分别查上证指数(1.000001)、深证综指(0.399106)的成分家数字段后求和 */
+    private fun fetchAdvanceDecline(): Triple<Int, Int, Int>? {
+        fun fetchOne(secid: String): Triple<Int, Int, Int>? {
+            val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=$secid&ut=$EM_UT&fields=f113,f114,f115")
+                ?: return null
+            return try {
+                val d = JSONObject(raw).getJSONObject("data")
+                Triple(d.getInt("f113"), d.getInt("f114"), d.getInt("f115"))
+            } catch (_: Exception) { null }
+        }
+        val sh = fetchOne("1.000001") ?: return null
+        val sz = fetchOne("0.399106") ?: return null
+        return Triple(sh.first + sz.first, sh.second + sz.second, sh.third + sz.third)
+    }
+
+    /** 涨停/跌停家数 */
+    private fun fetchLimitCounts(): Pair<Int, Int>? {
+        fun fetchTc(url: String): Int? {
+            val raw = HttpUtil.get(url) ?: return null
+            return try { JSONObject(raw).getJSONObject("data").getInt("tc") } catch (_: Exception) { null }
+        }
+        val zt = fetchTc("https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=") ?: return null
+        val dt = fetchTc("https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fund:asc&date=") ?: return null
+        return zt to dt
+    }
+
+    /** 两市成交额代理：中证流通指数（覆盖沪深京全市场）成交额，单位元 */
+    private fun fetchTotalTurnover(): Double? {
+        val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=1.000902&ut=$EM_UT&fields=f48") ?: return null
+        return try {
+            val v = JSONObject(raw).getJSONObject("data").optDouble("f48", Double.NaN)
+            v.takeIf { it.isFinite() && it > 0 }
+        } catch (_: Exception) { null }
+    }
+
+    /** 大/中/小盘代理：沪深300 / 中证500 / 中证1000 涨跌幅% */
+    private fun fetchCapTierPct(): Triple<Double, Double, Double>? {
+        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000300,sh000905,sh000852", "https://finance.sina.com.cn")
+            ?: return null
+        val quotes = parseSinaData(raw)
+        val large = quotes["sh000300"]?.second
+        val mid   = quotes["sh000905"]?.second
+        val small = quotes["sh000852"]?.second
+        if (large == null || mid == null || small == null) return null
+        return Triple(large, mid, small)
+    }
+
+    private data class SectorInfo(val name: String, val pct: Double, val constituents: Int)
+
+    private var sectorLeadersCache: Pair<List<SectorInfo>, List<SectorInfo>>? = null
+    private var sectorLeadersCacheTime = 0L
+    private val SECTOR_CACHE_TTL = 5 * 60_000L  // 板块接口偶发限流/断连时，5分钟内用最近一次成功结果兜底，避免频繁"--"
+
+    /** 领涨/领跌行业板块 TOP6（过滤掉成分股过少的冷门板块，避免单只股票带动的噪声） */
+    private fun fetchSectorLeaders(): Pair<List<SectorInfo>, List<SectorInfo>>? {
+        fun fetchTop(descending: Boolean): List<SectorInfo>? {
+            val po = if (descending) 1 else 0
+            val url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=30&po=$po&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f14,f3,f104,f105"
+            // 该接口偶发被限流/断连（HTTP 层面握手失败），重试一次再放弃
+            var raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/")
+            if (raw == null) raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/")
+            raw ?: return null
+            return try {
+                val arr = JSONObject(raw).getJSONObject("data").getJSONArray("diff")
+                (0 until arr.length()).asSequence().mapNotNull { i ->
+                    val o = arr.getJSONObject(i)
+                    val name = o.optString("f14", "")
+                    val pct  = o.optDouble("f3", Double.NaN)
+                    val cons = o.optInt("f104", 0) + o.optInt("f105", 0)
+                    if (name.isEmpty() || !pct.isFinite()) null else SectorInfo(name, pct, cons)
+                }.filter { it.constituents >= 5 }.take(6).toList()
+            } catch (_: Exception) { null }
+        }
+
+        val top    = fetchTop(descending = true)
+        val bottom = if (top != null) fetchTop(descending = false) else null
+        val now = System.currentTimeMillis()
+        if (top != null && bottom != null && top.isNotEmpty() && bottom.isNotEmpty()) {
+            val result = top to bottom
+            sectorLeadersCache = result
+            sectorLeadersCacheTime = now
+            return result
+        }
+        // 本次失败：若最近一次成功结果还在有效期内，沿用它，而不是直接展示"--"
+        val cached = sectorLeadersCache
+        return if (cached != null && now - sectorLeadersCacheTime < SECTOR_CACHE_TTL) cached else null
+    }
+
+    /** 主力资金净流入（沪深两市合计），单位元，负数为净流出 */
+    private fun fetchMainCapitalFlow(): Double? {
+        val raw = HttpUtil.get(
+            "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f62"
+        ) ?: return null
+        return try {
+            val arr = JSONObject(raw).getJSONObject("data").getJSONArray("diff")
+            var sum = 0.0
+            for (i in 0 until arr.length()) sum += arr.getJSONObject(i).optDouble("f62", 0.0)
+            sum
+        } catch (_: Exception) { null }
+    }
+
+    /**
+     * 获取A股大盘概览。各子项独立请求、独立容错——任意一项失败只影响该项（显示为 null/"--"），
+     * 不影响其它已成功获取的数据，也不影响全球指数行情本身。
+     */
+    fun getMarketBreadth(): MarketBreadthData {
+        val breadth = fetchAdvanceDecline()
+        val limits  = fetchLimitCounts()
+        val turnover = fetchTotalTurnover()
+        val capTier = fetchCapTierPct()
+        val sectors = fetchSectorLeaders()
+        val flow    = fetchMainCapitalFlow()
+        return MarketBreadthData(
+            upCount = breadth?.first, downCount = breadth?.second, flatCount = breadth?.third,
+            limitUpCount = limits?.first, limitDownCount = limits?.second,
+            totalTurnover = turnover,
+            largeCapPct = capTier?.first, midCapPct = capTier?.second, smallCapPct = capTier?.third,
+            topSectors = sectors?.first?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
+            bottomSectors = sectors?.second?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
+            mainNetInflow = flow
+        )
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // 股票搜索（移植自 registerStockSearchHandler，扩展支持港股/美股）
     // ══════════════════════════════════════════════════════════════
 

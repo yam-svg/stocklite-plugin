@@ -8,6 +8,8 @@ import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.GlobalIndexQuote
+import com.stocklite.plugin.state.MarketBreadthData
+import com.stocklite.plugin.state.SectorPct
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
@@ -82,6 +84,35 @@ class GlobalPanel : JPanel(BorderLayout()),
         MarketDataService.GLOBAL_INDEXES.map { it.market }.distinct().filterNot { it in MAIN_MARKETS }.toSet()
     }
 
+    // ── A股大盘概览 ──────────────────────────────────────────────
+    private val BREADTH_INTERVAL_MS = 20_000
+    private var breadthTimer: Timer? = null
+    private var lastBreadth: MarketBreadthData? = null
+
+    private val breadthTitleLbl = JLabel(L10n.lblMarketBreadthTitle).apply {
+        font = font.deriveFont(Font.BOLD, 11f)
+        foreground = Color(0xcdd6f4)
+    }
+    private val chipBreadth  = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipLimits   = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipTurnover = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipCapTier  = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipFlow     = JLabel("--").apply { font = font.deriveFont(11f) }
+
+    // 领涨/领跌板块各展示 TOP6，固定 3行×2列 网格——不依赖自动换行，格子尺寸恒定，避免内容被截断
+    private val topSectorCells    = List(6) { JLabel("--").apply { font = font.deriveFont(10f) } }
+    private val bottomSectorCells = List(6) { JLabel("--").apply { font = font.deriveFont(10f) } }
+    private val topSectorsLbl    = JLabel(L10n.lblTopSector).apply    { font = font.deriveFont(10f); foreground = Color(0x888aaa) }
+    private val bottomSectorsLbl = JLabel(L10n.lblBottomSector).apply { font = font.deriveFont(10f); foreground = Color(0x888aaa) }
+
+    // 固定行数/固定网格——不依赖 FlowLayout 自动换行（换行后高度不会正确撑开，会把后面内容截掉）
+    private val breadthRow1 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    private val breadthRow2 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    private val breadthPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
+    }
+
     private lateinit var titleLbl:    JLabel
     private lateinit var refreshBtn:  JButton
     private lateinit var filterField: SearchTextField
@@ -94,11 +125,12 @@ class GlobalPanel : JPanel(BorderLayout()),
         fetchAsync()
         table.rowSorter = TableRowSorter(tableModel)
         startTimer()
+        startBreadthTimer()
         addHierarchyListener { _ ->
             val showing = isShowing
             if (showing != panelActive) {
                 panelActive = showing
-                if (showing) fetchAsync()
+                if (showing) { fetchAsync(); fetchBreadthAsync() }
             }
         }
     }
@@ -113,6 +145,10 @@ class GlobalPanel : JPanel(BorderLayout()),
         delayNoticeLabel.text = L10n.globalDelayNotice
         marketTabBtns.forEach { (m, btn) -> btn.text = marketTabLabel(m) }
         updateFilter()
+        breadthTitleLbl.text = L10n.lblMarketBreadthTitle
+        topSectorsLbl.text = L10n.lblTopSector
+        bottomSectorsLbl.text = L10n.lblBottomSector
+        lastBreadth?.let { updateBreadthUI(it) }
         val cur = statusLabel.text
         val updatedPrefix = cur.substringBefore("   ").takeIf { it.isNotBlank() }
         statusLabel.text = if (updatedPrefix != null) "$updatedPrefix   ${MarketTimeUtil.getMarketStatusText()}"
@@ -251,10 +287,15 @@ class GlobalPanel : JPanel(BorderLayout()),
         topSection.add(toolbar, BorderLayout.NORTH)
         topSection.add(buildMarketTabs(), BorderLayout.SOUTH)
 
+        buildBreadthPanel()
+        val belowTable = JPanel(BorderLayout())
+        belowTable.add(breadthPanel, BorderLayout.NORTH)
+        belowTable.add(chartPanel,   BorderLayout.CENTER)
+
         val centerWrapper = JPanel(BorderLayout())
         centerWrapper.add(delayNoticeLabel, BorderLayout.NORTH)
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
-        centerWrapper.add(chartPanel, BorderLayout.SOUTH)
+        centerWrapper.add(belowTable, BorderLayout.SOUTH)
 
         val mainWrapper = JPanel(BorderLayout())
         mainWrapper.add(centerWrapper, BorderLayout.CENTER)
@@ -373,9 +414,134 @@ class GlobalPanel : JPanel(BorderLayout()),
         }
     }
 
+    // ── A股大盘概览 ──────────────────────────────────────────────
+
+    private fun buildBreadthPanel() {
+        breadthRow1.add(breadthTitleLbl)
+        breadthRow1.add(chipBreadth)
+        breadthRow1.add(chipLimits)
+        breadthRow1.add(chipTurnover)
+        breadthRow2.add(chipCapTier)
+        breadthRow2.add(chipFlow)
+
+        val topGrid = JPanel(GridLayout(3, 2, 10, 1))
+        topSectorCells.forEach { topGrid.add(it) }
+        val topSection = JPanel(BorderLayout(6, 0)).apply {
+            add(topSectorsLbl, BorderLayout.WEST)
+            add(topGrid, BorderLayout.CENTER)
+        }
+
+        val bottomGrid = JPanel(GridLayout(3, 2, 10, 1))
+        bottomSectorCells.forEach { bottomGrid.add(it) }
+        val bottomSection = JPanel(BorderLayout(6, 0)).apply {
+            add(bottomSectorsLbl, BorderLayout.WEST)
+            add(bottomGrid, BorderLayout.CENTER)
+        }
+
+        listOf(breadthRow1, breadthRow2, topSection, bottomSection)
+            .forEach { it.alignmentX = Component.LEFT_ALIGNMENT }
+        breadthPanel.add(breadthRow1)
+        breadthPanel.add(breadthRow2)
+        breadthPanel.add(topSection)
+        breadthPanel.add(bottomSection)
+    }
+
+    private fun startBreadthTimer() {
+        fetchBreadthAsync()
+        breadthTimer?.stop()
+        breadthTimer = Timer(BREADTH_INTERVAL_MS) { fetchBreadthAsync() }.also { it.isRepeats = true; it.start() }
+    }
+
+    private fun fetchBreadthAsync() {
+        if (!panelActive) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val data = MarketDataService.getMarketBreadth()
+            SwingUtilities.invokeLater { updateBreadthUI(data) }
+        }
+    }
+
+    private fun updateBreadthUI(d: MarketBreadthData) {
+        lastBreadth = d
+        val up = colorHex(QuoteRenderer.positiveColor(StockliteState.getInstance().colorScheme) ?: table.foreground)
+        val dn = colorHex(QuoteRenderer.negativeColor(StockliteState.getInstance().colorScheme) ?: table.foreground)
+
+        chipBreadth.text =
+            if (d.upCount != null && d.downCount != null && d.flatCount != null)
+                "<html>${L10n.lblAdvanceDecline} <b style='color:$up'>↑${d.upCount}</b> <b style='color:$dn'>↓${d.downCount}</b> ${d.flatCount}</html>"
+            else "${L10n.lblAdvanceDecline} --"
+
+        chipLimits.text =
+            if (d.limitUpCount != null && d.limitDownCount != null)
+                "<html>${L10n.lblLimitCounts} <b style='color:$up'>${d.limitUpCount}</b>/<b style='color:$dn'>${d.limitDownCount}</b></html>"
+            else "${L10n.lblLimitCounts} --"
+
+        chipTurnover.text =
+            if (d.totalTurnover != null) "${L10n.lblTotalTurnover} ${fmtYuanBig(d.totalTurnover)}"
+            else "${L10n.lblTotalTurnover} --"
+
+        chipCapTier.text =
+            if (d.largeCapPct != null && d.midCapPct != null && d.smallCapPct != null) "<html>" +
+                "大${pctSpan(d.largeCapPct, up, dn)} 中${pctSpan(d.midCapPct, up, dn)} 小${pctSpan(d.smallCapPct, up, dn)}</html>"
+            else "大/中/小盘 --"
+
+        chipFlow.text =
+            if (d.mainNetInflow != null) "<html>${L10n.lblMainFlow} ${flowSpan(d.mainNetInflow, up, dn)}</html>"
+            else "${L10n.lblMainFlow} --"
+
+        updateSectorCells(topSectorCells, d.topSectors, up, dn)
+        updateSectorCells(bottomSectorCells, d.bottomSectors, up, dn)
+    }
+
+    private fun updateSectorCells(cells: List<JLabel>, sectors: List<SectorPct>, up: String, dn: String) {
+        cells.forEachIndexed { i, cell ->
+            val s = sectors.getOrNull(i)
+            cell.text = if (s != null) "<html>${s.name} ${pctSpan(s.pct, up, dn)}</html>" else "--"
+        }
+    }
+
+    private fun pctSpan(pct: Double, upHex: String, dnHex: String): String {
+        val color = if (pct >= 0) upHex else dnHex
+        val sign  = if (pct >= 0) "+" else ""
+        return "<b style='color:$color'>$sign${"%.2f".format(pct)}%</b>"
+    }
+
+    private fun flowSpan(v: Double, upHex: String, dnHex: String): String {
+        val color = if (v >= 0) upHex else dnHex
+        val sign  = if (v >= 0) "+" else ""
+        return "<b style='color:$color'>$sign${fmtYuanBig(v)}</b>"
+    }
+
+    private fun colorHex(color: Color): String = String.format("#%06X", color.rgb and 0xFFFFFF)
+
+    private fun fmtYuanBig(v: Double): String {
+        val abs = kotlin.math.abs(v)
+        return when {
+            abs >= 1e12 -> "%.2f万亿".format(v / 1e12)
+            abs >= 1e8  -> "%.1f亿".format(v / 1e8)
+            abs >= 1e4  -> "%.1f万".format(v / 1e4)
+            else        -> "%.0f".format(v)
+        }
+    }
+
     private fun buildAiContext(): String {
         if (quotes.isEmpty()) return ""
         val sb = StringBuilder("全球指数行情（共 ${quotes.size} 个，标注[延迟]的约有15分钟延迟）:\n")
+        lastBreadth?.let { d ->
+            sb.append("A股大盘概览：")
+            if (d.upCount != null && d.downCount != null && d.flatCount != null)
+                sb.append("涨${d.upCount}/跌${d.downCount}/平${d.flatCount}家 ")
+            if (d.limitUpCount != null && d.limitDownCount != null)
+                sb.append("涨停${d.limitUpCount}/跌停${d.limitDownCount}家 ")
+            if (d.totalTurnover != null) sb.append("两市成交额${fmtYuanBig(d.totalTurnover)} ")
+            if (d.largeCapPct != null && d.midCapPct != null && d.smallCapPct != null)
+                sb.append("大盘${"%.2f".format(d.largeCapPct)}%/中盘${"%.2f".format(d.midCapPct)}%/小盘${"%.2f".format(d.smallCapPct)}% ")
+            if (d.topSectors.isNotEmpty())
+                sb.append("领涨板块TOP${d.topSectors.size}：${d.topSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
+            if (d.bottomSectors.isNotEmpty())
+                sb.append("领跌板块TOP${d.bottomSectors.size}：${d.bottomSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
+            if (d.mainNetInflow != null) sb.append("主力资金净${if (d.mainNetInflow >= 0) "流入" else "流出"}${fmtYuanBig(kotlin.math.abs(d.mainNetInflow))}")
+            sb.appendLine().appendLine()
+        }
         for (q in quotes) {
             val sign   = if (q.changePercent >= 0) "+" else ""
             val status = if (q.isOpen) "[交易中]" else "[休市]"

@@ -64,6 +64,13 @@ object L10n {
         "⏱ A股、港股为实时行情；其余指数（含美股）约有15分钟数据延迟（Yahoo/新浪海外行情免费接口限制）",
         "⏱ CN & HK indices are real-time; others (incl. US) lag ~15 min (free Yahoo/Sina overseas feed limitation)"
     )
+    val lblMarketBreadthTitle get() = s("A股大盘", "CN Market")
+    val lblAdvanceDecline     get() = s("涨跌家数", "Adv/Dec")
+    val lblLimitCounts        get() = s("涨停/跌停", "Limit Up/Dn")
+    val lblTotalTurnover      get() = s("两市成交额", "Turnover")
+    val lblTopSector          get() = s("领涨", "Top")
+    val lblBottomSector       get() = s("领跌", "Bottom")
+    val lblMainFlow           get() = s("主力资金", "Main Flow")
     val statusWeekend   get() = s("休市（周末）", "Closed (Weekend)")
     fun statusPreOpen(t: String) = s("未开市（$t 开盘）", "Pre-market (opens $t)")
     val statusAMOpen    get() = s("交易中（上午盘）", "Open (AM session)")

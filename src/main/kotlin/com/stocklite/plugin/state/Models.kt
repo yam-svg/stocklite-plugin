@@ -112,6 +112,34 @@ data class GlobalIndexQuote(
     val isDelayed: Boolean = false
 )
 
+/**
+ * A股（沪深两市）大盘概览。各字段独立可空——单项接口失败时该项显示"--"，不影响其它已取到的数据。
+ * 数据源均为东方财富 push2 系列免费接口（实测确认，无需登录/鉴权）。
+ */
+data class MarketBreadthData(
+    val upCount: Int? = null,
+    val downCount: Int? = null,
+    val flatCount: Int? = null,
+    val limitUpCount: Int? = null,
+    val limitDownCount: Int? = null,
+    /** 两市成交额代理指标（中证流通指数成交额，覆盖沪深京全市场），单位：元 */
+    val totalTurnover: Double? = null,
+    /** 大盘股代理：沪深300涨跌幅% */
+    val largeCapPct: Double? = null,
+    /** 中盘股代理：中证500涨跌幅% */
+    val midCapPct: Double? = null,
+    /** 小盘股代理：中证1000涨跌幅% */
+    val smallCapPct: Double? = null,
+    /** 领涨行业板块 TOP6（已过滤成分股<5只的冷门板块），为空表示接口失败 */
+    val topSectors: List<SectorPct> = emptyList(),
+    /** 领跌行业板块 TOP6（同上过滤规则） */
+    val bottomSectors: List<SectorPct> = emptyList(),
+    /** 主力资金净流入（沪深两市合计），单位：元，负数为净流出 */
+    val mainNetInflow: Double? = null
+)
+
+data class SectorPct(val name: String, val pct: Double)
+
 /** 基金单只持股明细（来自东方财富季报数据） */
 data class FundHoldingItem(
     val rank:       Int,
