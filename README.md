@@ -1,6 +1,6 @@
 # StockLite JetBrains 插件
 
-股票 / 基金 / 期货行情与持仓管理，原生 Kotlin/Swing 实现，适配所有 JetBrains IDE（2024.1+）。
+股票 / 基金 / 期货行情与持仓管理，另含 18 个全球指数看板，原生 Kotlin/Swing 实现，适配所有 JetBrains IDE（2024.1+）。
 
 ## 功能
 
@@ -19,7 +19,9 @@
 | 分组管理（新建/重命名/删除）           | ✅          |
 | 数据持久化（IDE 配置目录）           | ✅          |
 | 日内走势图（内嵌面板，点击涨跌幅触发）       | ✅          |
-| K 线周期切换（日内/日K/周K/月K）      | ✅          |
+| K 线周期切换（日内/日K/周K/月K，日K起为真实蜡烛图） | ✅          |
+| 全球指数市场快捷筛选（全部/CN/HK/US/其他）  | ✅          |
+| 全球指数数据延迟提示（区分实时/延迟来源）      | ✅          |
 | 价格闪烁动画（行情更新时单元格变色）        | ✅          |
 | 价格到价提醒（IDE 气泡通知）          | ✅          |
 | 右键菜单（编辑/删除/提醒/复制/浏览器）     | ✅          |
@@ -43,25 +45,26 @@
 | 资讯/新闻                     | ❌（已排除）     |
 | 系统托盘                      | ❌（插件架构不支持） |
 
-## 日内走势图
+## 内嵌走势图
 
-点击任意标的的**涨跌幅**列，行情面板底部会展开一块 260px 高的走势图区域：
+点击任意标的的**涨跌幅**列，行情面板底部会展开一块 260px 高的走势图区域，支持**日内 / 日K / 周K / 月K**四档周期一键切换：
 
-- **Y 轴显示涨跌幅 %**（以昨收为基准，0% 处画虚线"昨收"基准线）
-- 涨时用红色（或绿色，跟随颜色方案设置），跌时对应另一色，使用 BaselineSeries 填充
-- 鼠标悬停显示 Tooltip：时间 + 涨跌幅 % + 原始价格
+- **日内**：折线/面积图，Y 轴显示涨跌幅 %（以昨收为基准，0% 处画虚线"昨收"基准线），涨时用红色（或绿色，跟随颜色方案设置），跌时对应另一色，使用 BaselineSeries 填充
+- **日K / 周K / 月K**：只要数据源提供真实开高低收（OHLC）就渲染**真实蜡烛图**——覆盖股票、A 股指数、全球指数、国内期货、国际期货；没有真实 OHLC 数据的标的（如国际期货日内分钟线本身不含 OHLC）自动回退为折线图，不会用收盘价伪造K线
+- 蜡烛图固定"涨红跌绿"配色，不受涨跌配色设置影响；折线/面积图仍跟随全局颜色方案
+- 鼠标悬停显示 Tooltip：蜡烛图显示开/高/低/收 + 相对上一根K线的涨跌幅；日内显示时间 + 涨跌幅 % + 原始价格
 - 再次点击同一标的，或点击面板右上角 ✕，关闭图表
 - 复用同一 JBCefBrowser 实例，避免重复创建开销
 - 图表库：[lightweight-charts v4.2.0](https://github.com/tradingview/lightweight-charts)（CDN 加载）
 
 **数据来源：**
 
-| 类型         | API                                      |
-|------------|------------------------------------------|
-| A 股 / 基金   | 新浪 `CN_MarketDataService.getKLineData`（scale=1，仅取当日） |
-| 国内期货（nf_）  | 新浪 `InnerFuturesNewService.getFewMinLine?type=1` |
-| 国际期货（hf_） | 新浪 `GlobalFuturesService.getGlobalFuturesMinLine` |
-| 全球指数       | Yahoo Finance `v8/finance/chart?interval=5m&range=1d` |
+| 类型            | 日内                                                    | 日K / 周K / 月K                                                                 |
+|---------------|--------------------------------------------------------|---------------------------------------------------------------------------|
+| A 股 / A股指数    | 新浪 `CN_MarketDataService.getKLineData`（scale=1，仅取当日）      | 同一接口（scale=240/1200/5000），含真实 OHLC                                          |
+| 国内期货（nf_）     | 新浪 `InnerFuturesNewService.getFewMinLine?type=1`（含真实 OHLC） | 新浪 `InnerFuturesNewService.getDailyKLine`；周K/月K 由日线本地聚合                        |
+| 国际期货（hf_）     | 新浪 `GlobalFuturesService.getGlobalFuturesMinLine`（仅有最新价，无 OHLC，图表回退折线） | 新浪 `GlobalFuturesService.getGlobalFuturesDailyKLine`（含真实 OHLC）；周K/月K 本地聚合 |
+| 全球指数 / 港美股    | Yahoo Finance `v8/finance/chart?interval=5m&range=1d`（含真实 OHLC） | 同一接口切换 `interval=1d/1wk/1mo`，含真实 OHLC                                       |
 
 ## 构建步骤
 
@@ -86,7 +89,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.5.3.zip`
+输出路径：`build/distributions/stocklite-plugin-1.6.0.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
@@ -140,6 +143,32 @@ src/main/kotlin/com/stocklite/plugin/
         ├── SetAlertDialog.kt       # 设置价格到价提醒
         └── ImportExportDialog.kt   # 数据导入/导出
 ```
+
+## 新功能说明（v1.6.0）
+
+### 全球指数新增 7 只
+科创50、VIX 恐慌指数、英国富时100、德国 DAX、法国 CAC40、台湾加权指数、印度 SENSEX。新增前均实测确认 Yahoo/新浪确实返回真实行情数据，避免引入无数据或数据源指向错误标的的指数（如新浪 `gb_dax` 实际指向一只不相关的美股 ETF，已排除）。全球指数从 11 个增至 18 个。
+
+### K 线图全面升级为真实蜡烛图
+- 股票、期货、全球指数模块的**日K/周K/月K**均改为开高低收蜡烛图（此前为折线/面积图），**日内走势保持分时折线图不变**
+- 蜡烛图固定"涨红跌绿"配色，不受 Settings 里涨跌配色方案影响
+- 悬浮提示新增相对上一根K线收盘价的涨跌幅显示
+- 只在数据源确实提供真实 OHLC 时才画蜡烛图，否则保留折线图，不伪造数据
+
+### 国内期货新增日K线历史数据
+此前国内/国际期货只支持日内分钟线，日K/周K/月K 切换无数据。现接入新浪 `InnerFuturesNewService.getDailyKLine` / `GlobalFuturesService.getGlobalFuturesDailyKLine`，周K/月K 由日线数据本地聚合得出。
+
+### 修复韩国综合指数涨跌幅计算错误
+Yahoo 分钟线数据在实际收盘（15:30 KST）前约 30 分钟就已截断，导致取"最后一个数据点"当前收盘价算出的涨跌幅偏差超过 1 个百分点（如 -3.10% vs 实际 -2.04%）。现校验数据点时间是否接近该市场官方收盘时间，不通过时自动回退至 Yahoo 官方 `previousClose`/`chartPreviousClose` 字段。
+
+### 修复全球指数开盘/休市判断
+原用于识别节假日的 Yahoo `v7/finance/quote` 市场状态接口已被 Yahoo 加上鉴权、返回 HTTP 401，此前节假日期间会被误判为"交易中"。现基于已在用、无需鉴权的 Yahoo K 线接口（`v8/finance/chart`）自带的 `currentTradingPeriod` 字段判断当日是否为真实交易日，按市场缓存 30 分钟，不增加额外请求负担。
+
+### 全球模块数据延迟提示
+沪深、港股行情为实时（新浪/腾讯直连），其余指数（含美股道琼斯/纳指/标普500）约有 15 分钟延迟（Yahoo/新浪海外行情免费接口限制）。说明见表格上方常驻提示条，AI 深度分析上下文中延迟指数也会标注。
+
+### 全球模块市场快捷筛选
+顶部新增 5 个筛选标签：**全部 / CN / HK / US / 其他**，点击可快速按市场缩小显示范围，与搜索框文字筛选可叠加使用。
 
 ## 新功能说明（v1.5.3）
 

@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.5.3</version>
+    <version>1.6.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -36,13 +36,15 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Domestic futures (CSI index contracts + commodity) and international futures (gold, crude oil, overseas indices, etc.) in one board</li>
   <li>5-second auto-refresh (configurable); pure market data — no position management</li>
   <li>Right-click: Delete · Copy Symbol · Copy Name · Open in Browser (EastMoney futures page)</li>
-  <li>Click the Change% column to open an inline intraday chart at the panel bottom</li>
+  <li>Click the Change% column to open an inline chart — Intraday and Daily/Weekly/Monthly candlestick (K-line) all supported</li>
 </ul>
 
 <h3>Global Indices</h3>
 <ul>
-  <li>11 built-in indices: CSI 300, SSE, SZSE, ChiNext, HSI, HSTECH, S&amp;P 500, Dow Jones, NASDAQ, Nikkei 225, KOSPI</li>
-  <li>Holiday-aware open/closed status via Yahoo Finance <code>marketState</code> — no hard-coded timezone rules</li>
+  <li>18 built-in indices across 10 markets: CSI 300, SSE, SZSE, ChiNext, STAR 50 (CN); HSI, HSTECH (HK); S&amp;P 500, Dow Jones, NASDAQ, VIX (US); FTSE 100 (UK); DAX (DE); CAC 40 (FR); Nikkei 225 (JP); KOSPI (KR); TAIEX (TW); SENSEX (IN)</li>
+  <li>Holiday-aware open/closed status derived from Yahoo Finance's own trading-period data — correctly detects exchange holidays, cached per market for 30 min</li>
+  <li>Data freshness notice: CN &amp; HK indices are real-time; the rest (including US) carry a ~15 min delay from the free Yahoo/Sina overseas feeds — shown in a banner above the table and in the AI analysis context</li>
+  <li>Quick market filter tabs: All / CN / HK / US / Other</li>
   <li>Auto rate-limit backoff on HTTP 429 (up to 60 s), with gradual recovery</li>
   <li>Right-click: Copy Name · Open in Browser (Yahoo Finance / EastMoney)</li>
 </ul>
@@ -51,10 +53,11 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <ul>
   <li>Click the <b>Change%</b> column on any row to open a chart panel embedded at the bottom — no pop-up window</li>
   <li><b>Four periods</b>: Intraday · Daily K · Weekly K · Monthly K, switchable with one click</li>
-  <li>Intraday: Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
-  <li>Historical K-line: Y-axis shows absolute price; A-shares use Sina KLine API, others use Yahoo Finance</li>
-  <li>Colors follow the global scheme (Red-up/Green-down or Green-up/Red-down)</li>
-  <li>Crosshair tooltip: time + change% + raw price; powered by lightweight-charts v4.2.0 (TradingView OSS)</li>
+  <li>Intraday: line/area chart, Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
+  <li>Daily/Weekly/Monthly: real candlestick charts (open/high/low/close) wherever the source genuinely provides OHLC — stocks, CN indices, global indices, and now domestic/overseas futures (previously unsupported); falls back to a line chart only when real OHLC isn't available, never fabricated</li>
+  <li>Candlestick colors are fixed red-up/green-down (Chinese convention) regardless of the color scheme setting; intraday/area charts still follow the global Red-up/Green-down or Green-up/Red-down scheme</li>
+  <li>Crosshair tooltip: candlesticks show O/H/L/C plus change% vs the previous bar; intraday shows time + change% + raw price</li>
+  <li>Powered by lightweight-charts v4.2.0 (TradingView OSS)</li>
 </ul>
 
 <h3>Fund Holdings Detail</h3>
@@ -142,13 +145,15 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>国内期货（股指 + 商品）和国际期货（黄金、原油、海外指数等）统一看板</li>
   <li>默认每 5 秒刷新（可配置），纯行情展示，不含持仓管理</li>
   <li>右键菜单：删除 · 复制代码 · 复制名称 · 在浏览器中打开（东方财富期货页）</li>
-  <li>点击"涨跌幅"列，面板底部展开日内分钟线走势图</li>
+  <li>点击"涨跌幅"列，面板底部展开走势图——日内、日K/周K/月K 蜡烛图均已支持</li>
 </ul>
 
 <h3>全球指数</h3>
 <ul>
-  <li>内置 11 大指数：沪深 300、上证、深证、创业板、恒生、恒生科技、标普 500、道琼斯、纳斯达克、日经 225、韩国综合</li>
-  <li>通过 Yahoo Finance marketState 判断实际开/休市状态，节假日自动休市，无需维护时区规则</li>
+  <li>内置 18 个指数，覆盖 10 个市场：沪深300、上证、深证、创业板、科创50（A股）；恒生、恒生科技（港股）；标普500、道琼斯、纳斯达克、VIX恐慌指数（美股）；英国富时100；德国DAX；法国CAC40；日经225；韩国综合指数；台湾加权指数；印度SENSEX</li>
+  <li>开盘/休市状态基于 Yahoo Finance 自身的交易时段数据判断，能正确识别各市场节假日，按市场缓存 30 分钟</li>
+  <li>数据实时性提示：沪深、港股为实时行情，其余指数（含美股）约有 15 分钟延迟（Yahoo/新浪海外行情免费接口限制），说明见表格上方提示条及 AI 分析上下文</li>
+  <li>市场快捷筛选标签：全部 / CN / HK / US / 其他</li>
   <li>遇 HTTP 429 限流时自动指数退避（最长 60 秒），恢复后逐步缩短间隔</li>
   <li>右键菜单：复制名称 · 在浏览器中打开（Yahoo Finance / 东方财富）</li>
 </ul>
@@ -157,9 +162,10 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <ul>
   <li>点击任意标的的"涨跌幅"列，在面板底部内嵌展开走势图，无需弹窗</li>
   <li><b>四档周期切换</b>：日内 · 日K · 周K · 月K，一键切换</li>
-  <li>日内图：Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
-  <li>历史 K 线：Y 轴显示绝对价格；A 股使用新浪 K 线 API，港美股及全球指数使用 Yahoo Finance</li>
-  <li>涨跌颜色跟随全局配色方案；鼠标悬停显示 Tooltip（时间 + 涨跌幅% + 原始价格）</li>
+  <li>日内：折线/面积图，Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
+  <li>日K/周K/月K：只要数据源提供真实开高低收就使用真实蜡烛图——股票、A股指数、全球指数，以及新增支持的国内/国际期货（此前不支持）；没有真实 OHLC 数据时才回退为折线图，不会伪造K线</li>
+  <li>蜡烛图固定"涨红跌绿"配色，不受涨跌配色设置影响；日内/面积图仍跟随全局配色方案（红涨绿跌或绿涨红跌）</li>
+  <li>悬浮提示：蜡烛图显示开/高/低/收及相对上一根K线的涨跌幅；日内显示时间 + 涨跌幅 + 原始价格</li>
   <li>图表基于 lightweight-charts v4.2.0（TradingView 开源库）</li>
 </ul>
 
@@ -215,6 +221,17 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.6.0</h3>
+<ul>
+  <li>全球指数新增 7 只：科创50、VIX 恐慌指数、英国富时100、德国 DAX、法国 CAC40、台湾加权指数、印度 SENSEX；新增前均实测确认有真实行情数据，避免误引入无数据或数据源错误的标的</li>
+  <li>K 线图全面升级为真实蜡烛图：股票、期货、全球指数模块的日K/周K/月K 均改为开高低收蜡烛图（此前为折线图），日内走势保持分时折线图；蜡烛图固定"涨红跌绿"配色，不受涨跌配色设置影响；悬浮提示新增相对上一根K线收盘价的涨跌幅显示</li>
+  <li>国内期货新增日K线历史数据源（此前不支持日/周/月切换），周K/月K 由日线数据本地聚合得出</li>
+  <li>修复韩国综合指数涨跌幅计算错误：Yahoo 分钟线数据在实际收盘前提前截断，导致前收盘价计算错误、涨跌幅出现约1个百分点偏差；现校验数据点是否接近官方收盘时间，不通过时自动回退至 Yahoo 官方前收字段</li>
+  <li>修复全球指数开盘/休市判断：原用于识别节假日的 Yahoo 市场状态接口已失效（HTTP 401），此前节假日无法被正确识别；现基于已在用的 Yahoo K线接口判断当日是否为真实交易日，按市场缓存 30 分钟，不增加额外请求负担</li>
+  <li>全球模块新增数据延迟提示：沪深、港股行情为实时，其余指数（含美股）标注约 15 分钟数据延迟，说明见表格上方提示条及 AI 深度分析上下文</li>
+  <li>全球模块新增市场快捷筛选：全部 / CN / HK / US / 其他 五个标签页，一键按市场缩小显示范围</li>
+</ul>
+
 <h3>1.5.3</h3>
 <ul>
   <li>新增 IDE 状态栏持仓概览：有持仓股票时，IDE 底部状态栏实时显示总盈亏与今日盈亏；点击弹出持仓明细（名称、代码、现价、涨跌幅、持仓盈亏、今日盈亏），数据跨分组汇总</li>
