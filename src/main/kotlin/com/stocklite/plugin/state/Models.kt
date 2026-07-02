@@ -107,7 +107,9 @@ data class GlobalIndexQuote(
     val value: Double,
     val changePercent: Double,
     val isOpen: Boolean,
-    val market: String
+    val market: String,
+    /** 本次取到的数据是否来自延迟源（如 Yahoo 免费接口，约15分钟延迟），而非新浪/腾讯实时源 */
+    val isDelayed: Boolean = false
 )
 
 /** 基金单只持股明细（来自东方财富季报数据） */

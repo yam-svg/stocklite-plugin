@@ -566,26 +566,31 @@ object MarketDataService {
 
     fun getGlobalIndexQuotes(): GlobalQuoteResult {
         val quoteMap = mutableMapOf<String, Pair<Double, Double>>()
+        val delayMap = mutableMapOf<String, Boolean>()  // 本次实际取值来源是否为延迟源
         val now = System.currentTimeMillis()
         var yahooRateLimited = false
 
-        // 1. 腾讯港股实时（HK 指数）
+        // 1. 腾讯港股实时（HK 指数）——实时
         for (sym in listOf("^HSI", "^HSTECH")) {
             fetchTencentHkQuote(sym)?.let { (price, pct, _) ->
-                SINA_SYMBOL_MAP[sym]?.let { quoteMap[it] = price to pct }
+                SINA_SYMBOL_MAP[sym]?.let { key -> quoteMap[key] = price to pct; delayMap[key] = false }
             }
         }
 
         // 2. 新浪批量（A 股 / 美股粗行情）
+        // 沪深（sh/sz）、港股新浪兜底（rt_hk）为实时行情；海外指数（gb_）新浪标明"至少延时15分钟"
         val sinaSymbols = SINA_SYMBOL_MAP.values.joinToString(",")
         HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn")
             ?.let { text ->
                 parseSinaData(text).forEach { (k, v) ->
-                    if (!quoteMap.containsKey(k)) quoteMap[k] = v
+                    if (!quoteMap.containsKey(k)) {
+                        quoteMap[k] = v
+                        delayMap[k] = k.startsWith("gb_")
+                    }
                 }
             }
 
-        // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）
+        // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）——免费接口，约15分钟延迟
         for (item in GLOBAL_INDEXES) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             if (!GLOBAL_FORCE_YAHOO.contains(item.symbol) && sinaKey != null && quoteMap.containsKey(sinaKey)) continue
@@ -594,8 +599,9 @@ object MarketDataService {
             when {
                 statusCode == 429 -> { yahooRateLimited = true }
                 body != null -> {
-                    if (sinaKey != null) quoteMap[sinaKey] = body
+                    if (sinaKey != null) { quoteMap[sinaKey] = body; delayMap[sinaKey] = true }
                     quoteMap[item.symbol] = body
+                    delayMap[item.symbol] = true
                 }
             }
         }
@@ -603,11 +609,13 @@ object MarketDataService {
         val quotes = GLOBAL_INDEXES.map { item ->
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             val (price, pct) = (sinaKey?.let { quoteMap[it] } ?: quoteMap[item.symbol]) ?: (0.0 to 0.0)
+            val isDelayed = (sinaKey?.let { delayMap[it] } ?: delayMap[item.symbol]) ?: true
             GlobalIndexQuote(
                 symbol = item.symbol, name = "${item.nameCn} (${item.nameEn})",
                 value = price, changePercent = pct,
                 isOpen = isMarketOpenByTimezone(item.market, item.timezone),
-                market = item.market
+                market = item.market,
+                isDelayed = isDelayed
             )
         }
         return GlobalQuoteResult(quotes, yahooRateLimited)

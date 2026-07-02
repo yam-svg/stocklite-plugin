@@ -56,8 +56,14 @@ object L10n {
     val lblGlobalTitle  get() = s("全球主要指数", "Global Indices")
     val lblLastUpdate   get() = s("上次更新:",  "Updated:")
     val lblFilter       get() = s("筛选:",      "Filter:")
+    val marketTabAll    get() = s("全部", "All")
+    val marketTabOther  get() = s("其他", "Other")
     val cellOpen        get() = s("交易中", "Open")
     val cellClosed      get() = s("休市",   "Closed")
+    val globalDelayNotice get() = s(
+        "⏱ A股、港股为实时行情；其余指数（含美股）约有15分钟数据延迟（Yahoo/新浪海外行情免费接口限制）",
+        "⏱ CN & HK indices are real-time; others (incl. US) lag ~15 min (free Yahoo/Sina overseas feed limitation)"
+    )
     val statusWeekend   get() = s("休市（周末）", "Closed (Weekend)")
     fun statusPreOpen(t: String) = s("未开市（$t 开盘）", "Pre-market (opens $t)")
     val statusAMOpen    get() = s("交易中（上午盘）", "Open (AM session)")
