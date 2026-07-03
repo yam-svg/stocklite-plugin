@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.6.0</version>
+    <version>1.7.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -15,7 +15,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Custom groups + virtual groups (All / My Holdings)</li>
   <li>Search &amp; add by name or ticker (supports A-share, HK 5-digit code, US ticker)</li>
   <li>Configurable visible columns; defaults to Name / Price / Change%</li>
-  <li>Right-click any row: Edit · Delete · Set Price Alert · Copy Symbol · Copy Name · Open in Browser</li>
+  <li>Right-click any row: Edit · Delete · Set Price Alert · Copy Symbol · Copy Name · Open in Browser · <b>Rename</b> (custom display alias, does not affect underlying data)</li>
   <li>Quick filter bar: type to instantly narrow rows by name or symbol</li>
   <li>Column widths are remembered and restored across sessions</li>
 </ul>
@@ -28,14 +28,14 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>QDII fund auto-detection; unified data pipeline merges EastMoney fundgz + F10 by date, always showing the most recent official NAV</li>
   <li>QDII funds do not show intraday estimates (unreliable for overseas-NAV funds)</li>
   <li>Portfolio tracking identical to the Stocks module (cost NAV, shares, P&amp;L)</li>
-  <li>Right-click: Edit · Delete · Copy Code · Copy Name · Open in Browser (EastMoney fund page)</li>
+  <li>Right-click: Edit · Delete · Copy Code · Copy Name · Open in Browser (EastMoney fund page) · <b>Rename</b> (custom alias)</li>
 </ul>
 
 <h3>Futures</h3>
 <ul>
   <li>Domestic futures (CSI index contracts + commodity) and international futures (gold, crude oil, overseas indices, etc.) in one board</li>
   <li>5-second auto-refresh (configurable); pure market data — no position management</li>
-  <li>Right-click: Delete · Copy Symbol · Copy Name · Open in Browser (EastMoney futures page)</li>
+  <li>Right-click: Delete · Copy Symbol · Copy Name · Open in Browser (EastMoney futures page) · <b>Rename</b> (custom alias)</li>
   <li>Click the Change% column to open an inline chart — Intraday and Daily/Weekly/Monthly candlestick (K-line) all supported</li>
 </ul>
 
@@ -46,7 +46,17 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Data freshness notice: CN &amp; HK indices are real-time; the rest (including US) carry a ~15 min delay from the free Yahoo/Sina overseas feeds — shown in a banner above the table and in the AI analysis context</li>
   <li>Quick market filter tabs: All / CN / HK / US / Other</li>
   <li>Auto rate-limit backoff on HTTP 429 (up to 60 s), with gradual recovery</li>
-  <li>Right-click: Copy Name · Open in Browser (Yahoo Finance / EastMoney)</li>
+  <li>Right-click: Copy Name · Open in Browser (Yahoo Finance / EastMoney) · <b>Rename</b> (custom alias)</li>
+</ul>
+
+<h3>A-Share Market Breadth &amp; Post-Close Outlook</h3>
+<ul>
+  <li>Bottom of the Global panel: advance/decline counts (incl. Beijing Stock Exchange), limit-up/down counts, total market turnover (CSI All-Share turnover as proxy), large/mid/small-cap proxy indices (CSI 300/500/1000), top-6 leading/lagging sectors, and main capital net inflow</li>
+  <li>Index-futures long/short positioning digest: aggregates <b>all contract months across all 4 CFFEX index-futures varieties</b> (IH/IF/IC/IM) for CITIC Futures (agency) and the top-20 member firms, shown as the day's net operation (e.g. "+3551 lots"); hover for the long/short breakdown per variety</li>
+  <li>Every sub-metric caches independently with a graceful "keep last known value" fallback (in-memory + disk-persisted snapshot) so numbers don't blank to "--" right after close or after an IDE/plugin restart; each has a sane multi-day expiry before it hides</li>
+  <li>Post-close outlook score (heuristic, not a real prediction): combines A50/Nasdaq futures, index-futures positioning (context-aware: directional IF/IH weighted fully, hedging-prone IC/IM down-weighted), main capital flow, and market breadth into a -100..100 score with a per-factor tooltip explaining the reasoning</li>
+  <li>Outlook only generates after CN market close (15:00 Asia/Shanghai) — shows "pending close" beforehand; only uses index-futures data confirmed to be from today, otherwise that factor is excluded rather than treated as current</li>
+  <li>Optional AI second opinion: when a DeepSeek API key is configured, an additional AI-generated read on the same data is shown alongside the heuristic score, explicitly distinguishing hedging vs. directional short-adding</li>
 </ul>
 
 <h3>Inline Charts</h3>
@@ -124,7 +134,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>自定义分组 + 虚拟分组"全部"和"我的持仓"</li>
   <li>搜索添加：支持 A 股名称/代码、港股五位数代码、美股 Ticker</li>
   <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启更多列</li>
-  <li>右键菜单：编辑 · 删除 · 设置到价提醒 · 复制代码 · 复制名称 · 在浏览器中打开</li>
+  <li>右键菜单：编辑 · 删除 · 设置到价提醒 · 复制代码 · 复制名称 · 在浏览器中打开 · <b>修改名称</b>（自定义显示别名，不影响底层数据）</li>
   <li>工具栏快速筛选：实时按名称或代码过滤表格行</li>
   <li>列宽拖动后自动记忆，下次打开时恢复</li>
 </ul>
@@ -137,14 +147,14 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>自动识别 QDII 基金；统一数据通道整合 fundgz + F10，按日期取最新官方净值，不再交替显示</li>
   <li>QDII 基金不展示今日估算（境外基金估值不准确）</li>
   <li>持仓管理与盈亏计算，逻辑与股票模块一致</li>
-  <li>右键菜单：编辑 · 删除 · 复制代码 · 复制名称 · 在浏览器中打开（天天基金页）</li>
+  <li>右键菜单：编辑 · 删除 · 复制代码 · 复制名称 · 在浏览器中打开（天天基金页）· <b>修改名称</b>（自定义别名）</li>
 </ul>
 
 <h3>期货</h3>
 <ul>
   <li>国内期货（股指 + 商品）和国际期货（黄金、原油、海外指数等）统一看板</li>
   <li>默认每 5 秒刷新（可配置），纯行情展示，不含持仓管理</li>
-  <li>右键菜单：删除 · 复制代码 · 复制名称 · 在浏览器中打开（东方财富期货页）</li>
+  <li>右键菜单：删除 · 复制代码 · 复制名称 · 在浏览器中打开（东方财富期货页）· <b>修改名称</b>（自定义别名）</li>
   <li>点击"涨跌幅"列，面板底部展开走势图——日内、日K/周K/月K 蜡烛图均已支持</li>
 </ul>
 
@@ -155,7 +165,17 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>数据实时性提示：沪深、港股为实时行情，其余指数（含美股）约有 15 分钟延迟（Yahoo/新浪海外行情免费接口限制），说明见表格上方提示条及 AI 分析上下文</li>
   <li>市场快捷筛选标签：全部 / CN / HK / US / 其他</li>
   <li>遇 HTTP 429 限流时自动指数退避（最长 60 秒），恢复后逐步缩短间隔</li>
-  <li>右键菜单：复制名称 · 在浏览器中打开（Yahoo Finance / 东方财富）</li>
+  <li>右键菜单：复制名称 · 在浏览器中打开（Yahoo Finance / 东方财富）· <b>修改名称</b>（自定义别名）</li>
+</ul>
+
+<h3>A股大盘概览与盘后多空信号</h3>
+<ul>
+  <li>全球面板底部新增大盘概览：涨跌家数（含北交所）、涨停/跌停家数、两市成交额（中证全指成交额代理）、大/中/小盘代理指数（沪深300/中证500/中证1000）、领涨/领跌板块 TOP6、主力资金净流入</li>
+  <li>股指期货多空持仓摘要：汇总中信期货（代客）及前20名主力机构在<b>四大股指期货品种（IH/IF/IC/IM）全部合约月份</b>的净持仓变化，展示为当日净操作手数（如"+3551手"），悬浮查看各品种明细</li>
+  <li>各子项独立缓存 + 优雅降级：接口临时失败时沿用上次成功值（内存缓存 + 磁盘持久化快照），收盘后或插件重启后也不会立即变成"--"，超过合理有效期仍无新数据才隐藏</li>
+  <li>盘后多空信号汇总（启发式评分，非真实预测）：综合 A50/纳指期货、股指期货多空操作（区分方向性对冲：IF/IH 权重更高，量化对冲为主的 IC/IM 权重下调）、主力资金流向、大盘宽度，给出 -100~100 分的倾向评分，悬浮查看每项因子的具体依据</li>
+  <li>预测仅在 A 股收盘（15:00）后生成，收盘前显示"待收盘"；且仅采用确认为当日出炉的股指期货数据，若最新仍是上一交易日的数据则该项不计入评分，避免用旧数据误判</li>
+  <li>可选 AI 二次分析：在设置中配置 DeepSeek API Key 后，会额外展示 AI 结合同一批数据给出的解读，明确区分"对冲加仓"与"方向性加空"两种情形</li>
 </ul>
 
 <h3>内嵌走势图</h3>
@@ -221,6 +241,18 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.7.0</h3>
+<ul>
+  <li>全球面板新增"A股大盘概览"：涨跌家数（含北交所，此前遗漏导致比第三方App少统计约200~300家）、涨停/跌停家数、两市成交额、大/中/小盘代理指数、领涨/领跌板块 TOP6、主力资金净流入</li>
+  <li>新增股指期货多空持仓摘要：汇总中信期货（代客）及前20名主力机构在 IH/IF/IC/IM 四大品种<b>全部合约月份</b>的净持仓变化（此前仅统计主力合约，数据偏差较大，现已核对第三方数据源验证一致），展示为当日净操作手数</li>
+  <li>新增盘后多空信号汇总（启发式评分，非真实预测）：综合 A50/纳指期货、股指期货多空操作、主力资金流向、大盘宽度给出倾向评分，悬浮查看各因子依据；仅在收盘（15:00）后生成，且仅使用确认为当日出炉的股指期货数据，数据未更新时自动排除该因子，避免用旧数据误判</li>
+  <li>股指期货因子改为具体情况具体分析：区分方向性加仓（IF/IH 权重更高）与偏对冲性质的量化加仓（IC/IM 权重下调）；配置 DeepSeek API Key 后额外提供 AI 二次解读，明确区分对冲与方向性操作</li>
+  <li>新增改名功能：股票、基金、期货、全球指数均支持右键"修改名称"设置自定义显示别名，不影响底层代码/数据</li>
+  <li>修复大盘概览数据收盘后/插件重启后丢失的问题：新增磁盘持久化快照兜底，各子项在合理有效期内持续沿用最后一次成功获取的数据，不再立即变成"--"</li>
+  <li>修复涨跌停家数一直获取不到的问题：EastMoney 接口的 date 参数此前为空导致返回无数据，现显式传入当日日期</li>
+  <li>排查并修复切换到全球面板后持续大量消耗网络的问题：全球指数中仅 Yahoo 提供数据的品种（VIX/富时/DAX/CAC40/台湾加权/印度SENSEX等）此前每次刷新都发起未缓存的请求，现新增 60 秒本地缓存</li>
+</ul>
+
 <h3>1.6.0</h3>
 <ul>
   <li>全球指数新增 7 只：科创50、VIX 恐慌指数、英国富时100、德国 DAX、法国 CAC40、台湾加权指数、印度 SENSEX；新增前均实测确认有真实行情数据，避免误引入无数据或数据源错误的标的</li>
