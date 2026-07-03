@@ -38,6 +38,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var refreshIntervalFund: Int = 30
     var refreshIntervalGlobal: Int = 5
 
+    // ── A股大盘概览快照持久化（跨IDE重启保留最后一次成功获取的数据，收盘/重启后不至于变成"--"）──
+    var breadthSnapshotJson: String = ""
+    var breadthSnapshotTime: Long = 0L
+
     // ── 功能开关 ──
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true

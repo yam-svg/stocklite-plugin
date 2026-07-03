@@ -764,7 +764,9 @@ object MarketDataService {
         }
         val sh = fetchOne("1.000001") ?: return null
         val sz = fetchOne("0.399106") ?: return null
-        return Triple(sh.first + sz.first, sh.second + sz.second, sh.third + sz.third)
+        // 北证50（0.899050）代表北交所，原先遗漏会导致涨跌家数比第三方App少约200~300家；取不到不影响沪深数据
+        val bj = fetchOne("0.899050") ?: Triple(0, 0, 0)
+        return Triple(sh.first + sz.first + bj.first, sh.second + sz.second + bj.second, sh.third + sz.third + bj.third)
     }
 
     /** 涨停/跌停家数。date 参数必须显式传当日日期（yyyyMMdd），传空接口会返回 rc:102 无数据 */
@@ -969,7 +971,9 @@ object MarketDataService {
     // 大盘概览这类宏观统计没必要跟着20秒的面板刷新节奏逐项重新请求，60秒新鲜度足够；
     // 板块龙虎榜（clist/get）接口本身较脆弱、易被限流，新鲜度放宽到120秒进一步降低请求频率。
     private val BREADTH_FRESH_TTL = 60_000L
-    private val BREADTH_STALE_TTL = 10 * 60_000L
+    // 收盘后 EastMoney 这些实时接口会直接取不到数据，需要让"沿用上次数据"的窗口盖过整个非交易时段
+    // （含周末/节假日），直到下一交易日重新取到新鲜数据为止；这里放宽到 3 天。
+    private val BREADTH_STALE_TTL = 3 * 24 * 60 * 60_000L
     private val advDecCache   = StaleCache<Triple<Int, Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val limitsCache   = StaleCache<Pair<Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val turnoverCache = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
@@ -990,16 +994,79 @@ object MarketDataService {
         val sectors = sectorCache.getOrFetch { fetchSectorLeaders() }
         val flow    = flowCache.getOrFetch { fetchMainCapitalFlow() }
         val futuresPosition = fetchIndexFuturesPosition()   // 自带10分钟缓存
-        return MarketBreadthData(
-            upCount = breadth?.first, downCount = breadth?.second, flatCount = breadth?.third,
-            limitUpCount = limits?.first, limitDownCount = limits?.second,
-            totalTurnover = turnover,
-            largeCapPct = capTier?.first, midCapPct = capTier?.second, smallCapPct = capTier?.third,
-            topSectors = sectors?.first?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
-            bottomSectors = sectors?.second?.map { SectorPct(it.name, it.pct) } ?: emptyList(),
-            mainNetInflow = flow,
+
+        // 内存缓存（StaleCache）在IDE/插件重启后会清空；若重启恰好发生在收盘后，实时接口本身也取不到数据，
+        // 会导致完全没有"上一次成功值"可用而直接显示"--"。这里用持久化到磁盘的快照兜底最后一层。
+        val persisted = loadPersistedBreadthSnapshot()
+        val result = MarketBreadthData(
+            upCount = breadth?.first ?: persisted?.upCount,
+            downCount = breadth?.second ?: persisted?.downCount,
+            flatCount = breadth?.third ?: persisted?.flatCount,
+            limitUpCount = limits?.first ?: persisted?.limitUpCount,
+            limitDownCount = limits?.second ?: persisted?.limitDownCount,
+            totalTurnover = turnover ?: persisted?.totalTurnover,
+            largeCapPct = capTier?.first ?: persisted?.largeCapPct,
+            midCapPct = capTier?.second ?: persisted?.midCapPct,
+            smallCapPct = capTier?.third ?: persisted?.smallCapPct,
+            topSectors = sectors?.first?.map { SectorPct(it.name, it.pct) } ?: persisted?.topSectors ?: emptyList(),
+            bottomSectors = sectors?.second?.map { SectorPct(it.name, it.pct) } ?: persisted?.bottomSectors ?: emptyList(),
+            mainNetInflow = flow ?: persisted?.mainNetInflow,
             futuresPosition = futuresPosition
         )
+        persistBreadthSnapshot(result)
+        return result
+    }
+
+    private fun persistBreadthSnapshot(data: MarketBreadthData) {
+        try {
+            val json = JSONObject().apply {
+                put("up", data.upCount ?: JSONObject.NULL)
+                put("down", data.downCount ?: JSONObject.NULL)
+                put("flat", data.flatCount ?: JSONObject.NULL)
+                put("limitUp", data.limitUpCount ?: JSONObject.NULL)
+                put("limitDown", data.limitDownCount ?: JSONObject.NULL)
+                put("turnover", data.totalTurnover ?: JSONObject.NULL)
+                put("large", data.largeCapPct ?: JSONObject.NULL)
+                put("mid", data.midCapPct ?: JSONObject.NULL)
+                put("small", data.smallCapPct ?: JSONObject.NULL)
+                put("flow", data.mainNetInflow ?: JSONObject.NULL)
+                put("topSectors", JSONArray().apply {
+                    data.topSectors.forEach { put(JSONObject().apply { put("name", it.name); put("pct", it.pct) }) }
+                })
+                put("bottomSectors", JSONArray().apply {
+                    data.bottomSectors.forEach { put(JSONObject().apply { put("name", it.name); put("pct", it.pct) }) }
+                })
+            }
+            val state = StockliteState.getInstance()
+            state.breadthSnapshotJson = json.toString()
+            state.breadthSnapshotTime = System.currentTimeMillis()
+        } catch (_: Exception) { /* 持久化失败不影响本次展示 */ }
+    }
+
+    private fun loadPersistedBreadthSnapshot(): MarketBreadthData? {
+        return try {
+            val state = StockliteState.getInstance()
+            if (state.breadthSnapshotJson.isBlank()) return null
+            if (System.currentTimeMillis() - state.breadthSnapshotTime > BREADTH_STALE_TTL) return null
+            val o = JSONObject(state.breadthSnapshotJson)
+            fun optInt(k: String) = if (o.isNull(k)) null else o.optInt(k)
+            fun optDbl(k: String) = if (o.isNull(k)) null else o.optDouble(k)
+            fun sectors(k: String): List<SectorPct> {
+                val arr = o.optJSONArray(k) ?: return emptyList()
+                return (0 until arr.length()).map { i ->
+                    val s = arr.getJSONObject(i)
+                    SectorPct(s.getString("name"), s.getDouble("pct"))
+                }
+            }
+            MarketBreadthData(
+                upCount = optInt("up"), downCount = optInt("down"), flatCount = optInt("flat"),
+                limitUpCount = optInt("limitUp"), limitDownCount = optInt("limitDown"),
+                totalTurnover = optDbl("turnover"),
+                largeCapPct = optDbl("large"), midCapPct = optDbl("mid"), smallCapPct = optDbl("small"),
+                topSectors = sectors("topSectors"), bottomSectors = sectors("bottomSectors"),
+                mainNetInflow = optDbl("flow")
+            )
+        } catch (_: Exception) { null }
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1056,9 +1123,14 @@ object MarketDataService {
             nq?.let { "纳斯达克指数期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
 
         // 期指主力操作按品种性质折算：IF/IH（大盘蓝筹品种）的加空方向性更强、全权重；
-        // IC/IM 空单以量化中性策略对冲盘为主、不代表方向观点，按 30% 折算，避免把常规对冲误判为利空
+        // IC/IM 空单以量化中性策略对冲盘为主、不代表方向观点，按 30% 折算，避免把常规对冲误判为利空。
+        // 只有当龙虎榜数据确实是"今天"收盘后出炉的才计入预测——数据尚未更新（仍是上一交易日）时，
+        // 用它代表"今天的操作"会产生误导，此时该因子按缺失处理，不参与打分（但"股指期货多空"那一行
+        // 仍会正常展示最新可得数据，只是标注的日期会让用户看出不是当日，二者互不影响）。
         val fp = breadth.futuresPosition
-        val directionalOp = fp?.let { p ->
+        val todayMmDd = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).let { "%02d-%02d".format(it.monthValue, it.dayOfMonth) }
+        val fpIsToday = fp != null && fp.tradeDate == todayMmDd
+        val directionalOp = if (!fpIsToday) null else fp?.let { p ->
             if (p.mainForceByVariety.isNotEmpty())
                 p.mainForceByVariety.sumOf { v ->
                     v.netAddShort * (if (v.code == "IF" || v.code == "IH") 1.0 else 0.3)
@@ -1066,7 +1138,8 @@ object MarketDataService {
             else (p.mainForceShortChange - p.mainForceLongChange).takeIf { it.isFinite() }
         }
         addFactor("期指主力操作", 15.0, directionalOp?.let { -it / 3000.0 },
-            fp?.let { p ->
+            if (!fpIsToday) (fp?.let { "数据未更新，最新仍是${it.tradeDate}（非当日），本因子暂不计入" } ?: "")
+            else fp?.let { p ->
                 directionalOp?.let {
                     val blueChip = p.mainForceByVariety.filter { v -> v.code == "IF" || v.code == "IH" }
                         .sumOf { v -> v.netAddShort }
@@ -1104,10 +1177,12 @@ object MarketDataService {
         aiForecastCache?.let { if (now - aiForecastCacheTime < AI_FORECAST_CACHE_TTL) return it }
 
         val fp = breadth.futuresPosition
+        val todayMmDd = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).let { "%02d-%02d".format(it.monthValue, it.dayOfMonth) }
         val dataDesc = buildString {
             appendLine("以下是A股收盘后的盘面数据：")
             forecast.factors.forEach { f -> if (!f.score.isNaN()) appendLine("- ${f.name}：${f.detail}") }
-            fp?.let { p ->
+            // 期指龙虎榜若不是当日出炉的数据（仍是上一交易日），不喂给 AI，避免其误当成当日操作来分析
+            fp?.takeIf { it.tradeDate == todayMmDd }?.let { p ->
                 if (p.mainForceByVariety.isNotEmpty()) {
                     appendLine("- 期指主力(前20会员)分品种净加空明细(${p.tradeDate})：" +
                         p.mainForceByVariety.joinToString("、") { v ->
