@@ -160,7 +160,8 @@ data class IndexFuturesPosition(
     val mainForceShort: Double,
     val mainForceLongChange: Double = Double.NaN,
     val mainForceShortChange: Double = Double.NaN,
-    val citicByVariety: List<VarietyNetChange> = emptyList()
+    val citicByVariety: List<VarietyNetChange> = emptyList(),
+    val mainForceByVariety: List<VarietyNetChange> = emptyList()
 )
 
 /**

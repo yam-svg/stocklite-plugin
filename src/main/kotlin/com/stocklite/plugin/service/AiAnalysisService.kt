@@ -246,6 +246,27 @@ object AiAnalysisService {
             }
         }
 
+    /**
+     * 轻量单轮分析：固定 deepseek-chat、无联网搜索、无深度推理，供后台自动任务
+     * （如盘后预测的 AI 二次分析）使用，避免继承用户面向交互对话的重型设置。
+     * @return AI 回复文本；任何失败（网络/鉴权/限流/解析）一律返回 null，调用方静默降级
+     */
+    fun quickAnalyze(systemPrompt: String, userPrompt: String, apiKey: String, maxTokens: Int = 400): String? {
+        return try {
+            val body = JSONObject().apply {
+                put("model",       "deepseek-chat")
+                put("stream",      false)
+                put("max_tokens",  maxTokens)
+                put("temperature", 0.3)
+                put("messages",    buildMessages(systemPrompt, listOf("user" to userPrompt)))
+            }.toString()
+            val (code, raw) = HttpUtil.post(API_URL, body, "Bearer $apiKey", TIMEOUT_MS)
+            if (code != 200 || raw == null) return null
+            JSONObject(raw).getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").getString("content").trim().takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
+    }
+
     /** 普通对话（无工具） */
     private fun chatSimple(
         messages: JSONArray, apiKey: String, model: String, maxTokens: Int

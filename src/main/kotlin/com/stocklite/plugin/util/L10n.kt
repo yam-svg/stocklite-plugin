@@ -77,6 +77,7 @@ object L10n {
     val tipVarietyDetail      get() = s("各品种当日净加空明细", " net-add-short by variety")
     val lblForecast           get() = s("盘后预测", "Outlook")
     val forecastPendingClose  get() = s("待收盘", "Awaiting close")
+    val lblAiAnalysis         get() = s("AI分析", "AI analysis")
     val forecastPendingTip    get() = s(
         "A股尚未收盘，面向下一交易日的盘后预测将在 15:00 收盘后生成（综合A50/纳指期货、期指龙虎榜、当日资金流与市场宽度）",
         "CN market not closed yet — next-day outlook is generated after the 15:00 close (A50/Nasdaq futures, index-futures positions, capital flow & breadth)"

@@ -91,6 +91,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private var lastBreadth: MarketBreadthData? = null
     private var lastForecast: MarketForecast? = null
     private var lastForecastPending = false
+    private var lastAiAnalysis: String? = null
 
     private val breadthTitleLbl = JLabel(L10n.lblMarketBreadthTitle).apply {
         font = font.deriveFont(Font.BOLD, 11f)
@@ -471,7 +472,22 @@ class GlobalPanel : JPanel(BorderLayout()),
             SwingUtilities.invokeLater {
                 updateBreadthUI(data)
                 lastForecastPending = pending
+                if (pending) lastAiAnalysis = null
                 updateForecastUI(forecast)
+            }
+            // AI 二次分析：单独起线程（首次调用需数秒到数十秒），不阻塞大盘数据的展示；
+            // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为纯启发式展示。
+            if (!pending && forecast != null) {
+                val apiKey = StockliteState.getInstance().deepseekApiKey.trim()
+                if (apiKey.isNotEmpty()) {
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val ai = MarketDataService.getAiForecastAnalysis(data, forecast, apiKey)
+                        if (ai != null) SwingUtilities.invokeLater {
+                            lastAiAnalysis = ai
+                            updateForecastUI(lastForecast)
+                        }
+                    }
+                }
             }
         }
     }
@@ -496,8 +512,13 @@ class GlobalPanel : JPanel(BorderLayout()),
             f.score <= -20 -> L10n.forecastBearish to dn
             else           -> L10n.forecastNeutral to "#888aaa"
         }
+        val aiTag = if (lastAiAnalysis != null) " <span style='color:#888aaa'>·AI</span>" else ""
         chipForecast.text = "<html>${L10n.lblForecast}(${f.generatedAt}) " +
-            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b></html>"
+            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b>$aiTag</html>"
+        val aiSection = lastAiAnalysis?.let { ai ->
+            val safe = ai.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+            "<br/><b>${L10n.lblAiAnalysis}</b>：<div style='width:360px'>$safe</div>"
+        } ?: ""
         chipForecast.toolTipText = "<html><b>${L10n.lblForecast}</b>（得分 ${"%+.1f".format(f.score)}，范围 -100~+100）<br/>" +
             f.factors.joinToString("<br/>") { factor ->
                 if (factor.score.isNaN()) "· ${factor.name}：${factor.detail.ifEmpty { "数据缺失" }}"
@@ -506,6 +527,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                     "· ${factor.name}：${factor.detail}　<b style='color:$c'>${"%+.1f".format(factor.score)}</b>"
                 }
             } +
+            aiSection +
             "<br/><span style='color:#888aaa'>${L10n.forecastDisclaimer}</span></html>"
     }
 

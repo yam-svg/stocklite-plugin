@@ -927,6 +927,11 @@ object MarketDataService {
                 citic.byVariety[code]?.let { v ->
                     VarietyNetChange(code, name, netAddShort = v[3] - v[2])
                 }
+            },
+            mainForceByVariety = INDEX_FUTURES_VARIETIES.mapNotNull { (code, name) ->
+                total.byVariety[code]?.let { v ->
+                    VarietyNetChange(code, name, netAddShort = v[3] - v[2])
+                }
             }
         )
         futuresPositionCache = result
@@ -1032,11 +1037,24 @@ object MarketDataService {
         addFactor("纳指期货", 20.0, nq?.let { it.changePercent / 1.5 },
             nq?.let { "纳斯达克指数期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
 
+        // 期指主力操作按品种性质折算：IF/IH（大盘蓝筹品种）的加空方向性更强、全权重；
+        // IC/IM 空单以量化中性策略对冲盘为主、不代表方向观点，按 30% 折算，避免把常规对冲误判为利空
         val fp = breadth.futuresPosition
-        val futuresOp = fp?.let { it.mainForceShortChange - it.mainForceLongChange }?.takeIf { it.isFinite() }
-        addFactor("期指主力操作", 15.0, futuresOp?.let { -it / 5000.0 },
+        val directionalOp = fp?.let { p ->
+            if (p.mainForceByVariety.isNotEmpty())
+                p.mainForceByVariety.sumOf { v ->
+                    v.netAddShort * (if (v.code == "IF" || v.code == "IH") 1.0 else 0.3)
+                }
+            else (p.mainForceShortChange - p.mainForceLongChange).takeIf { it.isFinite() }
+        }
+        addFactor("期指主力操作", 15.0, directionalOp?.let { -it / 3000.0 },
             fp?.let { p ->
-                futuresOp?.let { "主力${if (it >= 0) "净加空" else "净加多"}${"%.0f".format(kotlin.math.abs(it))}手(${p.tradeDate})" }
+                directionalOp?.let {
+                    val blueChip = p.mainForceByVariety.filter { v -> v.code == "IF" || v.code == "IH" }
+                        .sumOf { v -> v.netAddShort }
+                    "主力方向性${if (it >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(it))}手" +
+                        "(IF/IH合计${"%+.0f".format(blueChip)}手·全权重, IC/IM按30%折算, ${p.tradeDate})"
+                }
             } ?: "")
 
         addFactor("主力资金", 15.0, breadth.mainNetInflow?.let { it / 2e10 },
@@ -1051,6 +1069,55 @@ object MarketDataService {
         val score = weightedSum / totalWeight * 100
         val time = java.time.LocalTime.now().let { String.format("%02d:%02d", it.hour, it.minute) }
         return MarketForecast(score = score, factors = factors, generatedAt = time)
+    }
+
+    private var aiForecastCache: String? = null
+    private var aiForecastCacheTime = 0L
+    private val AI_FORECAST_CACHE_TTL = 30 * 60_000L  // AI 分析 30 分钟内复用，避免后台高频烧 tokens
+
+    /**
+     * 盘后预测的 AI 二次分析（可选，仅在配置了 DeepSeek API Key 时调用）。
+     * 把启发式模型的原始数据（含期指分品种明细）交给 AI，重点让它判断期指加空的性质
+     * （中性对冲 vs 方向性看空）。结果缓存30分钟；失败返回 null，界面静默降级为纯启发式展示。
+     * 注意：调用方应在后台线程执行（单轮请求通常需 5~20 秒）。
+     */
+    fun getAiForecastAnalysis(breadth: MarketBreadthData, forecast: MarketForecast, apiKey: String): String? {
+        val now = System.currentTimeMillis()
+        aiForecastCache?.let { if (now - aiForecastCacheTime < AI_FORECAST_CACHE_TTL) return it }
+
+        val fp = breadth.futuresPosition
+        val dataDesc = buildString {
+            appendLine("以下是A股收盘后的盘面数据：")
+            forecast.factors.forEach { f -> if (!f.score.isNaN()) appendLine("- ${f.name}：${f.detail}") }
+            fp?.let { p ->
+                if (p.mainForceByVariety.isNotEmpty()) {
+                    appendLine("- 期指主力(前20会员)分品种净加空明细(${p.tradeDate})：" +
+                        p.mainForceByVariety.joinToString("、") { v ->
+                            "${v.name}${if (v.netAddShort >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                        })
+                    appendLine("- 中信期货(代客)分品种：" +
+                        p.citicByVariety.joinToString("、") { v ->
+                            "${v.name}${if (v.netAddShort >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                        })
+                }
+            }
+            breadth.topSectors.takeIf { it.isNotEmpty() }?.let { s ->
+                appendLine("- 领涨板块：${s.take(3).joinToString("、") { "${it.name}${"%+.2f".format(it.pct)}%" }}")
+            }
+            breadth.bottomSectors.takeIf { it.isNotEmpty() }?.let { s ->
+                appendLine("- 领跌板块：${s.take(3).joinToString("、") { "${it.name}${"%+.2f".format(it.pct)}%" }}")
+            }
+            appendLine("启发式模型综合得分：${"%+.1f".format(forecast.score)}（-100~+100，正为偏多）")
+        }
+        val systemPrompt = "你是A股市场分析师。特别注意：股指期货空单需区分性质——IC/IM上的空单大多是量化中性策略的" +
+            "常规对冲盘（不代表看空，甚至伴随现货加仓），IF/IH上的集中加空方向性更强；请结合分品种明细判断本次" +
+            "期指持仓变化更接近对冲行为还是方向性押注，并综合其它数据给出对下一交易日的判断。"
+        val userPrompt = dataDesc + "\n请给出：1)偏多/偏空/震荡的判断 2)不超过3句话的核心理由（必须提及期指空单性质的判断）。全文不超过120字。"
+
+        val reply = AiAnalysisService.quickAnalyze(systemPrompt, userPrompt, apiKey, maxTokens = 300) ?: return null
+        aiForecastCache = reply
+        aiForecastCacheTime = now
+        return reply
     }
 
     // ══════════════════════════════════════════════════════════════
