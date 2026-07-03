@@ -1330,6 +1330,8 @@ object MarketDataService {
         Triple("hf_HG",   "纽约铜期货",      listOf("Copper","HG")),
         Triple("hf_NK225","日经225期货",     listOf("Nikkei")),
         Triple("hf_HSI",  "恒生指数期货",    listOf("HSI","Hang Seng")),
+        Triple("hf_CHA50CFD", "富时中国A50期货", listOf("A50","FTSE","富时")),
+        Triple("hf_MCA",  "MSCI中国A50指数", listOf("MSCI","A50")),
     )
 
     fun searchFutures(keyword: String): List<FutureSearchResult> {
@@ -1349,9 +1351,13 @@ object MarketDataService {
                         val parts = row.split(",")
                         if (parts.size < 5) return@forEach
                         val type = parts[1].trim()
-                        if (type != "88" && type != "87") return@forEach
-                        val code   = (parts[2].ifEmpty { parts[3] }).trim()
-                        val symbol = normFutureSymbol(code)
+                        // 88/87=国内期货（nf_ 前缀）；86=外盘期货（hf_ 前缀，如富时中国A50期货 cha50cfd、
+                        // 纽约黄金 gc），此前 86 被过滤导致所有外盘品种只能靠本地兜底表、A50 完全搜不到
+                        if (type != "88" && type != "87" && type != "86") return@forEach
+                        val code = (parts[2].ifEmpty { parts[3] }).trim()
+                        if (code.isEmpty()) return@forEach
+                        val symbol = if (type == "86" && !code.startsWith("hf_", true))
+                            normFutureSymbol("hf_$code") else normFutureSymbol(code)
                         if (symbol.isEmpty()) return@forEach
                         val cnName = parts.getOrElse(4) { "" }.trim()
                         val enName = parts.getOrElse(0) { "" }.trim()
@@ -1362,6 +1368,21 @@ object MarketDataService {
             }
         } catch (_: Exception) { /* 网络失败，fallback 到本地 */ }
 
+        // 编码直查：输入形如 IF2609 / AP0 / cha50cfd / nf_AU0 / hf_GC 的合约代码时，直接拿行情接口
+        // 验证（联想接口对带 nf_/hf_ 前缀或冷门品种代码常无联想结果），有真实行情数据才作为结果返回。
+        // 无前缀时国内/外盘两种前缀都试；无效代码新浪返回空串会被 parseFutureFields 安全跳过。
+        val direct = mutableListOf<FutureSearchResult>()
+        val kwRaw = keyword.trim()
+        if (Regex("^(nf_|hf_)?[A-Za-z][A-Za-z0-9]{0,15}$", RegexOption.IGNORE_CASE).matches(kwRaw)) {
+            val candidates = if (kwRaw.contains("_")) listOf(normFutureSymbol(kwRaw))
+                             else listOf(normFutureSymbol("nf_$kwRaw"), normFutureSymbol("hf_$kwRaw"))
+            try {
+                getFutureQuotes(candidates).forEach { (sym, q) ->
+                    if (q.price > 0) direct.add(FutureSearchResult(sym, q.name))
+                }
+            } catch (_: Exception) { /* 直查失败不影响其余通道 */ }
+        }
+
         // 本地表兜底（同原版 FUTURE_CONTRACTS fallback）
         val fallback = LOCAL_FUTURES.filter { (sym, name, aliases) ->
             sym.lowercase().contains(trimmed) ||
@@ -1369,9 +1390,9 @@ object MarketDataService {
             aliases.any { it.lowercase().contains(trimmed) }
         }.map { (sym, name, _) -> FutureSearchResult(sym, name) }
 
-        // 去重合并
+        // 去重合并：编码精确直查结果优先展示
         val dedup = linkedMapOf<String, FutureSearchResult>()
-        (remote + fallback).forEach { if (!dedup.containsKey(it.symbol)) dedup[it.symbol] = it }
+        (direct + remote + fallback).forEach { if (!dedup.containsKey(it.symbol)) dedup[it.symbol] = it }
         return dedup.values.take(80)
     }
 }
