@@ -751,14 +751,16 @@ object MarketDataService {
         return Triple(sh.first + sz.first, sh.second + sz.second, sh.third + sz.third)
     }
 
-    /** 涨停/跌停家数 */
+    /** 涨停/跌停家数。date 参数必须显式传当日日期（yyyyMMdd），传空接口会返回 rc:102 无数据 */
     private fun fetchLimitCounts(): Pair<Int, Int>? {
+        val today = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).toLocalDate()
+            .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
         fun fetchTc(url: String): Int? {
             val raw = HttpUtil.get(url) ?: return null
             return try { JSONObject(raw).getJSONObject("data").getInt("tc") } catch (_: Exception) { null }
         }
-        val zt = fetchTc("https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=") ?: return null
-        val dt = fetchTc("https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fund:asc&date=") ?: return null
+        val zt = fetchTc("https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=$today") ?: return null
+        val dt = fetchTc("https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fund:asc&date=$today") ?: return null
         return zt to dt
     }
 
@@ -933,17 +935,38 @@ object MarketDataService {
     }
 
     /**
-     * 获取A股大盘概览。各子项独立请求、独立容错——任意一项失败只影响该项（显示为 null/"--"），
-     * 不影响其它已成功获取的数据，也不影响全球指数行情本身。
+     * 子项短期兜底缓存：接口偶发失败/限流时沿用最近一次成功值，避免界面频繁跳"--"；
+     * 持续失败超过 TTL 后返回 null（长期拿不到就不该再展示旧数据）。
+     */
+    private class StaleCache<T>(private val ttlMs: Long) {
+        private var value: T? = null
+        private var time = 0L
+        fun update(fresh: T?): T? {
+            val now = System.currentTimeMillis()
+            if (fresh != null) { value = fresh; time = now; return fresh }
+            return if (value != null && now - time < ttlMs) value else null
+        }
+    }
+
+    private val BREADTH_STALE_TTL = 10 * 60_000L
+    private val advDecCache   = StaleCache<Triple<Int, Int, Int>>(BREADTH_STALE_TTL)
+    private val limitsCache   = StaleCache<Pair<Int, Int>>(BREADTH_STALE_TTL)
+    private val turnoverCache = StaleCache<Double>(BREADTH_STALE_TTL)
+    private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_STALE_TTL)
+    private val flowCache     = StaleCache<Double>(BREADTH_STALE_TTL)
+
+    /**
+     * 获取A股大盘概览。各子项独立请求、独立容错——任意一项失败只影响该项，
+     * 且失败时先沿用 10 分钟内的最近成功值（StaleCache），超时仍失败才显示"--"。
      */
     fun getMarketBreadth(): MarketBreadthData {
-        val breadth = fetchAdvanceDecline()
-        val limits  = fetchLimitCounts()
-        val turnover = fetchTotalTurnover()
-        val capTier = fetchCapTierPct()
-        val sectors = fetchSectorLeaders()
-        val flow    = fetchMainCapitalFlow()
-        val futuresPosition = fetchIndexFuturesPosition()
+        val breadth = advDecCache.update(fetchAdvanceDecline())
+        val limits  = limitsCache.update(fetchLimitCounts())
+        val turnover = turnoverCache.update(fetchTotalTurnover())
+        val capTier = capTierCache.update(fetchCapTierPct())
+        val sectors = fetchSectorLeaders()   // 自带5分钟兜底缓存
+        val flow    = flowCache.update(fetchMainCapitalFlow())
+        val futuresPosition = fetchIndexFuturesPosition()   // 自带10分钟缓存
         return MarketBreadthData(
             upCount = breadth?.first, downCount = breadth?.second, flatCount = breadth?.third,
             limitUpCount = limits?.first, limitDownCount = limits?.second,
@@ -954,6 +977,80 @@ object MarketDataService {
             mainNetInflow = flow,
             futuresPosition = futuresPosition
         )
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // 盘后多空信号汇总（启发式，非严格预测）
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * A股当日尚未收盘（交易日 15:00 前，含午休和开盘前）时返回 true。
+     * 盘后预测面向"下一交易日"，需等当日数据（资金流/宽度/期指龙虎榜）定型后才有意义，
+     * 收盘前应显示"待收盘"而非基于盘中未定型数据的信号。
+     */
+    fun isCnPendingClose(): Boolean {
+        val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
+        if (now.dayOfWeek.value >= 6) return false
+        if (!isTodayTradingDay("CN", "Asia/Shanghai", System.currentTimeMillis())) return false
+        return now.hour * 60 + now.minute < 15 * 60
+    }
+
+    /**
+     * 综合盘后可得的多空信号，输出 -100..100 的倾向得分。
+     * 因子与权重（每个因子先归一到 [-1,1] 再乘权重）：
+     * - A50期货涨跌%      权重35（新加坡A50几乎全天交易，是A股盘后最直接的情绪代理；±1.5%记满分）
+     * - 纳指期货涨跌%     权重20（隔夜全球风险偏好；±1.5%记满分）
+     * - 期指主力净操作     权重15（龙虎榜前20会员当日净加空为空头信号；±5000手记满分）
+     * - 主力资金净流入     权重15（当日沪深两市合计；±200亿记满分）
+     * - 市场宽度          权重15（(涨-跌)/(涨+跌)）
+     * 数据缺失的因子跳过、其权重不计入分母；全部缺失时返回 null。
+     */
+    fun getMarketForecast(breadth: MarketBreadthData): MarketForecast? {
+        fun clamp(v: Double) = v.coerceIn(-1.0, 1.0)
+        val factors = mutableListOf<ForecastFactor>()
+        var weightedSum = 0.0
+        var totalWeight = 0.0
+
+        fun addFactor(name: String, weight: Double, signal: Double?, detail: String) {
+            if (signal == null || !signal.isFinite()) {
+                factors.add(ForecastFactor(name, "数据缺失", Double.NaN))
+                return
+            }
+            val contribution = clamp(signal) * weight
+            weightedSum += contribution
+            totalWeight += weight
+            factors.add(ForecastFactor(name, detail, contribution))
+        }
+
+        // 期货行情：A50 + 纳指（一次请求）
+        val futures = getFutureQuotes(listOf("hf_CHA50CFD", "hf_NQ"))
+        val a50 = futures["hf_CHA50CFD"]?.takeIf { it.prevClose > 0 }
+        val nq  = futures["hf_NQ"]?.takeIf { it.prevClose > 0 }
+
+        addFactor("A50期货", 35.0, a50?.let { it.changePercent / 1.5 },
+            a50?.let { "富时中国A50期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
+        addFactor("纳指期货", 20.0, nq?.let { it.changePercent / 1.5 },
+            nq?.let { "纳斯达克指数期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
+
+        val fp = breadth.futuresPosition
+        val futuresOp = fp?.let { it.mainForceShortChange - it.mainForceLongChange }?.takeIf { it.isFinite() }
+        addFactor("期指主力操作", 15.0, futuresOp?.let { -it / 5000.0 },
+            fp?.let { p ->
+                futuresOp?.let { "主力${if (it >= 0) "净加空" else "净加多"}${"%.0f".format(kotlin.math.abs(it))}手(${p.tradeDate})" }
+            } ?: "")
+
+        addFactor("主力资金", 15.0, breadth.mainNetInflow?.let { it / 2e10 },
+            breadth.mainNetInflow?.let { "净${if (it >= 0) "流入" else "流出"}${"%.0f".format(kotlin.math.abs(it) / 1e8)}亿" } ?: "")
+
+        val breadthSignal = if (breadth.upCount != null && breadth.downCount != null && breadth.upCount + breadth.downCount > 0)
+            (breadth.upCount - breadth.downCount).toDouble() / (breadth.upCount + breadth.downCount) else null
+        addFactor("市场宽度", 15.0, breadthSignal,
+            if (breadth.upCount != null) "涨${breadth.upCount}家/跌${breadth.downCount}家" else "")
+
+        if (totalWeight <= 0) return null
+        val score = weightedSum / totalWeight * 100
+        val time = java.time.LocalTime.now().let { String.format("%02d:%02d", it.hour, it.minute) }
+        return MarketForecast(score = score, factors = factors, generatedAt = time)
     }
 
     // ══════════════════════════════════════════════════════════════

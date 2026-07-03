@@ -9,6 +9,7 @@ import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.GlobalIndexQuote
 import com.stocklite.plugin.state.MarketBreadthData
+import com.stocklite.plugin.state.MarketForecast
 import com.stocklite.plugin.state.SectorPct
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteColumnType
@@ -88,6 +89,8 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val BREADTH_INTERVAL_MS = 20_000
     private var breadthTimer: Timer? = null
     private var lastBreadth: MarketBreadthData? = null
+    private var lastForecast: MarketForecast? = null
+    private var lastForecastPending = false
 
     private val breadthTitleLbl = JLabel(L10n.lblMarketBreadthTitle).apply {
         font = font.deriveFont(Font.BOLD, 11f)
@@ -99,6 +102,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val chipCapTier  = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFlow     = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFuturesPosition = JLabel("--").apply { font = font.deriveFont(11f) }
+    private val chipForecast = JLabel("--").apply { font = font.deriveFont(Font.BOLD, 11f) }
 
     // 领涨/领跌板块各展示 TOP6，固定 3行×2列 网格——不依赖自动换行，格子尺寸恒定，避免内容被截断
     private val topSectorCells    = List(6) { JLabel("--").apply { font = font.deriveFont(10f) } }
@@ -151,6 +155,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         topSectorsLbl.text = L10n.lblTopSector
         bottomSectorsLbl.text = L10n.lblBottomSector
         lastBreadth?.let { updateBreadthUI(it) }
+        updateForecastUI(lastForecast)
         val cur = statusLabel.text
         val updatedPrefix = cur.substringBefore("   ").takeIf { it.isNotBlank() }
         statusLabel.text = if (updatedPrefix != null) "$updatedPrefix   ${MarketTimeUtil.getMarketStatusText()}"
@@ -426,6 +431,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         breadthRow2.add(chipCapTier)
         breadthRow2.add(chipFlow)
         breadthRow3.add(chipFuturesPosition)
+        breadthRow3.add(chipForecast)
 
         val topGrid = JPanel(GridLayout(3, 2, 10, 1))
         topSectorCells.forEach { topGrid.add(it) }
@@ -460,8 +466,47 @@ class GlobalPanel : JPanel(BorderLayout()),
         if (!panelActive) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val data = MarketDataService.getMarketBreadth()
-            SwingUtilities.invokeLater { updateBreadthUI(data) }
+            val pending = MarketDataService.isCnPendingClose()
+            val forecast = if (pending) null else MarketDataService.getMarketForecast(data)
+            SwingUtilities.invokeLater {
+                updateBreadthUI(data)
+                lastForecastPending = pending
+                updateForecastUI(forecast)
+            }
         }
+    }
+
+    private fun updateForecastUI(f: MarketForecast?) {
+        lastForecast = f
+        val scheme = StockliteState.getInstance().colorScheme
+        val up = colorHex(QuoteRenderer.positiveColor(scheme) ?: table.foreground)
+        val dn = colorHex(QuoteRenderer.negativeColor(scheme) ?: table.foreground)
+        if (f == null) {
+            if (lastForecastPending) {
+                chipForecast.text = "<html>${L10n.lblForecast} <span style='color:#888aaa'>${L10n.forecastPendingClose}</span></html>"
+                chipForecast.toolTipText = "<html>${L10n.forecastPendingTip}</html>"
+            } else {
+                chipForecast.text = "${L10n.lblForecast} --"
+                chipForecast.toolTipText = null
+            }
+            return
+        }
+        val (label, color) = when {
+            f.score >= 20  -> L10n.forecastBullish to up
+            f.score <= -20 -> L10n.forecastBearish to dn
+            else           -> L10n.forecastNeutral to "#888aaa"
+        }
+        chipForecast.text = "<html>${L10n.lblForecast}(${f.generatedAt}) " +
+            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b></html>"
+        chipForecast.toolTipText = "<html><b>${L10n.lblForecast}</b>（得分 ${"%+.1f".format(f.score)}，范围 -100~+100）<br/>" +
+            f.factors.joinToString("<br/>") { factor ->
+                if (factor.score.isNaN()) "· ${factor.name}：${factor.detail.ifEmpty { "数据缺失" }}"
+                else {
+                    val c = if (factor.score >= 0) up else dn
+                    "· ${factor.name}：${factor.detail}　<b style='color:$c'>${"%+.1f".format(factor.score)}</b>"
+                }
+            } +
+            "<br/><span style='color:#888aaa'>${L10n.forecastDisclaimer}</span></html>"
     }
 
     private fun updateBreadthUI(d: MarketBreadthData) {

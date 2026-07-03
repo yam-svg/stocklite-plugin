@@ -75,6 +75,19 @@ object L10n {
     val lblCitic              get() = s("中信", "CITIC")
     val lblMainForce          get() = s("主力", "Top20")
     val tipVarietyDetail      get() = s("各品种当日净加空明细", " net-add-short by variety")
+    val lblForecast           get() = s("盘后预测", "Outlook")
+    val forecastPendingClose  get() = s("待收盘", "Awaiting close")
+    val forecastPendingTip    get() = s(
+        "A股尚未收盘，面向下一交易日的盘后预测将在 15:00 收盘后生成（综合A50/纳指期货、期指龙虎榜、当日资金流与市场宽度）",
+        "CN market not closed yet — next-day outlook is generated after the 15:00 close (A50/Nasdaq futures, index-futures positions, capital flow & breadth)"
+    )
+    val forecastBullish       get() = s("偏多", "Bullish lean")
+    val forecastBearish       get() = s("偏空", "Bearish lean")
+    val forecastNeutral       get() = s("震荡", "Neutral")
+    val forecastDisclaimer    get() = s(
+        "启发式多空信号加权汇总，仅供参考，不构成投资建议",
+        "Heuristic weighted signal aggregation — for reference only, not investment advice"
+    )
     val statusWeekend   get() = s("休市（周末）", "Closed (Weekend)")
     fun statusPreOpen(t: String) = s("未开市（$t 开盘）", "Pre-market (opens $t)")
     val statusAMOpen    get() = s("交易中（上午盘）", "Open (AM session)")

@@ -169,6 +169,24 @@ data class IndexFuturesPosition(
  */
 data class VarietyNetChange(val code: String, val name: String, val netAddShort: Double)
 
+/**
+ * 盘后多空信号汇总（启发式，非严格意义的预测）。
+ * @param score 综合得分 -100..100，正=偏多；由各可用因子加权求和后按可用权重归一
+ * @param factors 各因子明细（含缺失数据时被跳过的说明），供悬浮提示透明展示
+ * @param generatedAt 生成时间 "HH:mm"
+ */
+data class MarketForecast(
+    val score: Double,
+    val factors: List<ForecastFactor>,
+    val generatedAt: String
+)
+
+/**
+ * @param score 该因子对综合得分的实际贡献（已乘权重），正=偏多；NaN 表示数据缺失被跳过
+ * @param detail 因子取值的人话描述，如 "富时中国A50期货 +1.07%"
+ */
+data class ForecastFactor(val name: String, val detail: String, val score: Double)
+
 data class SectorPct(val name: String, val pct: Double)
 
 /** 基金单只持股明细（来自东方财富季报数据） */
