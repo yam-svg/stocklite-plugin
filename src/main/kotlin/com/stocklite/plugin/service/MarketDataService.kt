@@ -558,6 +558,12 @@ object MarketDataService {
     private val globalPrevCloseCache  = mutableMapOf<String, Pair<Double, Long>>()
     private val GLOBAL_CACHE_TTL       = 60_000L
 
+    // Yahoo 兜底行情缓存：这批指数（VIX/富时100/DAX/CAC40/台湾加权/SENSEX 等无新浪源的 + 强制走 Yahoo 的日经/韩国综指）
+    // 本身已确认约15分钟延迟，之前每次面板刷新（默认5秒一次）都逐个单独请求 Yahoo，等于5秒打8次接口、纯耗流量。
+    // 60秒内直接复用缓存，不发请求。
+    private val yahooQuoteCache = mutableMapOf<String, Triple<Double, Double, Long>>()  // symbol -> (price, pct, time)
+    private val YAHOO_QUOTE_FRESH_TTL = 60_000L
+
     /** 全球指数行情结果，附带限流标志供面板自适应退避 */
     data class GlobalQuoteResult(
         val quotes: List<GlobalIndexQuote>,
@@ -590,15 +596,25 @@ object MarketDataService {
                 }
             }
 
-        // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）——免费接口，约15分钟延迟
+        // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
         for (item in GLOBAL_INDEXES) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             if (!GLOBAL_FORCE_YAHOO.contains(item.symbol) && sinaKey != null && quoteMap.containsKey(sinaKey)) continue
+
+            val cached = yahooQuoteCache[item.symbol]
+            if (cached != null && now - cached.third < YAHOO_QUOTE_FRESH_TTL) {
+                val body = cached.first to cached.second
+                if (sinaKey != null) { quoteMap[sinaKey] = body; delayMap[sinaKey] = true }
+                quoteMap[item.symbol] = body
+                delayMap[item.symbol] = true
+                continue
+            }
 
             val (statusCode, body) = fetchYahooQuoteWithStatus(item.symbol, now)
             when {
                 statusCode == 429 -> { yahooRateLimited = true }
                 body != null -> {
+                    yahooQuoteCache[item.symbol] = Triple(body.first, body.second, now)
                     if (sinaKey != null) { quoteMap[sinaKey] = body; delayMap[sinaKey] = true }
                     quoteMap[item.symbol] = body
                     delayMap[item.symbol] = true
@@ -787,11 +803,10 @@ object MarketDataService {
 
     private data class SectorInfo(val name: String, val pct: Double, val constituents: Int)
 
-    private var sectorLeadersCache: Pair<List<SectorInfo>, List<SectorInfo>>? = null
-    private var sectorLeadersCacheTime = 0L
-    private val SECTOR_CACHE_TTL = 5 * 60_000L  // 板块接口偶发限流/断连时，5分钟内用最近一次成功结果兜底，避免频繁"--"
-
-    /** 领涨/领跌行业板块 TOP6（过滤掉成分股过少的冷门板块，避免单只股票带动的噪声） */
+    /**
+     * 领涨/领跌行业板块 TOP6（过滤掉成分股过少的冷门板块，避免单只股票带动的噪声）。
+     * 缓存由调用方 sectorCache（StaleCache）统一负责，这里只管一次真实抓取。
+     */
     private fun fetchSectorLeaders(): Pair<List<SectorInfo>, List<SectorInfo>>? {
         fun fetchTop(descending: Boolean): List<SectorInfo>? {
             val po = if (descending) 1 else 0
@@ -814,16 +829,7 @@ object MarketDataService {
 
         val top    = fetchTop(descending = true)
         val bottom = if (top != null) fetchTop(descending = false) else null
-        val now = System.currentTimeMillis()
-        if (top != null && bottom != null && top.isNotEmpty() && bottom.isNotEmpty()) {
-            val result = top to bottom
-            sectorLeadersCache = result
-            sectorLeadersCacheTime = now
-            return result
-        }
-        // 本次失败：若最近一次成功结果还在有效期内，沿用它，而不是直接展示"--"
-        val cached = sectorLeadersCache
-        return if (cached != null && now - sectorLeadersCacheTime < SECTOR_CACHE_TTL) cached else null
+        return if (top != null && bottom != null && top.isNotEmpty() && bottom.isNotEmpty()) top to bottom else null
     }
 
     /** 主力资金净流入（沪深两市合计），单位元，负数为净流出 */
@@ -940,37 +946,49 @@ object MarketDataService {
     }
 
     /**
-     * 子项短期兜底缓存：接口偶发失败/限流时沿用最近一次成功值，避免界面频繁跳"--"；
-     * 持续失败超过 TTL 后返回 null（长期拿不到就不该再展示旧数据）。
+     * 子项缓存：
+     * - 缓存在 freshTtlMs 内视为"新鲜"，直接返回，**不发起网络请求**——这是修复大盘概览
+     *   持续大量耗流量的关键：之前的写法是 cache.update(fetch())，Kotlin 会先无条件求值 fetch()
+     *   再决定是否使用缓存，等于缓存形同虚设，每次面板刷新（20秒一次）都会把全部接口打一遍。
+     *   现在改成 getOrFetch { fetch() }，缓存新鲜时函数体根本不会执行，才是真正省流量的写法。
+     * - 缓存过期后才真正发请求；请求失败时，若仍在 staleTtlMs 兜底期内则继续沿用旧值，
+     *   避免接口偶发失败/限流时界面频繁跳"--"；超过兜底期才返回 null。
      */
-    private class StaleCache<T>(private val ttlMs: Long) {
+    private class StaleCache<T>(private val freshTtlMs: Long, private val staleTtlMs: Long) {
         private var value: T? = null
         private var time = 0L
-        fun update(fresh: T?): T? {
+        fun getOrFetch(fetch: () -> T?): T? {
             val now = System.currentTimeMillis()
+            if (value != null && now - time < freshTtlMs) return value
+            val fresh = fetch()
             if (fresh != null) { value = fresh; time = now; return fresh }
-            return if (value != null && now - time < ttlMs) value else null
+            return if (value != null && now - time < staleTtlMs) value else null
         }
     }
 
+    // 大盘概览这类宏观统计没必要跟着20秒的面板刷新节奏逐项重新请求，60秒新鲜度足够；
+    // 板块龙虎榜（clist/get）接口本身较脆弱、易被限流，新鲜度放宽到120秒进一步降低请求频率。
+    private val BREADTH_FRESH_TTL = 60_000L
     private val BREADTH_STALE_TTL = 10 * 60_000L
-    private val advDecCache   = StaleCache<Triple<Int, Int, Int>>(BREADTH_STALE_TTL)
-    private val limitsCache   = StaleCache<Pair<Int, Int>>(BREADTH_STALE_TTL)
-    private val turnoverCache = StaleCache<Double>(BREADTH_STALE_TTL)
-    private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_STALE_TTL)
-    private val flowCache     = StaleCache<Double>(BREADTH_STALE_TTL)
+    private val advDecCache   = StaleCache<Triple<Int, Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    private val limitsCache   = StaleCache<Pair<Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    private val turnoverCache = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    private val flowCache     = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    private val sectorCache   = StaleCache<Pair<List<SectorInfo>, List<SectorInfo>>>(2 * 60_000L, 5 * 60_000L)
+    private val forecastFuturesCache = StaleCache<Map<String, FutureQuote>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
 
     /**
-     * 获取A股大盘概览。各子项独立请求、独立容错——任意一项失败只影响该项，
-     * 且失败时先沿用 10 分钟内的最近成功值（StaleCache），超时仍失败才显示"--"。
+     * 获取A股大盘概览。各子项独立请求、独立容错、独立缓存——任意一项失败只影响该项，
+     * 缓存新鲜时不发请求，过期后请求失败则沿用最近一次成功值，超时仍失败才显示"--"。
      */
     fun getMarketBreadth(): MarketBreadthData {
-        val breadth = advDecCache.update(fetchAdvanceDecline())
-        val limits  = limitsCache.update(fetchLimitCounts())
-        val turnover = turnoverCache.update(fetchTotalTurnover())
-        val capTier = capTierCache.update(fetchCapTierPct())
-        val sectors = fetchSectorLeaders()   // 自带5分钟兜底缓存
-        val flow    = flowCache.update(fetchMainCapitalFlow())
+        val breadth = advDecCache.getOrFetch { fetchAdvanceDecline() }
+        val limits  = limitsCache.getOrFetch { fetchLimitCounts() }
+        val turnover = turnoverCache.getOrFetch { fetchTotalTurnover() }
+        val capTier = capTierCache.getOrFetch { fetchCapTierPct() }
+        val sectors = sectorCache.getOrFetch { fetchSectorLeaders() }
+        val flow    = flowCache.getOrFetch { fetchMainCapitalFlow() }
         val futuresPosition = fetchIndexFuturesPosition()   // 自带10分钟缓存
         return MarketBreadthData(
             upCount = breadth?.first, downCount = breadth?.second, flatCount = breadth?.third,
@@ -1027,8 +1045,8 @@ object MarketDataService {
             factors.add(ForecastFactor(name, detail, contribution))
         }
 
-        // 期货行情：A50 + 纳指（一次请求）
-        val futures = getFutureQuotes(listOf("hf_CHA50CFD", "hf_NQ"))
+        // 期货行情：A50 + 纳指（一次请求，60秒内复用缓存，不用跟着盘后预测20秒的刷新节奏每次重新请求）
+        val futures = forecastFuturesCache.getOrFetch { getFutureQuotes(listOf("hf_CHA50CFD", "hf_NQ")).takeIf { it.isNotEmpty() } } ?: emptyMap()
         val a50 = futures["hf_CHA50CFD"]?.takeIf { it.prevClose > 0 }
         val nq  = futures["hf_NQ"]?.takeIf { it.prevClose > 0 }
 
