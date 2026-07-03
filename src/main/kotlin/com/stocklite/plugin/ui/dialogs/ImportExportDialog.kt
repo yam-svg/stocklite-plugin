@@ -72,7 +72,7 @@ class ImportExportDialog : DialogWrapper(true) {
         root.put("stocks", JSONArray().also { arr ->
             state.stocks.forEach { s ->
                 arr.put(JSONObject().apply {
-                    put("symbol", s.symbol); put("name", s.name); put("groupId", s.groupId)
+                    put("symbol", s.symbol); put("name", s.name); put("alias", s.alias); put("groupId", s.groupId)
                     put("costPrice", s.costPrice); put("quantity", s.quantity)
                     put("sortOrder", s.sortOrder)
                 })
@@ -86,7 +86,7 @@ class ImportExportDialog : DialogWrapper(true) {
         root.put("funds", JSONArray().also { arr ->
             state.funds.forEach { f ->
                 arr.put(JSONObject().apply {
-                    put("code", f.code); put("name", f.name); put("groupId", f.groupId)
+                    put("code", f.code); put("name", f.name); put("alias", f.alias); put("groupId", f.groupId)
                     put("costNav", f.costNav); put("shares", f.shares); put("sortOrder", f.sortOrder)
                 })
             }
@@ -99,7 +99,7 @@ class ImportExportDialog : DialogWrapper(true) {
         root.put("futures", JSONArray().also { arr ->
             state.futures.forEach { f ->
                 arr.put(JSONObject().apply {
-                    put("symbol", f.symbol); put("name", f.name)
+                    put("symbol", f.symbol); put("name", f.name); put("alias", f.alias)
                     put("groupId", f.groupId); put("sortOrder", f.sortOrder)
                 })
             }
@@ -108,6 +108,9 @@ class ImportExportDialog : DialogWrapper(true) {
             state.futureGroups.forEach { g ->
                 arr.put(JSONObject().apply { put("id", g.id); put("name", g.name) })
             }
+        })
+        root.put("globalIndexAliases", JSONObject().apply {
+            state.globalIndexAliases.forEach { (symbol, alias) -> put(symbol, alias) }
         })
         root.put("settings", JSONObject().apply {
             put("colorScheme", state.colorScheme)
@@ -141,6 +144,7 @@ class ImportExportDialog : DialogWrapper(true) {
                     id = java.util.UUID.randomUUID().toString()
                     symbol = o.optString("symbol", "")
                     name = o.optString("name", "")
+                    alias = o.optString("alias", "")
                     groupId = o.optString("groupId", "")
                     costPrice = o.optDouble("costPrice", 0.0)
                     quantity = o.optDouble("quantity", 0.0)
@@ -168,6 +172,7 @@ class ImportExportDialog : DialogWrapper(true) {
                     id = java.util.UUID.randomUUID().toString()
                     code = o.optString("code", "")
                     name = o.optString("name", "")
+                    alias = o.optString("alias", "")
                     groupId = o.optString("groupId", "")
                     costNav = o.optDouble("costNav", 0.0)
                     shares = o.optDouble("shares", 0.0)
@@ -195,10 +200,16 @@ class ImportExportDialog : DialogWrapper(true) {
                     id = java.util.UUID.randomUUID().toString()
                     symbol = o.optString("symbol", "")
                     name = o.optString("name", "")
+                    alias = o.optString("alias", "")
                     groupId = o.optString("groupId", "")
                     sortOrder = o.optInt("sortOrder", i)
                 })
             }
+        }
+        // globalIndexAliases
+        root.optJSONObject("globalIndexAliases")?.let { obj ->
+            state.globalIndexAliases.clear()
+            obj.keys().forEach { symbol -> state.globalIndexAliases[symbol] = obj.getString(symbol) }
         }
         // settings
         root.optJSONObject("settings")?.let { s ->

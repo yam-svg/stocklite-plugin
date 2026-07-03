@@ -30,6 +30,7 @@ class AddStockDialog(
     // 数据填写区
     private val symbolLabel  = JLabel("--")
     private val nameLabel    = JLabel("--")
+    private val aliasField   = JTextField("", 12)
     private val costField    = JTextField("0.00", 12)
     private val qtyField     = JTextField("0", 12)
     private val groupCombo   = JComboBox<String>()
@@ -101,9 +102,11 @@ class AddStockDialog(
 
         row(L10n.dlgSymbolLbl, symbolLabel, 0)
         row(L10n.dlgNameLbl,   nameLabel,   1)
-        row(L10n.dlgCostLbl,   costField,   2)
-        row(L10n.dlgQtyLbl,    qtyField,    3)
-        row(L10n.dlgGroupLbl,  groupCombo,  4)
+        // 别名仅编辑模式提供（新增时还没有持久化对象，可添加后再改名）
+        if (existingStock != null) row(L10n.dlgAliasLbl, aliasField, 2)
+        row(L10n.dlgCostLbl,   costField,   3)
+        row(L10n.dlgQtyLbl,    qtyField,    4)
+        row(L10n.dlgGroupLbl,  groupCombo,  5)
 
         panel.add(form, BorderLayout.CENTER)
         return panel
@@ -133,6 +136,7 @@ class AddStockDialog(
         val s = existingStock!!
         symbolLabel.text = s.symbol
         nameLabel.text   = s.name
+        aliasField.text  = s.alias
         costField.text   = s.costPrice.toString()
         qtyField.text    = s.quantity.toString()
         val idx = groups.indexOfFirst { it.id == s.groupId }.takeIf { it >= 0 } ?: 0
@@ -145,6 +149,8 @@ class AddStockDialog(
         val cost   = costField.text.toDoubleOrNull() ?: 0.0
         val qty    = qtyField.text.toDoubleOrNull()  ?: 0.0
         val gid    = groups.getOrNull(groupCombo.selectedIndex)?.id ?: groupId
+        // 别名直接写回持久化对象（编辑模式才有），不扩散 onSave 签名
+        existingStock?.alias = aliasField.text.trim()
         onSave(symbol, name, gid, cost, qty)
         super.doOKAction()
     }

@@ -12,6 +12,8 @@ class StockData {
     var id: String = ""
     var symbol: String = ""
     var name: String = ""
+    /** 自定义显示名称（别名），为空时显示 name；仅影响展示，搜索/行情/AI仍用真实名称 */
+    var alias: String = ""
     var groupId: String = ""
     var costPrice: Double = 0.0
     var quantity: Double = 0.0
@@ -29,6 +31,8 @@ class FundData {
     var id: String = ""
     var code: String = ""
     var name: String = ""
+    /** 自定义显示名称（别名），为空时显示 name */
+    var alias: String = ""
     var groupId: String = ""
     var costNav: Double = 0.0
     var shares: Double = 0.0
@@ -46,6 +50,8 @@ class FutureData {
     var id: String = ""
     var symbol: String = ""
     var name: String = ""
+    /** 自定义显示名称（别名），为空时显示 name */
+    var alias: String = ""
     var groupId: String = ""
     var sortOrder: Int = 0
     var createdAt: Long = 0L

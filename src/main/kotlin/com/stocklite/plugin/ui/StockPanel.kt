@@ -44,7 +44,7 @@ class StockPanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN, true)  { s, _  -> s.name },
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN, true)  { s, _  -> s.alias.ifBlank { s.name } },
         ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN)        { s, _  -> s.symbol },
         ColDef("quantity",     L10n.colQty,       QuoteColumnType.QTY)          { s, _  -> s.quantity },
         ColDef("cost",         L10n.colCost,      QuoteColumnType.PRICE)        { s, _  -> s.costPrice },
@@ -201,7 +201,7 @@ class StockPanel : JPanel(BorderLayout()),
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (s, q) = rows[modelRow]
                 chartPanel.showChart(
-                    displayName   = s.name,
+                    displayName   = s.alias.ifBlank { s.name },
                     displaySymbol = s.symbol,
                     changePercent = q?.changePercent ?: 0.0,
                     prevClose     = q?.prevClose ?: 0.0,

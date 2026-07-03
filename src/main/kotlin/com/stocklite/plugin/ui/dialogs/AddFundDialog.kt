@@ -28,6 +28,7 @@ class AddFundDialog(
 
     private val codeLabel    = JLabel("--")
     private val nameLabel    = JLabel("--")
+    private val aliasField   = JTextField("", 12)
     private val costNavField = JTextField("1.0000", 12)
     private val sharesField  = JTextField("0", 12)
     private val groupCombo   = JComboBox<String>()
@@ -89,9 +90,11 @@ class AddFundDialog(
         }
         row(L10n.dlgFundCodeLbl, codeLabel,    0)
         row(L10n.dlgFundNameLbl, nameLabel,    1)
-        row(L10n.dlgCostNavLbl,  costNavField, 2)
-        row(L10n.dlgSharesLbl,   sharesField,  3)
-        row(L10n.dlgGroupLbl,    groupCombo,   4)
+        // 别名仅编辑模式提供（新增时还没有持久化对象，可添加后再改名）
+        if (existingFund != null) row(L10n.dlgAliasLbl, aliasField, 2)
+        row(L10n.dlgCostNavLbl,  costNavField, 3)
+        row(L10n.dlgSharesLbl,   sharesField,  4)
+        row(L10n.dlgGroupLbl,    groupCombo,   5)
 
         panel.add(form, BorderLayout.CENTER)
         return panel
@@ -119,6 +122,7 @@ class AddFundDialog(
     private fun prefillExisting() {
         val f = existingFund!!
         codeLabel.text    = f.code; nameLabel.text = f.name
+        aliasField.text   = f.alias
         costNavField.text = f.costNav.toString(); sharesField.text = f.shares.toString()
         val idx = groups.indexOfFirst { it.id == f.groupId }.takeIf { it >= 0 } ?: 0
         if (groups.isNotEmpty()) groupCombo.selectedIndex = idx
@@ -130,6 +134,8 @@ class AddFundDialog(
         val costNav = costNavField.text.toDoubleOrNull() ?: 1.0
         val shares  = sharesField.text.toDoubleOrNull()  ?: 0.0
         val gid     = groups.getOrNull(groupCombo.selectedIndex)?.id ?: groupId
+        // 别名直接写回持久化对象（编辑模式才有），不扩散 onSave 签名
+        existingFund?.alias = aliasField.text.trim()
         onSave(code, name, gid, costNav, shares)
         super.doOKAction()
     }

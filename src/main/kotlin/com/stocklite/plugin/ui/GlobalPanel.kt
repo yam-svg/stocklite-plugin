@@ -61,7 +61,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         override fun getValueAt(row: Int, col: Int): Any {
             val q = quotes[row]
             return when (col) {
-                0 -> q.name; 1 -> q.value; 2 -> q.changePercent
+                0 -> displayName(q); 1 -> q.value; 2 -> q.changePercent
                 3 -> q.market; 4 -> if (q.isOpen) L10n.cellOpen else L10n.cellClosed
                 else -> ""
             }
@@ -202,7 +202,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                 val prev = if (q.changePercent != 0.0 && q.value > 0)
                     q.value / (1.0 + q.changePercent / 100.0) else 0.0
                 chartPanel.showChart(
-                    displayName   = q.name,
+                    displayName   = displayName(q),
                     displaySymbol = q.symbol,
                     changePercent = q.changePercent,
                     prevClose     = prev,
@@ -236,6 +236,10 @@ class GlobalPanel : JPanel(BorderLayout()),
         }
     }
 
+    /** 自定义别名优先，未设置时用默认名称；别名仅影响展示，复制/AI仍用真实名称 */
+    private fun displayName(q: GlobalIndexQuote): String =
+        StockliteState.getInstance().globalIndexAliases[q.symbol]?.takeIf { it.isNotBlank() } ?: q.name
+
     private fun showContextMenu(e: MouseEvent) {
         val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
         table.setRowSelectionInterval(viewRow, viewRow)
@@ -244,6 +248,16 @@ class GlobalPanel : JPanel(BorderLayout()),
         val q = quotes[modelRow]
 
         val popup = JPopupMenu()
+        popup.add(JMenuItem(L10n.menuRename).also { it.addActionListener {
+            val state = StockliteState.getInstance()
+            val input = JOptionPane.showInputDialog(this@GlobalPanel, L10n.dlgAliasPrompt, displayName(q))
+            if (input != null) {  // null=取消；空串=恢复默认名称
+                val alias = input.trim().takeIf { a -> a.isNotEmpty() && a != q.name }
+                if (alias != null) state.globalIndexAliases[q.symbol] = alias
+                else state.globalIndexAliases.remove(q.symbol)
+                tableModel.fireTableDataChanged()
+            }
+        }})
         popup.add(JMenuItem(L10n.btnCopyName).also { it.addActionListener {
             Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(q.name), null)
         }})

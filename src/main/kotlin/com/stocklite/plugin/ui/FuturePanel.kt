@@ -44,7 +44,7 @@ class FuturePanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { f, _  -> f.name },
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { f, _  -> f.alias.ifBlank { f.name } },
         ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN) { f, _  -> f.symbol },
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE) { _, q  -> q?.price ?: 0.0 },
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT)   { _, q  -> q?.changePercent ?: 0.0 },
@@ -165,7 +165,7 @@ class FuturePanel : JPanel(BorderLayout()),
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (f, q) = rows[modelRow]
                 chartPanel.showChart(
-                    displayName   = f.name,
+                    displayName   = f.alias.ifBlank { f.name },
                     displaySymbol = f.symbol,
                     changePercent = q?.changePercent ?: 0.0,
                     prevClose     = q?.prevClose ?: 0.0,
@@ -197,6 +197,13 @@ class FuturePanel : JPanel(BorderLayout()),
         val (f, q) = rows[modelRow]
 
         val popup = JPopupMenu()
+        popup.add(JMenuItem(L10n.menuRename).also { it.addActionListener {
+            val input = JOptionPane.showInputDialog(this@FuturePanel, L10n.dlgAliasPrompt, f.alias.ifBlank { f.name })
+            if (input != null) {  // null=取消；空串=恢复默认名称
+                f.alias = input.trim().takeIf { a -> a != f.name } ?: ""
+                loadRows()
+            }
+        }})
         popup.add(JMenuItem(L10n.btnDelete).also { it.addActionListener {
             if (JOptionPane.showConfirmDialog(this@FuturePanel, L10n.dlgConfirmDelete(f.name),
                     L10n.dlgConfirmTitle, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {

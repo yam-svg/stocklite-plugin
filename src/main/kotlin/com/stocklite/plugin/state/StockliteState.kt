@@ -64,6 +64,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // ── 全球指数自定义排序（存储 symbol 顺序） ──
     var globalIndexOrder: MutableList<String> = ArrayList()
 
+    // ── 全球指数自定义显示名称（symbol -> 别名），为空/缺失时显示默认名称 ──
+    var globalIndexAliases: MutableMap<String, String> = HashMap()
+
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()
 
