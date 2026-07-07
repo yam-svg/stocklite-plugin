@@ -245,7 +245,28 @@ object MarketDataService {
                 val name     = meta.optString("shortName", sym).ifEmpty { sym }
                 val change   = price - prevClose
                 val pct      = if (prevClose > 0) change / prevClose * 100 else 0.0
-                result[sym] = StockQuote(sym, name, price, prevClose, change, pct)
+
+                // 盘前/盘后延伸交易数据：仅在 marketState 明确为 PRE/POST/POSTPOST 时才展示，
+                // 避免交易时段内残留的 preMarketPrice 字段干扰正常行情。
+                val marketState = meta.optString("marketState", "")
+                val extPair: Pair<Double?, ExtendedSession?> = when (marketState) {
+                    "PRE" -> {
+                        val p = meta.optDouble("preMarketPrice", Double.NaN).takeIf { it.isFinite() && it > 0 }
+                        p to if (p != null) ExtendedSession.PRE_MARKET else null
+                    }
+                    "POST", "POSTPOST" -> {
+                        val p = meta.optDouble("postMarketPrice", Double.NaN).takeIf { it.isFinite() && it > 0 }
+                        p to if (p != null) ExtendedSession.POST_MARKET else null
+                    }
+                    else -> null to null
+                }
+                val extPrice = extPair.first
+                val extSession = extPair.second
+                val extPct = if (extPrice != null && prevClose > 0)
+                    (extPrice - prevClose) / prevClose * 100 else null
+
+                result[sym] = StockQuote(sym, name, price, prevClose, change, pct,
+                    extendedPrice = extPrice, extendedChangePercent = extPct, extendedSession = extSession)
             } catch (_: Exception) {}
         }
 
@@ -1219,54 +1240,54 @@ object MarketDataService {
 
     fun searchStocks(keyword: String): List<StockSearchResult> {
         if (keyword.isBlank()) return emptyList()
-        val enc = URLEncoder.encode(keyword, "UTF-8")
-        val raw = HttpUtil.getGbk("https://suggest3.sinajs.cn/suggest/key=$enc") ?: return emptyList()
-        // 移植原版：match = text.match(/"([^"]+)"/)
-        val m = Regex(""""([^"]+)"""").find(raw) ?: return emptyList()
-
         val results = mutableListOf<StockSearchResult>()
 
-        m.groupValues[1].split(";")
-            .filter { it.isNotBlank() }
-            .forEach { item ->
+        // ── 1. 新浪搜索：A 股 + 港股（GBK 编码，速度最快）──
+        try {
+            val enc = URLEncoder.encode(keyword, "UTF-8")
+            val raw = HttpUtil.getGbk("https://suggest3.sinajs.cn/suggest/key=$enc") ?: ""
+            val m = Regex(""""([^"]+)"""").find(raw)
+            m?.groupValues?.get(1)?.split(";")?.filter { it.isNotBlank() }?.forEach { item ->
                 val parts  = item.split(",")
                 val symbol = parts.getOrElse(3) { "" }.ifEmpty { parts.getOrElse(2) { "" } }.trim()
                 val name   = parts.getOrElse(0) { "" }.trim()
                 if (symbol.isEmpty() || name.isEmpty()) return@forEach
-
                 when {
-                    // A-share with explicit prefix
                     symbol.startsWith("sh") || symbol.startsWith("sz") ->
                         results.add(StockSearchResult(symbol, name))
-                    // A-share 6-digit code
                     symbol.matches(Regex("\\d{6}")) -> {
                         val full = if (symbol.startsWith("6") || symbol.startsWith("5")) "sh$symbol" else "sz$symbol"
                         results.add(StockSearchResult(full, name))
                     }
-                    // HK share: 5-digit numeric code
                     symbol.matches(Regex("\\d{5}")) ->
                         results.add(StockSearchResult("hk$symbol", name))
-                    // HK share with exchange prefix
                     symbol.matches(Regex("[Hh][Kk]\\d{4,5}")) -> {
                         val code = symbol.takeLast(5).padStart(5, '0')
                         results.add(StockSearchResult("hk$code", name))
                     }
                 }
             }
+        } catch (_: Exception) {}
 
-        // US stock fallback: if keyword looks like a US ticker (uppercase letters only)
-        if (results.isEmpty() && keyword.matches(Regex("[A-Z]{1,5}"))) {
+        // ── 2. 东方财富搜索：支持中文/英文/代码搜美股，全库覆盖 ──
+        val looksLikeChinese = keyword.any { it.code in 0x4E00..0x9FFF }
+        val looksLikeUsTicker = keyword.matches(Regex("[A-Za-z][A-Za-z0-9.\\-]{0,8}"))
+        if (looksLikeChinese || looksLikeUsTicker || results.isEmpty()) {
             try {
-                val yEnc = URLEncoder.encode(keyword, "UTF-8")
-                val yRaw = HttpUtil.get("https://query2.finance.yahoo.com/v1/finance/search?q=$yEnc&quotesCount=5&newsCount=0") ?: ""
-                val quotes = JSONObject(yRaw).optJSONArray("quotes") ?: JSONArray()
-                for (i in 0 until quotes.length()) {
-                    val o = quotes.optJSONObject(i) ?: continue
-                    val sym = o.optString("symbol", "").takeIf { it.isNotEmpty() } ?: continue
-                    val shortName = o.optString("shortname", o.optString("longname", sym))
-                    val qType = o.optString("quoteType", "")
-                    if (qType == "EQUITY" || qType == "ETF") {
-                        results.add(StockSearchResult(sym, shortName))
+                val enc = URLEncoder.encode(keyword, "UTF-8")
+                val raw = HttpUtil.get(
+                    "https://searchapi.eastmoney.com/api/suggest/get?input=$enc&type=14&token=D43BF722C8E33BDC906FB84D85E326E8"
+                ) ?: ""
+                val data = JSONObject(raw)
+                    .optJSONObject("QuotationCodeTable")
+                    ?.optJSONArray("Data") ?: JSONArray()
+                for (i in 0 until data.length()) {
+                    val o = data.optJSONObject(i) ?: continue
+                    if (o.optString("Classify") != "UsStock") continue
+                    val sym  = o.optString("Code", "").takeIf { it.isNotEmpty() } ?: continue
+                    val name = o.optString("Name", sym)
+                    if (results.none { it.symbol == sym }) {
+                        results.add(StockSearchResult(sym, name))
                     }
                 }
             } catch (_: Exception) {}

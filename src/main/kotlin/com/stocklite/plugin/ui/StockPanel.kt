@@ -37,6 +37,44 @@ class StockPanel : JPanel(BorderLayout()),
     private val chartPanel = InlineChartPanel()
     private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForStock)
 
+    /** changePercent 列的值包装：主涨跌幅 + 可选的盘前/盘后信息 */
+    private data class ChangePctValue(
+        val changePct: Double,
+        val extPct: Double?,
+        val session: ExtendedSession?
+    )
+
+    /** 能正确渲染 ChangePctValue 的 renderer（主行着色 + 盘前/盘后小字行） */
+    private inner class ChangePctRenderer : QuoteRenderer(QuoteColumnType.PCT) {
+        override fun getTableCellRendererComponent(
+            table: JTable, value: Any?,
+            isSelected: Boolean, hasFocus: Boolean,
+            row: Int, column: Int
+        ): java.awt.Component {
+            val wrapped = value as? ChangePctValue
+            val mainPct = wrapped?.changePct ?: (value as? Double) ?: 0.0
+            val comp = super.getTableCellRendererComponent(table, mainPct, isSelected, hasFocus, row, column)
+                    as javax.swing.JLabel
+
+            if (wrapped?.extPct != null && wrapped.session != null) {
+                val sessionLabel = when (wrapped.session) {
+                    ExtendedSession.PRE_MARKET  -> L10n.lblPreMarket
+                    ExtendedSession.POST_MARKET -> L10n.lblPostMarket
+                }
+                val sign   = if (wrapped.extPct >= 0) "+" else ""
+                val extStr = "$sign${"%.2f".format(wrapped.extPct)}%"
+                val mainColor = comp.foreground
+                val hex = "#%02x%02x%02x".format(mainColor.red, mainColor.green, mainColor.blue)
+                val mainStr = Fmt.pct(mainPct)
+                comp.text = "<html><center>" +
+                    "<span style='color:$hex'>$mainStr</span><br>" +
+                    "<span style='font-size:85%;color:gray'>$sessionLabel $extStr</span>" +
+                    "</center></html>"
+            }
+            return comp
+        }
+    }
+
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
         val alwaysOn: Boolean = false,
@@ -49,7 +87,12 @@ class StockPanel : JPanel(BorderLayout()),
         ColDef("quantity",     L10n.colQty,       QuoteColumnType.QTY)          { s, _  -> s.quantity },
         ColDef("cost",         L10n.colCost,      QuoteColumnType.PRICE)        { s, _  -> s.costPrice },
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE, true)  { _, q  -> q?.price ?: 0.0 },
-        ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  -> q?.changePercent ?: 0.0 },
+        ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  ->
+            val pct = q?.changePercent ?: 0.0
+            if (q?.extendedSession != null)
+                ChangePctValue(pct, q.extendedChangePercent, q.extendedSession)
+            else pct
+        },
         ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
         ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
@@ -71,9 +114,13 @@ class StockPanel : JPanel(BorderLayout()),
         override fun getColumnCount()         = visibleCols.size
         override fun getColumnName(col: Int)  = visibleCols[col].title
         override fun isCellEditable(r: Int, c: Int) = false
-        override fun getColumnClass(col: Int): Class<*> =
-            if (col < visibleCols.size && visibleCols[col].type != QuoteColumnType.PLAIN)
-                Double::class.java else String::class.java
+        override fun getColumnClass(col: Int): Class<*> {
+            if (col >= visibleCols.size) return String::class.java
+            val colDef = visibleCols[col]
+            // changePercent 列的值可能是 ChangePctValue 或 Double，统一声明为 Any
+            if (colDef.key == "changePercent") return Any::class.java
+            return if (colDef.type != QuoteColumnType.PLAIN) Double::class.java else String::class.java
+        }
         override fun getValueAt(row: Int, col: Int): Any {
             val (s, q) = rows[row]
             return visibleCols[col].getValue(s, q)
@@ -104,7 +151,6 @@ class StockPanel : JPanel(BorderLayout()),
         state.addRefreshIntervalListener(this)
         rebuildVisibleCols()
         setupTable()
-        table.rowSorter = TableRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
@@ -141,7 +187,15 @@ class StockPanel : JPanel(BorderLayout()),
         val enabled = state.stockVisibleColumns.toSet()
         visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
-        table.rowSorter = TableRowSorter(tableModel)
+        val sorter = TableRowSorter(tableModel)
+        // changePercent 列值为 ChangePctValue 或 Double，统一用 changePct 字段排序
+        visibleCols.indexOfFirst { it.key == "changePercent" }.takeIf { it >= 0 }?.let { colIdx ->
+            sorter.setComparator(colIdx, Comparator<Any?> { a, b ->
+                fun toDouble(v: Any?) = (v as? ChangePctValue)?.changePct ?: (v as? Double) ?: 0.0
+                toDouble(a).compareTo(toDouble(b))
+            })
+        }
+        table.rowSorter = sorter
         applyRenderers()
         restoreColumnWidths()
         installColumnWidthListener()
@@ -150,7 +204,9 @@ class StockPanel : JPanel(BorderLayout()),
     private fun applyRenderers() {
         visibleCols.forEachIndexed { i, col ->
             if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
+                table.columnModel.getColumn(i).cellRenderer =
+                    if (col.key == "changePercent") ChangePctRenderer()
+                    else QuoteRenderer(col.type)
             }
         }
         if (table.columnModel.columnCount > 0)
@@ -486,7 +542,19 @@ class StockPanel : JPanel(BorderLayout()),
         rows = state.getStocksForGroup(currentGroupId).map { it to quotes[it.symbol] }
         tableModel.fireTableDataChanged()
         applyRenderers()
+        adjustRowHeights()
         updateSummary()
+    }
+
+    /** 有盘前/盘后数据的行显示两行文字，需要更高的行高 */
+    private fun adjustRowHeights() {
+        rows.forEachIndexed { modelRow, (_, q) ->
+            val viewRow = try { table.convertRowIndexToView(modelRow) } catch (_: Exception) { modelRow }
+            if (viewRow >= 0) {
+                val needsTwoLines = q?.extendedSession != null
+                table.setRowHeight(viewRow, if (needsTwoLines) 34 else 24)
+            }
+        }
     }
 
     private fun updateSummary() {

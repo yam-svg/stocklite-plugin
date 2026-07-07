@@ -77,6 +77,9 @@ class ColumnWidthEntry {
 
 // ── 行情数据（运行时，不持久化）──
 
+/** 盘前/盘后会话标识 */
+enum class ExtendedSession { PRE_MARKET, POST_MARKET }
+
 data class StockQuote(
     val symbol: String,
     val name: String,
@@ -84,7 +87,13 @@ data class StockQuote(
     val prevClose: Double,
     val change: Double,
     val changePercent: Double,
-    val updateTime: Long = System.currentTimeMillis()
+    val updateTime: Long = System.currentTimeMillis(),
+    /** 盘前或盘后价格（仅美股，非交易时段时才有值） */
+    val extendedPrice: Double? = null,
+    /** 盘前/盘后相对昨收的涨跌幅% */
+    val extendedChangePercent: Double? = null,
+    /** 当前处于盘前还是盘后 */
+    val extendedSession: ExtendedSession? = null
 )
 
 data class FundQuote(

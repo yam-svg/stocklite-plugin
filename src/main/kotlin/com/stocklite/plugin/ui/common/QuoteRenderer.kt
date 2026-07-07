@@ -11,7 +11,7 @@ import javax.swing.table.DefaultTableCellRenderer
 
 enum class QuoteColumnType { PLAIN, PRICE, PRICE4, QTY, PCT, VALUE, PNL, DIRECTION }
 
-class QuoteRenderer(private val colType: QuoteColumnType = QuoteColumnType.PLAIN) :
+open class QuoteRenderer(private val colType: QuoteColumnType = QuoteColumnType.PLAIN) :
     DefaultTableCellRenderer() {
 
     companion object {

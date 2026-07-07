@@ -28,6 +28,8 @@ object L10n {
     val colShares      get() = s("持仓份额", "Shares")
     val colCostNav     get() = s("成本净值", "Cost NAV")
     val colIndex       get() = s("指数", "Index")
+    val lblPreMarket   get() = s("盘前", "Pre")
+    val lblPostMarket  get() = s("盘后", "Post")
     val colMarket      get() = s("市场", "Market")
     val colStatus      get() = s("状态", "Status")
     val btnRefresh      get() = s("刷新",    "Refresh")
