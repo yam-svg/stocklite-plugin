@@ -1238,6 +1238,136 @@ object MarketDataService {
     // 股票搜索（移植自 registerStockSearchHandler，扩展支持港股/美股）
     // ══════════════════════════════════════════════════════════════
 
+    // ══════════════════════════════════════════════════════════════
+    // 美股板块 ETF 行情
+    // ══════════════════════════════════════════════════════════════
+
+    /** 板块 ETF 定义：symbol → 中文名 */
+    val US_SECTOR_ETFS = listOf(
+        // ── 科技/AI ──
+        "XLK"  to "科技",
+        "AIQ"  to "AI算力",       // Global X Artificial Intelligence & Technology
+        "BOTZ" to "AI/机器人",    // Global X Robotics & Artificial Intelligence
+        "ROBO" to "机器人",       // ROBO Global Robotics and Automation Index
+        "SOXX" to "半导体",       // iShares Semiconductor
+        "SKYY" to "云计算",       // First Trust Cloud Computing
+        "DTCR" to "数据中心",     // Global X Data Center & Digital Infrastructure
+        "HACK" to "网络安全",     // ETFMG Prime Cyber Security
+        // ── 工业/航天/国防 ──
+        "XLI"  to "工业",
+        "ITA"  to "军工",         // iShares U.S. Aerospace & Defense
+        "UFO"  to "商业航天/卫星",// Procure Space ETF
+        "DRIV" to "自动驾驶",     // Global X Autonomous & Electric Vehicles
+        // ── 能源/新能源 ──
+        "XLE"  to "能源",
+        "XOP"  to "油气",         // SPDR Oil & Gas Exploration & Production
+        "USO"  to "石油",         // United States Oil Fund
+        "UNG"  to "天然气",       // United States Natural Gas Fund
+        "ICLN" to "新能源",       // iShares Global Clean Energy
+        "TAN"  to "光伏",         // Invesco Solar
+        "NLR"  to "核电",         // VanEck Uranium+Nuclear Energy
+        "GRID" to "电网",         // First Trust NASDAQ Smart Grid Infrastructure
+        // ── 金属/材料 ──
+        "XLB"  to "材料",
+        "GLD"  to "黄金",
+        "COPX" to "铜/有色",      // Global X Copper Miners
+        "LIT"  to "锂电池",       // Global X Lithium & Battery Tech
+        // ── 医疗/生物 ──
+        "XLV"  to "医疗",
+        "XBI"  to "生物科技",
+        // ── 金融/消费 ──
+        "XLF"  to "金融",
+        "KBE"  to "银行",
+        "XLY"  to "消费(可选)",
+        "XLP"  to "消费(必需)",
+        // ── 其他 ──
+        "XLU"  to "公用事业",
+        "XLRE" to "房地产",
+        "XLC"  to "通信"
+    )
+
+    enum class UsSession { PRE, REGULAR, POST, CLOSED }
+
+    /** 根据美东时间判断当前美股交易时段（忽略节假日，仅按时间区间） */
+    fun currentUsSession(): UsSession {
+        val ny  = ZonedDateTime.now(ZoneId.of("America/New_York"))
+        val dow = ny.dayOfWeek.value          // 1=Mon..7=Sun
+        if (dow == 6 || dow == 7) return UsSession.CLOSED
+        val t = ny.hour * 60 + ny.minute
+        return when {
+            t in  4 * 60 until  9 * 60 + 30 -> UsSession.PRE
+            t in  9 * 60 + 30 until 16 * 60  -> UsSession.REGULAR
+            t in 16 * 60 until 20 * 60        -> UsSession.POST
+            else                              -> UsSession.CLOSED
+        }
+    }
+
+    fun getUsSectorQuotes(): Map<String, SectorQuote> {
+        val result = mutableMapOf<String, SectorQuote>()
+        val session = currentUsSession()
+        for ((symbol, nameCn) in US_SECTOR_ETFS) {
+            try {
+                val enc = URLEncoder.encode(symbol, "UTF-8")
+                // includePrePost=true 使盘前/盘后分钟数据包含在 indicators 里
+                val raw = HttpUtil.get(
+                    "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d&includePrePost=true"
+                ) ?: continue
+                val result0 = JSONObject(raw).optJSONObject("chart")
+                    ?.optJSONArray("result")?.optJSONObject(0) ?: continue
+                val meta = result0.optJSONObject("meta") ?: continue
+
+                // 昨日正式收盘价（regularMarketPrice 在盘前/盘后也不变，等于昨收）
+                val prevClose = meta.optDouble("chartPreviousClose", Double.NaN).let {
+                    if (it.isFinite() && it > 0) it
+                    else meta.optDouble("regularMarketPreviousClose", Double.NaN).let { c ->
+                        if (c.isFinite() && c > 0) c else meta.optDouble("previousClose", Double.NaN)
+                    }
+                }.takeIf { it.isFinite() && it > 0 } ?: continue
+
+                // 上次正式收盘涨跌幅（regularMarketPrice 在盘前/盘后等于昨收，涨跌幅为 0；
+                // 取 meta 中的 regularMarketChangePercent 更准）
+                val regularPrice = meta.optDouble("regularMarketPrice", Double.NaN)
+                    .takeIf { it.isFinite() && it > 0 } ?: prevClose
+                val regularPct   = (regularPrice - prevClose) / prevClose * 100
+
+                // 盘前/盘后最新价：从 indicators 分钟线取最后一根有效 close
+                val extPct: Double? = if (session == UsSession.PRE || session == UsSession.POST) {
+                    val timestamps = result0.optJSONArray("timestamp")
+                    val closes = result0.optJSONObject("indicators")
+                        ?.optJSONArray("quote")?.optJSONObject(0)
+                        ?.optJSONArray("close")
+                    if (timestamps != null && closes != null) {
+                        val nyZone  = ZoneId.of("America/New_York")
+                        val preStart  =  4 * 60   // 04:00 ET in minutes
+                        val preEnd    =  9 * 60 + 30
+                        val postStart = 16 * 60
+                        val postEnd   = 20 * 60
+                        var lastExtPrice: Double? = null
+                        for (i in 0 until minOf(timestamps.length(), closes.length())) {
+                            val ts = timestamps.optLong(i, -1).takeIf { it > 0 } ?: continue
+                            val cl = closes.optDouble(i, Double.NaN).takeIf { it.isFinite() && it > 0 } ?: continue
+                            val nyMin = java.time.Instant.ofEpochSecond(ts)
+                                .atZone(nyZone).let { it.hour * 60 + it.minute }
+                            val inRange = if (session == UsSession.PRE)
+                                nyMin in preStart until preEnd
+                            else
+                                nyMin in postStart until postEnd
+                            if (inRange) lastExtPrice = cl
+                        }
+                        if (lastExtPrice != null) (lastExtPrice - prevClose) / prevClose * 100
+                        else null
+                    } else null
+                } else null
+
+                val prePct  = if (session == UsSession.PRE)  extPct else null
+                val postPct = if (session == UsSession.POST) extPct else null
+
+                result[symbol] = SectorQuote(symbol, nameCn, regularPct, prePct, postPct)
+            } catch (_: Exception) {}
+        }
+        return result
+    }
+
     fun searchStocks(keyword: String): List<StockSearchResult> {
         if (keyword.isBlank()) return emptyList()
         val results = mutableListOf<StockSearchResult>()

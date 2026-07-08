@@ -224,6 +224,15 @@ data class FundHoldingsResult(
     val error:       String? = null
 )
 
+/** 美股板块 ETF 行情（运行时，不持久化） */
+data class SectorQuote(
+    val symbol: String,
+    val nameCn: String,
+    val regularPct: Double,
+    val prePct: Double? = null,
+    val postPct: Double? = null
+)
+
 data class StockSearchResult(val symbol: String, val name: String)
 data class FundSearchResult(val code: String, val name: String)
 data class FutureSearchResult(val symbol: String, val name: String)

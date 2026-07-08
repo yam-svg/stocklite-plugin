@@ -8,18 +8,20 @@ import javax.swing.JPanel
 
 class StocklitePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
-    val stockPanel  = StockPanel()
-    val fundPanel   = FundPanel()
-    val futurePanel = FuturePanel()
-    val globalPanel = GlobalPanel()
+    val stockPanel    = StockPanel()
+    val fundPanel     = FundPanel()
+    val futurePanel   = FuturePanel()
+    val globalPanel   = GlobalPanel()
+    val usMarketPanel = UsMarketPanel()
 
     private val tabs = JBTabbedPane()
 
     init {
-        tabs.addTab(L10n.tabStock,  stockPanel)
-        tabs.addTab(L10n.tabFund,   fundPanel)
-        tabs.addTab(L10n.tabFuture, futurePanel)
-        tabs.addTab(L10n.tabGlobal, globalPanel)
+        tabs.addTab(L10n.tabStock,    stockPanel)
+        tabs.addTab(L10n.tabFund,     fundPanel)
+        tabs.addTab(L10n.tabFuture,   futurePanel)
+        tabs.addTab(L10n.tabGlobal,   globalPanel)
+        tabs.addTab(L10n.tabUsMarket, usMarketPanel)
 
         tabs.addChangeListener {
             when (tabs.selectedIndex) {
@@ -27,6 +29,7 @@ class StocklitePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
                 1 -> fundPanel.fetchQuotesAsync()
                 2 -> futurePanel.fetchQuotesAsync()
                 3 -> globalPanel.fetchAsync()
+                4 -> usMarketPanel.fetchAsync()
             }
         }
 
@@ -40,5 +43,6 @@ class StocklitePanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         tabs.setTitleAt(1, L10n.tabFund)
         tabs.setTitleAt(2, L10n.tabFuture)
         tabs.setTitleAt(3, L10n.tabGlobal)
+        tabs.setTitleAt(4, L10n.tabUsMarket)
     }
 }

@@ -8,6 +8,7 @@ object L10n {
 
     private fun s(zh: String, en: String) = if (isEn()) en else zh
 
+    val tabUsMarket     get() = s("美股板块", "US Sectors")
     val tabStock       get() = s("股票", "Stocks")
     val tabFund        get() = s("基金", "Funds")
     val tabFuture      get() = s("期货", "Futures")
@@ -73,6 +74,18 @@ object L10n {
     val lblTopSector          get() = s("领涨", "Top")
     val lblBottomSector       get() = s("领跌", "Bottom")
     val lblMainFlow           get() = s("主力资金", "Main Flow")
+    val lblVsPrevDay          get() = s("昨同期", "vsYest")
+    val lblVolumeSurge        get() = s("放量", "Surge")
+    val lblVolumeUp           get() = s("温和放量", "Vol+")
+    val lblVolumeFlat         get() = s("平量", "Flat")
+    val lblVolumeDown         get() = s("温和缩量", "Vol-")
+    val lblVolumeShrink       get() = s("缩量", "Shrink")
+    val lblSessionClose       get() = s("收盘", "Close")
+    val lblSessionPre         get() = s("盘前", "Pre-mkt")
+    val lblSessionPost        get() = s("盘后", "After-hrs")
+    val lblSessionRegular     get() = s("盘中", "Regular")
+    val lblSessionLive        get() = s("实时", "Live")
+    val lblNoExtended         get() = s("暂无延伸数据", "No ext. data")
     val lblFuturesPosition    get() = s("股指期货多空", "Index Futures L/S")
     val lblCitic              get() = s("中信", "CITIC")
     val lblMainForce          get() = s("主力", "Top20")
