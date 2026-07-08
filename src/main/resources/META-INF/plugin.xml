@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.7.0</version>
+    <version>1.8.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -59,14 +59,21 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Optional AI second opinion: when a DeepSeek API key is configured, an additional AI-generated read on the same data is shown alongside the heuristic score, explicitly distinguishing hedging vs. directional short-adding</li>
 </ul>
 
+<h3>US Sector Board (New in 1.8)</h3>
+<ul>
+  <li>Dedicated tab showing 30+ SPDR &amp; thematic ETFs across all major US sectors: Tech/AI/Semiconductors/Cloud/Data Center/Cybersecurity/Robotics, Industrial/Defense/Space/EV, Energy/Oil/Gas/Solar/Nuclear/Grid/Clean Energy, Materials/Gold/Copper/Lithium, Healthcare/Biotech, Financials/Banks, Consumer, Communication, and more</li>
+  <li><b>Dual view</b>: Close (always shows the last official close change%) / Live (auto-switches by US Eastern time: pre-market → pre-market price, regular hours → real-time, after-hours → post-market price; button label updates accordingly)</li>
+  <li>Grouped by sector, 4-column grid layout; card shows sector name, ETF ticker, and color-coded change%</li>
+  <li>Hover tooltip shows all three sessions (close / pre / post) simultaneously</li>
+</ul>
+
 <h3>Inline Charts</h3>
 <ul>
   <li>Click the <b>Change%</b> column on any row to open a chart panel embedded at the bottom — no pop-up window</li>
   <li><b>Four periods</b>: Intraday · Daily K · Weekly K · Monthly K, switchable with one click</li>
   <li>Intraday: line/area chart, Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
-  <li>Daily/Weekly/Monthly: real candlestick charts (open/high/low/close) wherever the source genuinely provides OHLC — stocks, CN indices, global indices, and now domestic/overseas futures (previously unsupported); falls back to a line chart only when real OHLC isn't available, never fabricated</li>
-  <li>Candlestick colors are fixed red-up/green-down (Chinese convention) regardless of the color scheme setting; intraday/area charts still follow the global Red-up/Green-down or Green-up/Red-down scheme</li>
-  <li>Crosshair tooltip: candlesticks show O/H/L/C plus change% vs the previous bar; intraday shows time + change% + raw price</li>
+  <li>Daily/Weekly/Monthly: real candlestick charts with <b>MA5/MA10/MA20 moving averages</b> overlaid (yellow/blue/purple) and a <b>volume histogram</b> sub-chart (bottom 20%, red/green bars synced with the main chart's time axis)</li>
+  <li>Candlestick tooltip shows O/H/L/C, change% vs previous bar, MA values, and volume (auto-scaled to 万/亿)</li>
   <li>Powered by lightweight-charts v4.2.0 (TradingView OSS)</li>
 </ul>
 
@@ -178,14 +185,20 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>可选 AI 二次分析：在设置中配置 DeepSeek API Key 后，会额外展示 AI 结合同一批数据给出的解读，明确区分"对冲加仓"与"方向性加空"两种情形</li>
 </ul>
 
+<h3>美股板块（1.8 新增）</h3>
+<ul>
+  <li>新增"美股板块"标签页，展示 30+ 主流 ETF 行情，按行业分组：科技/AI/半导体/云计算/数据中心/网络安全/AI机器人、工业/军工/商业航天/自动驾驶、能源/石油/天然气/光伏/核电/电网/新能源、材料/黄金/铜有色/锂电池、医疗/生物科技、金融/银行、消费、通信等</li>
+  <li><b>收盘 / 实时</b>双视图切换：实时视图根据美东时间自动识别时段（盘前/盘中/盘后），标签文字随之变化</li>
+  <li>4 列网格布局，按行业分区；悬浮 tooltip 同时显示三段数据（收盘/盘前/盘后）</li>
+</ul>
+
 <h3>内嵌走势图</h3>
 <ul>
   <li>点击任意标的的"涨跌幅"列，在面板底部内嵌展开走势图，无需弹窗</li>
   <li><b>四档周期切换</b>：日内 · 日K · 周K · 月K，一键切换</li>
   <li>日内：折线/面积图，Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
-  <li>日K/周K/月K：只要数据源提供真实开高低收就使用真实蜡烛图——股票、A股指数、全球指数，以及新增支持的国内/国际期货（此前不支持）；没有真实 OHLC 数据时才回退为折线图，不会伪造K线</li>
-  <li>蜡烛图固定"涨红跌绿"配色，不受涨跌配色设置影响；日内/面积图仍跟随全局配色方案（红涨绿跌或绿涨红跌）</li>
-  <li>悬浮提示：蜡烛图显示开/高/低/收及相对上一根K线的涨跌幅；日内显示时间 + 涨跌幅 + 原始价格</li>
+  <li>日K/周K/月K 新增 <b>MA5/MA10/MA20 均线</b>叠加（黄/蓝/紫）和<b>成交量副图</b>（主图底部20%，涨红跌绿柱，与主图时间轴同步联动）</li>
+  <li>悬浮提示：蜡烛图同时显示开/高/低/收、涨跌幅%、均线数值和成交量（自动换算万/亿）</li>
   <li>图表基于 lightweight-charts v4.2.0（TradingView 开源库）</li>
 </ul>
 
@@ -241,118 +254,42 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.7.0</h3>
+<h3>1.8.0</h3>
+
+<h4>新增：美股板块面板</h4>
 <ul>
-  <li>全球面板新增"A股大盘概览"：涨跌家数（含北交所，此前遗漏导致比第三方App少统计约200~300家）、涨停/跌停家数、两市成交额、大/中/小盘代理指数、领涨/领跌板块 TOP6、主力资金净流入</li>
-  <li>新增股指期货多空持仓摘要：汇总中信期货（代客）及前20名主力机构在 IH/IF/IC/IM 四大品种<b>全部合约月份</b>的净持仓变化（此前仅统计主力合约，数据偏差较大，现已核对第三方数据源验证一致），展示为当日净操作手数</li>
-  <li>新增盘后多空信号汇总（启发式评分，非真实预测）：综合 A50/纳指期货、股指期货多空操作、主力资金流向、大盘宽度给出倾向评分，悬浮查看各因子依据；仅在收盘（15:00）后生成，且仅使用确认为当日出炉的股指期货数据，数据未更新时自动排除该因子，避免用旧数据误判</li>
-  <li>股指期货因子改为具体情况具体分析：区分方向性加仓（IF/IH 权重更高）与偏对冲性质的量化加仓（IC/IM 权重下调）；配置 DeepSeek API Key 后额外提供 AI 二次解读，明确区分对冲与方向性操作</li>
-  <li>新增改名功能：股票、基金、期货、全球指数均支持右键"修改名称"设置自定义显示别名，不影响底层代码/数据</li>
-  <li>修复大盘概览数据收盘后/插件重启后丢失的问题：新增磁盘持久化快照兜底，各子项在合理有效期内持续沿用最后一次成功获取的数据，不再立即变成"--"</li>
-  <li>修复涨跌停家数一直获取不到的问题：EastMoney 接口的 date 参数此前为空导致返回无数据，现显式传入当日日期</li>
-  <li>排查并修复切换到全球面板后持续大量消耗网络的问题：全球指数中仅 Yahoo 提供数据的品种（VIX/富时/DAX/CAC40/台湾加权/印度SENSEX等）此前每次刷新都发起未缓存的请求，现新增 60 秒本地缓存</li>
+  <li>新增"美股板块"标签页，展示 30+ 个主流 SPDR ETF 及主题 ETF 的板块行情，覆盖科技/AI算力/半导体/云计算/数据中心/网络安全/AI机器人、工业/军工/商业航天/自动驾驶、能源/石油/天然气/光伏/核电/电网/新能源、材料/黄金/铜有色/锂电池、医疗/生物科技、金融/银行、消费、通信等全行业</li>
+  <li>双视图切换：<b>收盘</b>（永远显示上次正式收盘涨跌幅）/ <b>实时</b>（根据美东时间自动切换——盘前显示盘前价、盘中显示实时价、盘后显示盘后价，标签文字随时段变化）</li>
+  <li>按行业分组展示，4列网格布局，每张卡片显示板块名称、ETF代码和涨跌幅（红涨绿跌，跟随全局配色方案）</li>
+  <li>悬浮 tooltip 同时显示收盘/盘前/盘后三组数据，方便对比</li>
+  <li>右键复制 ETF 代码；60 秒自动刷新，面板隐藏时暂停</li>
 </ul>
 
-<h3>1.6.0</h3>
+<h4>新增：K 线图均线与成交量</h4>
 <ul>
-  <li>全球指数新增 7 只：科创50、VIX 恐慌指数、英国富时100、德国 DAX、法国 CAC40、台湾加权指数、印度 SENSEX；新增前均实测确认有真实行情数据，避免误引入无数据或数据源错误的标的</li>
-  <li>K 线图全面升级为真实蜡烛图：股票、期货、全球指数模块的日K/周K/月K 均改为开高低收蜡烛图（此前为折线图），日内走势保持分时折线图；蜡烛图固定"涨红跌绿"配色，不受涨跌配色设置影响；悬浮提示新增相对上一根K线收盘价的涨跌幅显示</li>
-  <li>国内期货新增日K线历史数据源（此前不支持日/周/月切换），周K/月K 由日线数据本地聚合得出</li>
-  <li>修复韩国综合指数涨跌幅计算错误：Yahoo 分钟线数据在实际收盘前提前截断，导致前收盘价计算错误、涨跌幅出现约1个百分点偏差；现校验数据点是否接近官方收盘时间，不通过时自动回退至 Yahoo 官方前收字段</li>
-  <li>修复全球指数开盘/休市判断：原用于识别节假日的 Yahoo 市场状态接口已失效（HTTP 401），此前节假日无法被正确识别；现基于已在用的 Yahoo K线接口判断当日是否为真实交易日，按市场缓存 30 分钟，不增加额外请求负担</li>
-  <li>全球模块新增数据延迟提示：沪深、港股行情为实时，其余指数（含美股）标注约 15 分钟数据延迟，说明见表格上方提示条及 AI 深度分析上下文</li>
-  <li>全球模块新增市场快捷筛选：全部 / CN / HK / US / 其他 五个标签页，一键按市场缩小显示范围</li>
+  <li>日K/周K/月K 蜡烛图新增 MA5（黄）/ MA10（蓝）/ MA20（紫）均线叠加</li>
+  <li>日K/周K/月K 新增成交量副图（主图底部 20%），涨红跌绿半透明柱，与主图时间轴联动</li>
+  <li>Tooltip 同步展示均线数值与成交量（自动换算万/亿单位）</li>
 </ul>
 
-<h3>1.5.3</h3>
+<h4>新增：成交量缩量监测</h4>
 <ul>
-  <li>新增 IDE 状态栏持仓概览：有持仓股票时，IDE 底部状态栏实时显示总盈亏与今日盈亏；点击弹出持仓明细（名称、代码、现价、涨跌幅、持仓盈亏、今日盈亏），数据跨分组汇总</li>
-  <li>新增设置项：Settings → StockLite → 功能开关 → "在 IDE 状态栏显示持仓盈亏"，可随时开关此功能，默认开启</li>
+  <li>A 股大盘概览"两市成交额"后新增昨日同期对比：今日实时成交额 vs 昨日同期（按今日已过分钟数精确对齐，000902中证流通口径），实时显示放量/缩量百分比</li>
+  <li>同期比较使用 sh000300（沪深300）分时分布曲线折算，反映真实开盘/收盘集中效应，比线性时间折算更准确</li>
+  <li>悬浮 tooltip 显示今日累计成交额、昨日同期金额及精确百分比差</li>
 </ul>
 
-<h3>1.5.2</h3>
+<h4>新增：美股行情搜索增强</h4>
 <ul>
-  <li>修复基金净值日期显示：官方涨跌幅已更新但净值日期仍显示昨日的问题——改为取 fundgz 与 F10 两源中较新的日期，F10 率先更新时日期随之正确显示，F10 CDN 旧节点返回旧日期时也不会将已正确的日期往回拉</li>
-  <li>工具栏调整：股票、基金、期货面板刷新按钮移至分组下拉框右侧；上移/下移按钮改为仅在选中行时显示，未选中时自动隐藏，减少视觉干扰</li>
+  <li>股票搜索新增东方财富美股数据库支持：直接用中文名搜索美股（如"英伟达"、"美光科技"、"闪迪"），覆盖全量美股标的，不再局限于有限的映射表</li>
+  <li>美股代码/英文名搜索同样走东方财富接口，结果更全面</li>
+  <li>A股/港股搜索逻辑不变（仍走新浪 API）</li>
 </ul>
 
-<h3>1.5.2</h3>
+<h4>新增：美股盘前/盘后数据</h4>
 <ul>
-  <li>修复基金净值日期显示：官方涨跌幅已更新但净值日期仍显示昨日的问题——改为取 fundgz 与 F10 两源中较新的日期，F10 率先更新时日期随之正确显示，F10 CDN 旧节点返回旧日期时也不会将已正确的日期往回拉</li>
-  <li>工具栏调整：股票、基金、期货面板刷新按钮移至分组下拉框右侧；上移/下移按钮改为仅在选中行时显示，未选中时自动隐藏，减少视觉干扰</li>
-</ul>
-
-<h3>1.5.1</h3>
-<ul>
-  <li>修复国内基金净值日期显示：开盘后不再错误展示当日估值时间作为净值更新日期，净值日期始终与官方涨跌幅对应</li>
-  <li>QDII 基金数据整合重构：fundgz 与 F10 双源合并，按净值日期取最新数据，彻底消除净值更新时段数据交替显示问题</li>
-  <li>QDII 基金移除今日估算展示：境外基金日内估算数据不准确，现一律只展示官方净值与官方涨跌幅</li>
-</ul>
-
-<h3>1.4.0</h3>
-<ul>
-  <li>AI 对话面板改为 HTML 富文本渲染：**粗体**、*斜体*、`代码`、【标题】高亮、列表项自动识别，AI 回复原样展示，不再是纯文本</li>
-  <li>AI 分析进度实时显示：等待区动态展示当前步骤（"🤖 AI 正在思考…" / "🔍 正在搜索：XXX" / "💭 AI 正在整合结果…"）</li>
-  <li>AI 功能增强设置（Settings → StockLite → AI 功能增强）：
-    <ul>
-      <li>联网搜索开关 + Tavily API Key 配置 + 最大搜索轮次（2~20，默认 8）</li>
-      <li>注入实时行情数据开关（在 System Prompt 中附上当前时间）</li>
-      <li>深度推理模式（自动切换 deepseek-reasoner）</li>
-      <li>最大输出 Token 配置（200~4096，默认 1500）</li>
-    </ul>
-  </li>
-  <li>修复联网搜索"循环超出限制"错误：最后一轮强制 tool_choice=none，确保始终输出文字答案</li>
-  <li>修复股票 AI 分析持仓数据误报：按份额区分【我的持仓】和【自选（未持仓）】，持仓行附带成本/盈亏，自选行只显示行情</li>
-  <li>修复基金 AI 分析同上：持仓与自选分段，AI 不再把纯自选基金当做持仓分析</li>
-  <li>修复基金表格盈亏列：份额为 0 时市值、盈亏金额、盈亏百分比均显示 0/--，不再用成本净值计算虚假收益</li>
-</ul>
-
-<h3>1.3.0</h3>
-<ul>
-  <li>新增基金持仓明细：右键任意基金行，选择"持仓明细"，展示当季股票投资明细（代码、名称、占净值比例、持仓股数、市值、较上期变化）</li>
-  <li>持仓明细新增涨跌幅列：A 股实时/收盘涨跌幅（新浪 API 异步加载，红涨绿跌），QDII 基金的境外个股显示"--"</li>
-  <li>修复基金持仓数据解析：修正 EastMoney F10 接口 JS 对象字面量格式（<code>content:"..."</code>），解决 QDII/混合/科技主题基金无法获取持仓数据的问题</li>
-  <li>新增 AI 深度分析：各模块（股票/基金/期货/全球指数）右键菜单新增"AI 深度分析"入口，接入 DeepSeek 大模型</li>
-  <li>AI 分析支持多轮对话、5 种专业 System Prompt 切换（宏观/技术/基本面/量化/风险），模型列表从 API 动态拉取</li>
-  <li>基金到价提醒去重：同一基金相邻时间内重复触发同方向提醒时自动抑制，避免刷新间隔内多次弹出</li>
-</ul>
-
-<h3>1.2.0</h3>
-<ul>
-  <li>新增港股 / 美股支持：搜索和行情获取扩展至港股（腾讯 API）和美股（Yahoo Finance）</li>
-  <li>新增到价提醒：达到目标价时触发 IDE 气泡通知，支持上穿 / 下穿两种触发方向</li>
-  <li>新增右键菜单：所有面板均支持右键 — 编辑、删除、设置提醒、复制代码/名称、在浏览器中打开</li>
-  <li>新增 K 线周期切换：图表面板支持日内 / 日K / 周K / 月K 四档一键切换</li>
-  <li>新增快速筛选：各面板工具栏新增搜索框，实时过滤表格行</li>
-  <li>新增列宽记忆：每列拖动宽度后自动持久化，重启 IDE 后恢复</li>
-  <li>新增数据导入/导出：Settings → StockLite → 数据管理，支持 JSON 格式完整备份与还原</li>
-  <li>新增刷新间隔设置：可在设置中分别配置股票、基金、全球指数的刷新频率（秒）</li>
-  <li>新增输入验证：添加/编辑时对成本价、持仓数量、提醒目标价进行合法性校验</li>
-  <li>生命周期优化：面板隐藏时自动暂停刷新，切回时立即恢复，降低后台资源占用</li>
-  <li>修复"在浏览器中打开"功能：改用 BrowserUtil，修正 A 股/港股/期货/全球指数各自的目标页面地址</li>
-</ul>
-
-<h3>1.1.0</h3>
-<ul>
-  <li>新增日内走势图：点击涨跌幅列，面板底部内嵌展示当日分钟级 K 线，支持股票、期货、全球指数</li>
-  <li>走势图 Y 轴改为涨跌幅 %（以昨收为基准，0% 处显示基准线）</li>
-  <li>走势图跟随全局配色方案，鼠标悬停显示 Tooltip（时间 + 涨跌幅% + 原始价格）</li>
-  <li>价格小数位自动适配（2/3/4 位），兼容 ETF 等精度较高的品种</li>
-  <li>修复期货日内数据：国内期货改用 InnerFuturesNewService，国际期货改用 GlobalFuturesService</li>
-  <li>修复股票/基金 K 线字段名（day/close），解决图表无数据问题</li>
-  <li>新增中英文界面切换（Settings → Tools → StockLite → 界面语言），所有 UI 文字即时响应</li>
-</ul>
-
-<h3>1.0.0</h3>
-<ul>
-  <li>初始版本发布</li>
-  <li>股票、基金、期货行情查看与持仓管理</li>
-  <li>11 大全球指数实时监控，支持节假日开/休市判断</li>
-  <li>基金双涨跌幅显示（官方涨跌 + 今日估算）</li>
-  <li>列显示自定义、涨跌颜色方案三选一</li>
-  <li>列排序 + 行位置调整</li>
-  <li>自动刷新 + 限流退避</li>
-  <li>纯原生 Kotlin/Swing，无外部浏览器依赖</li>
+  <li>股票面板美股标的在盘前/盘后时段，涨跌幅列自动显示双行：上行为上次收盘涨跌幅，下行为灰色小字"盘前 +0.35%"或"盘后 -0.12%"</li>
+  <li>仅在 Yahoo Finance 返回有效延伸交易数据时显示，正常交易时段不显示</li>
 </ul>
     ]]></change-notes>
 
