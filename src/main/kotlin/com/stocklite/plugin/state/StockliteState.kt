@@ -15,6 +15,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     var stockGroups: MutableList<StockGroupData> = ArrayList()
     var stocks: MutableList<StockData> = ArrayList()
+    var tradeRecords: MutableList<TradeRecordData> = ArrayList()
     var fundGroups: MutableList<FundGroupData> = ArrayList()
     var funds: MutableList<FundData> = ArrayList()
     var futureGroups: MutableList<FutureGroupData> = ArrayList()
@@ -173,18 +174,45 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.quantity = quantity
             sortOrder = stocks.size
             createdAt = now
-            updatedAt  = now
+            updatedAt = now
+            snapshotQty = 0.0
+            snapshotCostPrice = 0.0
         }
         stocks.add(s)
+        // 自动生成初始买入记录
+        if (quantity > 0) {
+            addTradeRecord(s.id, symbol, name, "BUY", costPrice, quantity, now, "初始建仓")
+        }
         return s
     }
 
     fun updateStock(id: String, costPrice: Double, quantity: Double, groupId: String) {
+        val now = System.currentTimeMillis()
+        val shZone = java.time.ZoneId.of("Asia/Shanghai")
+        val today = java.time.LocalDate.now(shZone)
         stocks.find { it.id == id }?.apply {
+            val prevUpdatedDate = if (updatedAt > 0)
+                java.time.Instant.ofEpochMilli(updatedAt).atZone(shZone).toLocalDate()
+            else null
+            if (prevUpdatedDate != today) {
+                snapshotQty = this.quantity
+                snapshotCostPrice = this.costPrice
+            }
+            val oldQty = this.quantity
+            val oldCost = this.costPrice
             this.costPrice = costPrice
             this.quantity = quantity
             this.groupId = groupId
-            this.updatedAt = System.currentTimeMillis()
+            this.updatedAt = now
+
+            // 自动生成交易记录
+            val deltaQty = quantity - oldQty
+            when {
+                deltaQty > 1e-8  -> addTradeRecord(id, symbol, name, "BUY",  costPrice, deltaQty,  now, "加仓")
+                deltaQty < -1e-8 -> addTradeRecord(id, symbol, name, "SELL", costPrice, -deltaQty, now, "减仓")
+                kotlin.math.abs(costPrice - oldCost) > 1e-8 ->
+                    addTradeRecord(id, symbol, name, "ADJUST", costPrice, quantity, now, "成本调整")
+            }
         }
     }
 
@@ -299,7 +327,97 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         else -> futures.filter { it.groupId == groupId }.sortedBy { it.sortOrder }
     }
 
+    // ── 交易记录 CRUD ──
+
+    /**
+     * 添加交易记录并同步更新持仓数量和成本价。
+     * - BUY：加仓，重算加权均价，数量增加
+     * - SELL：减仓，成本价不变，数量减少（不低于0）
+     * - ADJUST：仅调整成本价，数量不变
+     */
+    fun addTradeRecordAndSync(
+        stockId: String, symbol: String, stockName: String,
+        tradeType: String, price: Double, quantity: Double,
+        tradeAt: Long, note: String = ""
+    ): TradeRecordData {
+        val record = addTradeRecord(stockId, symbol, stockName, tradeType, price, quantity, tradeAt, note)
+        val now = System.currentTimeMillis()
+        val shZone = java.time.ZoneId.of("Asia/Shanghai")
+        val today = java.time.LocalDate.now(shZone)
+        stocks.find { it.id == stockId }?.apply {
+            // 更新快照（今日首次操作时记录操作前状态）
+            val prevUpdatedDate = if (updatedAt > 0)
+                java.time.Instant.ofEpochMilli(updatedAt).atZone(shZone).toLocalDate() else null
+            if (prevUpdatedDate != today) {
+                snapshotQty = this.quantity
+                snapshotCostPrice = this.costPrice
+            }
+            when (tradeType) {
+                "BUY" -> {
+                    val totalCost  = this.costPrice * this.quantity + price * quantity
+                    val newQty     = this.quantity + quantity
+                    this.quantity  = newQty
+                    val rawAvg     = if (newQty > 0) totalCost / newQty else price
+                    // 与 Fmt.price() 保持相同精度：自动检测 2/3/4 位小数
+                    this.costPrice = roundToMatchPrice(rawAvg)
+                }
+                "SELL" -> {
+                    this.quantity = (this.quantity - quantity).coerceAtLeast(0.0)
+                    // 成本价不变
+                }
+                "ADJUST" -> {
+                    this.costPrice = price
+                }
+            }
+            this.updatedAt = now
+        }
+        return record
+    }
+
+    fun addTradeRecord(
+        stockId: String, symbol: String, stockName: String,
+        tradeType: String, price: Double, quantity: Double,
+        tradeAt: Long, note: String = ""
+    ): TradeRecordData {
+        val now = System.currentTimeMillis()
+        val r = TradeRecordData().apply {
+            id = UUID.randomUUID().toString()
+            this.stockId = stockId
+            this.symbol = symbol
+            this.stockName = stockName
+            this.tradeType = tradeType
+            this.price = price
+            this.quantity = quantity
+            this.note = note
+            this.tradeAt = tradeAt
+            this.createdAt = now
+        }
+        tradeRecords.add(r)
+        return r
+    }
+
+    fun deleteTradeRecord(id: String) = tradeRecords.removeIf { it.id == id }
+
+    fun getTradeRecordsForStock(stockId: String): List<TradeRecordData> =
+        tradeRecords.filter { it.stockId == stockId }.sortedByDescending { it.tradeAt }
+
     companion object {
+        /**
+         * 将均价 round 到与价格显示一致的精度（与 Fmt.price() 相同规则）：
+         * - 差值 < 5e-4 时认为 2 位精度足够 → round 到 2 位
+         * - 差值 < 5e-5 时认为 3 位精度足够 → round 到 3 位
+         * - 否则 round 到 4 位（ETF / 基金 / 低价股）
+         */
+        fun roundToMatchPrice(v: Double): Double {
+            val r2 = Math.round(v * 100) / 100.0
+            val r3 = Math.round(v * 1000) / 1000.0
+            return when {
+                Math.abs(v - r2) < 5e-4 -> r2
+                Math.abs(v - r3) < 5e-5 -> r3
+                else -> Math.round(v * 10000) / 10000.0
+            }
+        }
+
         fun getInstance(): StockliteState =
             ApplicationManager.getApplication().getService(StockliteState::class.java)
     }

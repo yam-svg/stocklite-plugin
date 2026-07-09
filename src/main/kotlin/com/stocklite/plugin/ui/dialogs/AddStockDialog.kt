@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.state.StockGroupData
+import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.state.StockSearchResult
 import com.stocklite.plugin.util.L10n
 import java.awt.*
@@ -34,6 +35,10 @@ class AddStockDialog(
     private val costField    = JTextField("0.00", 12)
     private val qtyField     = JTextField("0", 12)
     private val groupCombo   = JComboBox<String>()
+
+    // 编辑模式下成本/数量显示为纯文本，通过交易记录修改
+    private val isEditMode   get() = existingStock != null
+    private val qtyValueLbl  = JLabel("0")
 
     private var selectedResult: StockSearchResult? = null
 
@@ -102,11 +107,53 @@ class AddStockDialog(
 
         row(L10n.dlgSymbolLbl, symbolLabel, 0)
         row(L10n.dlgNameLbl,   nameLabel,   1)
-        // 别名仅编辑模式提供（新增时还没有持久化对象，可添加后再改名）
         if (existingStock != null) row(L10n.dlgAliasLbl, aliasField, 2)
-        row(L10n.dlgCostLbl,   costField,   3)
-        row(L10n.dlgQtyLbl,    qtyField,    4)
-        row(L10n.dlgGroupLbl,  groupCombo,  5)
+
+        if (isEditMode) {
+            val s = existingStock!!
+            // 成本价：纯文本 Label + 交易记录跳转链接
+            val costValueLbl = JLabel(s.costPrice.toString())
+            val tradeLink = JButton("<html><u>${L10n.btnTradeHistory}</u></html>").apply {
+                isBorderPainted = false; isContentAreaFilled = false; isFocusPainted = false
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                font = font.deriveFont(11f)
+                foreground = java.awt.Color(0x6895d6)
+                toolTipText = L10n.tradeEditHint
+                addActionListener {
+                    TradeHistoryDialog(s) {
+                        // 交易记录变更后刷新 label 显示
+                        costValueLbl.text = s.costPrice.toString()
+                        qtyValueLbl.text  = s.quantity.toString()
+                    }.show()
+                }
+            }
+            gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+            form.add(JLabel(L10n.dlgCostLbl), gbc)
+            val costRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+                add(costValueLbl); add(tradeLink)
+            }
+            gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+            form.add(costRow, gbc); gbc.weightx = 0.0
+
+            // 持仓数量：纯文本 Label + 灰色提示
+            gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE
+            form.add(JLabel(L10n.dlgQtyLbl), gbc)
+            val qtyRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
+                add(qtyValueLbl)
+                add(JLabel("<html><span style='color:#888aaa'>${L10n.tradeEditHint}</span></html>").apply {
+                    font = font.deriveFont(10.5f)
+                })
+            }
+            gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+            form.add(qtyRow, gbc); gbc.weightx = 0.0
+
+            row(L10n.dlgGroupLbl, groupCombo, 5)
+        } else {
+            // 新增模式：正常可编辑
+            row(L10n.dlgCostLbl,  costField,  3)
+            row(L10n.dlgQtyLbl,   qtyField,   4)
+            row(L10n.dlgGroupLbl, groupCombo, 5)
+        }
 
         panel.add(form, BorderLayout.CENTER)
         return panel
@@ -134,11 +181,13 @@ class AddStockDialog(
 
     private fun prefillExisting() {
         val s = existingStock!!
-        symbolLabel.text = s.symbol
-        nameLabel.text   = s.name
-        aliasField.text  = s.alias
-        costField.text   = s.costPrice.toString()
-        qtyField.text    = s.quantity.toString()
+        symbolLabel.text  = s.symbol
+        nameLabel.text    = s.name
+        aliasField.text   = s.alias
+        qtyValueLbl.text  = s.quantity.toString()
+        // costField/qtyField 编辑模式下不显示，但新增模式的初始值仍走 costField
+        costField.text    = s.costPrice.toString()
+        qtyField.text     = s.quantity.toString()
         val idx = groups.indexOfFirst { it.id == s.groupId }.takeIf { it >= 0 } ?: 0
         if (groups.isNotEmpty()) groupCombo.selectedIndex = idx
     }
@@ -146,12 +195,18 @@ class AddStockDialog(
     override fun doOKAction() {
         val symbol = existingStock?.symbol ?: selectedResult?.symbol ?: return
         val name   = existingStock?.name   ?: selectedResult?.name   ?: return
-        val cost   = costField.text.toDoubleOrNull() ?: 0.0
-        val qty    = qtyField.text.toDoubleOrNull()  ?: 0.0
         val gid    = groups.getOrNull(groupCombo.selectedIndex)?.id ?: groupId
-        // 别名直接写回持久化对象（编辑模式才有），不扩散 onSave 签名
         existingStock?.alias = aliasField.text.trim()
-        onSave(symbol, name, gid, cost, qty)
+
+        if (isEditMode) {
+            // 编辑模式：成本/数量只读，保持不变
+            val s = existingStock!!
+            onSave(symbol, name, gid, s.costPrice, s.quantity)
+        } else {
+            val cost = costField.text.toDoubleOrNull() ?: 0.0
+            val qty  = qtyField.text.toDoubleOrNull()  ?: 0.0
+            onSave(symbol, name, gid, cost, qty)
+        }
         super.doOKAction()
     }
 }

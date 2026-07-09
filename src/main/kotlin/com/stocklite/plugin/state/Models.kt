@@ -21,6 +21,16 @@ class StockData {
     var createdAt: Long = 0L
     /** 最后一次修改成本价或持仓数量的时间戳（毫秒），用于今日盈亏的计算口径判断 */
     var updatedAt: Long = 0L
+    /**
+     * 今日首次修改前的持仓数量快照（股数）。
+     * 仅在 updatedAt 为今天时有效，用于区分「老仓」和「今日变动部分」：
+     * - 老仓 (snapshotQty)：以昨收为基准计算今日盈亏
+     * - 新增/减仓 (quantity - snapshotQty)：以当前均价（costPrice）为基准
+     * 未修改过（snapshotQty == -1）表示无快照，退化为统一逻辑。
+     */
+    var snapshotQty: Double = -1.0
+    /** 今日首次修改前的成本价快照 */
+    var snapshotCostPrice: Double = 0.0
 }
 
 class FundGroupData {
@@ -234,6 +244,20 @@ data class SectorQuote(
     val prePct: Double? = null,
     val postPct: Double? = null
 )
+
+/** 股票交易记录（持久化） */
+class TradeRecordData {
+    var id: String = ""
+    var stockId: String = ""       // FK → StockData.id
+    var symbol: String = ""        // 冗余，方便显示
+    var stockName: String = ""     // 冗余，方便显示
+    var tradeType: String = "BUY"  // "BUY" | "SELL" | "ADJUST"
+    var price: Double = 0.0
+    var quantity: Double = 0.0
+    var note: String = ""
+    var tradeAt: Long = 0L         // 交易日期（用户填写，精确到天）
+    var createdAt: Long = 0L       // 记录创建时间
+}
 
 data class StockSearchResult(val symbol: String, val name: String)
 data class FundSearchResult(val code: String, val name: String)

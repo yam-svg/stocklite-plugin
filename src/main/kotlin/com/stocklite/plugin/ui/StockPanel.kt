@@ -11,8 +11,10 @@ import com.stocklite.plugin.state.*
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
+import com.stocklite.plugin.ui.dialogs.AddTradeRecordDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.dialogs.SetAlertDialog
+import com.stocklite.plugin.ui.dialogs.TradeHistoryDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.util.L10n
@@ -339,6 +341,17 @@ class StockPanel : JPanel(BorderLayout()),
             BrowserUtil.browse(buildStockUrl(s.symbol))
         }})
         popup.addSeparator()
+        popup.add(JMenuItem(L10n.btnAddTrade).also { it.addActionListener {
+            AddTradeRecordDialog(s) { type, price, qty, tradeAt, note ->
+                state.addTradeRecordAndSync(s.id, s.symbol, s.name, type, price, qty, tradeAt, note)
+                loadRows()        // 刷新表格（持仓数量/成本价已变）
+                fetchQuotesAsync() // 重新拉行情触发今日盈亏重算
+            }.show()
+        }})
+        popup.add(JMenuItem(L10n.btnTradeHistory).also { it.addActionListener {
+            TradeHistoryDialog(s) { updateSummary() }.show()
+        }})
+        popup.addSeparator()
         popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
             com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
                 displayTitle = "${s.name} (${s.symbol})",
@@ -562,7 +575,9 @@ class StockPanel : JPanel(BorderLayout()),
         val totalPnl   = rows.sumOf { (s, q) ->
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
         }
-        val todayPnl   = rows.sumOf { (s, q) -> MarketTimeUtil.calcTodayPnl(s, q) }
+        val todayPnl   = rows.sumOf { (s, q) ->
+            MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
+        }
         fun sign(v: Double) = if (v >= 0) "+" else ""
         summaryLabel.text = buildString {
             append("${L10n.lblTotalValue} ${Fmt.value(totalValue)}")
@@ -586,7 +601,7 @@ class StockPanel : JPanel(BorderLayout()),
                     qty       = s.quantity,  price    = price,    cost = s.costPrice,
                     changePct = q?.changePercent ?: 0.0,
                     pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
-                    todayPnl  = MarketTimeUtil.calcTodayPnl(s, q)
+                    todayPnl  = MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
                 )
             }
         PortfolioStatusWidget.update(

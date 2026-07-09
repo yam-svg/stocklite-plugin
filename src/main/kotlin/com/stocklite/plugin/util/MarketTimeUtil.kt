@@ -2,6 +2,7 @@ package com.stocklite.plugin.util
 
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.state.StockQuote
+import com.stocklite.plugin.state.TradeRecordData
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -50,19 +51,50 @@ object MarketTimeUtil {
 
     /**
      * 计算单行今日盈亏（全局共用，StockPanel 和 PortfolioWatcherService 统一调用）。
-     * - 若持仓在**今日**有过创建或修改（updatedAt 为今天），以成本价为基准：(现价 - 成本价) × 数量
-     * - 否则以昨收为基准：(现价 - 昨收) × 数量，反映今天市场涨跌的影响
-     * - 老数据 updatedAt == 0 时，兼容原有逻辑（走昨收分支）
+     *
+     * 有交易记录时（精确模式）：
+     * - 今日之前已持有的数量（历史仓位）以昨收为基准：q.change × historyQty
+     * - 今日每笔 BUY 记录以各自买入价为基准：(price - buyPrice) × qty
+     * - 今日 SELL 记录：已卖出部分从持仓中扣除，不计入今日盈亏
+     *
+     * 无交易记录时（兼容模式，等同原有 snapshotQty 逻辑）：
+     * - 今日未动仓：q.change × quantity
+     * - 今日建仓/调仓：按 snapshotQty 分拆
      */
-    fun calcTodayPnl(s: StockData, q: StockQuote?): Double {
+    fun calcTodayPnl(s: StockData, q: StockQuote?,
+                     records: List<TradeRecordData> = emptyList()): Double {
         if (s.quantity <= 0 || q == null) return 0.0
         val today = LocalDate.now(SHANGHAI_ZONE)
+
+        // ── 精确模式：有今日交易记录 ──
+        val todayRecords = records.filter { r ->
+            r.tradeAt > 0 &&
+            Instant.ofEpochMilli(r.tradeAt).atZone(SHANGHAI_ZONE).toLocalDate() == today
+        }
+        if (todayRecords.isNotEmpty()) {
+            // 今日净买入量（BUY - SELL）
+            val todayNetBuy  = todayRecords.filter { it.tradeType == "BUY"  }.sumOf { it.quantity }
+            val todayNetSell = todayRecords.filter { it.tradeType == "SELL" }.sumOf { it.quantity }
+            // 今日操作前的历史持仓（昨收基准）
+            val historyQty = (s.quantity - todayNetBuy + todayNetSell).coerceAtLeast(0.0)
+            // 今日买入逐笔计算
+            val todayBuyPnl = todayRecords
+                .filter { it.tradeType == "BUY" }
+                .sumOf { r -> (q.price - r.price) * r.quantity }
+            return q.change * historyQty + todayBuyPnl
+        }
+
+        // ── 兼容模式：无交易记录，沿用 snapshotQty 逻辑 ──
         val updatedDate = if (s.updatedAt > 0)
             Instant.ofEpochMilli(s.updatedAt).atZone(SHANGHAI_ZONE).toLocalDate()
         else null
-        return if (updatedDate == today)
-            (q.price - s.costPrice) * s.quantity   // 今日建仓/调仓：以实际成本为基准
-        else
-            q.change * s.quantity                   // 昨日及以前的持仓：以昨收为基准
+        if (updatedDate != today) return q.change * s.quantity
+
+        val snap = s.snapshotQty
+        return when {
+            snap < 0    -> (q.price - s.costPrice) * s.quantity  // 无快照，用均价
+            snap == 0.0 -> (q.price - s.costPrice) * s.quantity  // 今日全新建仓
+            else        -> q.change * snap + (q.price - s.costPrice) * (s.quantity - snap)
+        }
     }
 }
