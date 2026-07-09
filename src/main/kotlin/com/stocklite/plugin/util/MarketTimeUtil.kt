@@ -92,8 +92,11 @@ object MarketTimeUtil {
 
         val snap = s.snapshotQty
         return when {
-            snap < 0    -> (q.price - s.costPrice) * s.quantity  // 无快照，用均价
-            snap == 0.0 -> (q.price - s.costPrice) * s.quantity  // 今日全新建仓
+            // snap < 0：老数据无快照，无法区分新旧仓，回退到昨收基准（保守、不虚高）
+            snap < 0    -> q.change * s.quantity
+            // snap == 0：今日全新建仓（今天之前持仓为零），以成本价为基准
+            snap == 0.0 -> (q.price - s.costPrice) * s.quantity
+            // snap > 0：今日加减仓，老仓用昨收、变动部分用成本价
             else        -> q.change * snap + (q.price - s.costPrice) * (s.quantity - snap)
         }
     }

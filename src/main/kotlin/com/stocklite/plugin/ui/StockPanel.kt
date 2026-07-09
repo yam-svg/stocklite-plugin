@@ -343,13 +343,21 @@ class StockPanel : JPanel(BorderLayout()),
         popup.addSeparator()
         popup.add(JMenuItem(L10n.btnAddTrade).also { it.addActionListener {
             AddTradeRecordDialog(s) { type, price, qty, tradeAt, note ->
-                state.addTradeRecordAndSync(s.id, s.symbol, s.name, type, price, qty, tradeAt, note)
-                loadRows()        // 刷新表格（持仓数量/成本价已变）
-                fetchQuotesAsync() // 重新拉行情触发今日盈亏重算
+                try {
+                    state.addTradeRecordAndSync(s.id, s.symbol, s.name, type, price, qty, tradeAt, note)
+                    loadRows()
+                    fetchQuotesAsync()
+                } catch (ex: IllegalArgumentException) {
+                    JOptionPane.showMessageDialog(this, ex.message,
+                        L10n.dlgConfirmTitle, JOptionPane.ERROR_MESSAGE)
+                }
             }.show()
         }})
         popup.add(JMenuItem(L10n.btnTradeHistory).also { it.addActionListener {
-            TradeHistoryDialog(s) { updateSummary() }.show()
+            TradeHistoryDialog(s) {
+                loadRows()        // 刷新表格行（成本/数量可能已变）
+                fetchQuotesAsync() // 重算今日盈亏
+            }.show()
         }})
         popup.addSeparator()
         popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {

@@ -171,9 +171,14 @@ class TradeHistoryDialog(
 
         addBtn.addActionListener {
             AddTradeRecordDialog(stock) { type, price, qty, tradeAt, note ->
-                state.addTradeRecordAndSync(stock.id, stock.symbol, stock.name, type, price, qty, tradeAt, note)
-                loadRecords()
-                onRecordsChanged()
+                try {
+                    state.addTradeRecordAndSync(stock.id, stock.symbol, stock.name, type, price, qty, tradeAt, note)
+                    loadRecords()
+                    onRecordsChanged()
+                } catch (ex: IllegalArgumentException) {
+                    JOptionPane.showMessageDialog(contentPane, ex.message,
+                        L10n.dlgConfirmTitle, JOptionPane.ERROR_MESSAGE)
+                }
             }.show()
         }
     }

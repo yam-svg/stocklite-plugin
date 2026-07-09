@@ -208,8 +208,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             // 自动生成交易记录
             val deltaQty = quantity - oldQty
             when {
-                deltaQty > 1e-8  -> addTradeRecord(id, symbol, name, "BUY",  costPrice, deltaQty,  now, "加仓")
-                deltaQty < -1e-8 -> addTradeRecord(id, symbol, name, "SELL", costPrice, -deltaQty, now, "减仓")
+                deltaQty > 1e-8  -> addTradeRecord(id, symbol, name, "BUY",  costPrice,  deltaQty, now, "加仓")
+                // SELL 自动记录价格填 0（实际卖出价未知，需用户手动补充）
+                deltaQty < -1e-8 -> addTradeRecord(id, symbol, name, "SELL", 0.0, -deltaQty, now, "减仓（编辑持仓自动生成，价格待填）")
                 kotlin.math.abs(costPrice - oldCost) > 1e-8 ->
                     addTradeRecord(id, symbol, name, "ADJUST", costPrice, quantity, now, "成本调整")
             }
@@ -362,8 +363,11 @@ class StockliteState : PersistentStateComponent<StockliteState> {
                     this.costPrice = roundToMatchPrice(rawAvg)
                 }
                 "SELL" -> {
+                    if (quantity > this.quantity + 1e-8) {
+                        // 超卖：抛出异常让调用方展示错误提示
+                        throw IllegalArgumentException("卖出数量(${quantity})超过当前持仓(${this.quantity})")
+                    }
                     this.quantity = (this.quantity - quantity).coerceAtLeast(0.0)
-                    // 成本价不变
                 }
                 "ADJUST" -> {
                     this.costPrice = price
@@ -396,7 +400,40 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         return r
     }
 
-    fun deleteTradeRecord(id: String) = tradeRecords.removeIf { it.id == id }
+    /**
+     * 删除交易记录并从全部剩余记录重算持仓（数量 + 加权均价）。
+     * 删除后按 tradeAt 升序重放所有 BUY/SELL/ADJUST 记录，
+     * 确保 StockData 与历史记录始终一致。
+     */
+    fun deleteTradeRecord(id: String) {
+        val rec = tradeRecords.find { it.id == id } ?: return
+        tradeRecords.removeIf { it.id == id }
+        recalcStockFromRecords(rec.stockId)
+    }
+
+    /** 从该股票的所有交易记录重新推算持仓数量和成本价。 */
+    private fun recalcStockFromRecords(stockId: String) {
+        val stock = stocks.find { it.id == stockId } ?: return
+        val sorted = tradeRecords
+            .filter { it.stockId == stockId }
+            .sortedBy { it.tradeAt }
+        var qty  = 0.0
+        var cost = 0.0
+        for (r in sorted) {
+            when (r.tradeType) {
+                "BUY" -> {
+                    val newQty = qty + r.quantity
+                    cost = if (newQty > 0) (cost * qty + r.price * r.quantity) / newQty else r.price
+                    qty  = newQty
+                }
+                "SELL"   -> qty  = (qty - r.quantity).coerceAtLeast(0.0)
+                "ADJUST" -> cost = r.price
+            }
+        }
+        stock.quantity  = qty
+        stock.costPrice = if (qty > 0) roundToMatchPrice(cost) else 0.0
+        stock.updatedAt = System.currentTimeMillis()
+    }
 
     fun getTradeRecordsForStock(stockId: String): List<TradeRecordData> =
         tradeRecords.filter { it.stockId == stockId }.sortedByDescending { it.tradeAt }
