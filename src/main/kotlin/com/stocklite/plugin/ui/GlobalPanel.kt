@@ -97,6 +97,8 @@ class GlobalPanel : JPanel(BorderLayout()),
         font = font.deriveFont(Font.BOLD, 11f)
         foreground = Color(0xcdd6f4)
     }
+    /** 大盘数据时间戳标注：正常灰色；数据陈旧（非今日）显示警告橙色 */
+    // breadthDataTimeLbl 已移除，各子项独立在 tooltip 中显示时间
     private val chipBreadth  = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipLimits   = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipTurnover = JLabel("--").apply { font = font.deriveFont(11f) }
@@ -480,11 +482,12 @@ class GlobalPanel : JPanel(BorderLayout()),
     private fun fetchBreadthAsync() {
         if (!panelActive) return
         ApplicationManager.getApplication().executeOnPooledThread {
-            val data = MarketDataService.getMarketBreadth()
+            val data  = MarketDataService.getMarketBreadth()
+            val times = MarketDataService.getBreadthDataTimes()
             val pending = MarketDataService.isCnPendingClose()
             val forecast = if (pending) null else MarketDataService.getMarketForecast(data)
             SwingUtilities.invokeLater {
-                updateBreadthUI(data)
+                updateBreadthUI(data, times)
                 lastForecastPending = pending
                 if (pending) lastAiAnalysis = null
                 updateForecastUI(forecast)
@@ -545,7 +548,9 @@ class GlobalPanel : JPanel(BorderLayout()),
             "<br/><span style='color:#888aaa'>${L10n.forecastDisclaimer}</span></html>"
     }
 
-    private fun updateBreadthUI(d: MarketBreadthData) {
+    private fun updateBreadthUI(d: MarketBreadthData,
+                                times: MarketDataService.BreadthDataTimes =
+                                    MarketDataService.BreadthDataTimes(0,0,0,0,0,0,0)) {
         lastBreadth = d
         val up = colorHex(QuoteRenderer.positiveColor(StockliteState.getInstance().colorScheme) ?: table.foreground)
         val dn = colorHex(QuoteRenderer.negativeColor(StockliteState.getInstance().colorScheme) ?: table.foreground)
@@ -554,24 +559,35 @@ class GlobalPanel : JPanel(BorderLayout()),
             if (d.upCount != null && d.downCount != null && d.flatCount != null)
                 "<html>${L10n.lblAdvanceDecline} <b style='color:$up'>↑${d.upCount}</b> <b style='color:$dn'>↓${d.downCount}</b> ${d.flatCount}</html>"
             else "${L10n.lblAdvanceDecline} --"
+        chipBreadth.toolTipText = dataTimeTooltip(times.advDec)
 
         chipLimits.text =
             if (d.limitUpCount != null && d.limitDownCount != null)
                 "<html>${L10n.lblLimitCounts} <b style='color:$up'>${d.limitUpCount}</b>/<b style='color:$dn'>${d.limitDownCount}</b></html>"
             else "${L10n.lblLimitCounts} --"
-
-        chipTurnover.text =
-            if (d.totalTurnover != null) "${L10n.lblTotalTurnover} ${fmtYuanBig(d.totalTurnover)}"
-            else "${L10n.lblTotalTurnover} --"
+        chipLimits.toolTipText = dataTimeTooltip(times.limits)
 
         chipCapTier.text =
             if (d.largeCapPct != null && d.midCapPct != null && d.smallCapPct != null) "<html>" +
                 "大${pctSpan(d.largeCapPct, up, dn)} 中${pctSpan(d.midCapPct, up, dn)} 小${pctSpan(d.smallCapPct, up, dn)}</html>"
             else "大/中/小盘 --"
+        chipCapTier.toolTipText = dataTimeTooltip(times.capTier)
 
         chipFlow.text =
             if (d.mainNetInflow != null) "<html>${L10n.lblMainFlow} ${flowSpan(d.mainNetInflow, up, dn)}</html>"
             else "${L10n.lblMainFlow} --"
+        chipFlow.toolTipText = dataTimeTooltip(times.flow)
+
+        // 成交额 chip
+        if (d.totalTurnover != null) {
+            val todayTxt = fmtYuanBig(d.totalTurnover)
+            chipTurnover.text = "${L10n.lblTotalTurnover} $todayTxt"
+            chipTurnover.toolTipText =
+                "<html>今日累计 $todayTxt<br/><span style='color:#888aaa'>${dataTimeTooltip(times.turnover)}</span></html>"
+        } else {
+            chipTurnover.text        = "${L10n.lblTotalTurnover} --"
+            chipTurnover.toolTipText = null
+        }
 
         // 只展示"当日净操作"（Δ空-Δ多，正=净加空）；持仓存量和分品种明细移到悬浮提示
         chipFuturesPosition.text = d.futuresPosition?.let { fp ->
@@ -593,17 +609,21 @@ class GlobalPanel : JPanel(BorderLayout()),
                             val label = if (v.netAddShort >= 0) "净加空" else "净加多"
                             "${v.code} ${v.name}：$label${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
                         }
-                 else "") + "</html>"
-        }
+                 else "") +
+                "<br/><span style='color:#888aaa'>${dataTimeTooltip(times.futures)}</span></html>"
+        } ?: dataTimeTooltip(times.futures)
 
-        updateSectorCells(topSectorCells, d.topSectors, up, dn)
-        updateSectorCells(bottomSectorCells, d.bottomSectors, up, dn)
+        val sectorTimeTooltip = dataTimeTooltip(times.sector)
+        updateSectorCells(topSectorCells, d.topSectors, up, dn, sectorTimeTooltip)
+        updateSectorCells(bottomSectorCells, d.bottomSectors, up, dn, sectorTimeTooltip)
     }
 
-    private fun updateSectorCells(cells: List<JLabel>, sectors: List<SectorPct>, up: String, dn: String) {
+    private fun updateSectorCells(cells: List<JLabel>, sectors: List<SectorPct>,
+                                   up: String, dn: String, timeTooltip: String = "") {
         cells.forEachIndexed { i, cell ->
             val s = sectors.getOrNull(i)
             cell.text = if (s != null) "<html>${s.name} ${pctSpan(s.pct, up, dn)}</html>" else "--"
+            cell.toolTipText = if (s != null && timeTooltip.isNotEmpty()) timeTooltip else null
         }
     }
 
@@ -681,6 +701,18 @@ class GlobalPanel : JPanel(BorderLayout()),
             sb.appendLine("- ${q.name}: ${"%.2f".format(q.value)}  $sign${"%.2f".format(q.changePercent)}%  $status$delay")
         }
         return sb.toString().trim()
+    }
+
+    /** 格式化数据时间戳为 tooltip 字符串；0 表示"从未成功获取" */
+    private fun dataTimeTooltip(ts: Long): String {
+        if (ts <= 0) return "数据来源：从未成功获取"
+        val shZone  = java.time.ZoneId.of("Asia/Shanghai")
+        val today   = java.time.LocalDate.now(shZone)
+        val tsDate  = java.time.Instant.ofEpochMilli(ts).atZone(shZone).toLocalDate()
+        val fmt     = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(shZone)
+        val timeStr = fmt.format(java.time.Instant.ofEpochMilli(ts))
+        return if (tsDate == today) "数据时间：$timeStr"
+               else "<html>数据时间：<b style='color:#f9a825'>$timeStr（非今日）</b></html>"
     }
 
     private fun startTimer() {

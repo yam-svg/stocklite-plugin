@@ -792,23 +792,42 @@ object MarketDataService {
 
     /** 涨停/跌停家数。date 参数必须显式传当日日期（yyyyMMdd），传空接口会返回 rc:102 无数据 */
     private fun fetchLimitCounts(): Pair<Int, Int>? {
-        val today = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).toLocalDate()
-            .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+        val shZone  = ZoneId.of("Asia/Shanghai")
+        val dateFmt = java.time.format.DateTimeFormatter.BASIC_ISO_DATE
         fun fetchTc(url: String): Int? {
             val raw = HttpUtil.get(url) ?: return null
             return try { JSONObject(raw).getJSONObject("data").getInt("tc") } catch (_: Exception) { null }
         }
-        val zt = fetchTc("https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=$today") ?: return null
-        val dt = fetchTc("https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fund:asc&date=$today") ?: return null
-        return zt to dt
+        // push2ex 支持历史日期，收盘后当天仍可查；若今日无数据则回退到最近可用交易日（最多往前找5天）
+        for (daysBack in 0..4) {
+            val date = ZonedDateTime.now(shZone).toLocalDate().minusDays(daysBack.toLong())
+                .format(dateFmt)
+            val zt = fetchTc("https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fbt:asc&date=$date")
+            val dt = fetchTc("https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=1&sort=fund:asc&date=$date")
+            if (zt != null && dt != null) return zt to dt
+        }
+        return null
     }
 
     /** 两市成交额代理：中证流通指数（覆盖沪深京全市场）成交额，单位元 */
     private fun fetchTotalTurnover(): Double? {
-        val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=1.000902&ut=$EM_UT&fields=f48") ?: return null
+        // 优先用实时推送（f48），盘中最准确
+        val realtime = try {
+            val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=1.000902&ut=$EM_UT&fields=f48")
+            raw?.let { JSONObject(it).getJSONObject("data").optDouble("f48", Double.NaN) }
+                ?.takeIf { it.isFinite() && it > 0 }
+        } catch (_: Exception) { null }
+        if (realtime != null) return realtime
+
+        // 收盘后 f48 返回 0 或 null，改从日K历史接口取最近一根成交额
         return try {
-            val v = JSONObject(raw).getJSONObject("data").optDouble("f48", Double.NaN)
-            v.takeIf { it.isFinite() && it > 0 }
+            val kRaw = HttpUtil.get(
+                "https://push2his.eastmoney.com/api/qt/stock/kline/get" +
+                "?secid=1.000902&fields1=f1,f2&fields2=f51,f57&klt=101&fqt=0&beg=0&end=20500101&lmt=1"
+            ) ?: return null
+            val kline = JSONObject(kRaw).optJSONObject("data")?.optJSONArray("klines")
+                ?.optString(0) ?: return null
+            kline.split(",").getOrElse(1) { "" }.toDoubleOrNull()?.takeIf { it > 0 }
         } catch (_: Exception) { null }
     }
 
@@ -980,6 +999,8 @@ object MarketDataService {
     private class StaleCache<T>(private val freshTtlMs: Long, private val staleTtlMs: Long) {
         private var value: T? = null
         private var time = 0L
+        /** 最后一次成功获取到新鲜数据的时间戳（毫秒），0 表示从未成功 */
+        val lastSuccessTime: Long get() = time
         fun getOrFetch(fetch: () -> T?): T? {
             val now = System.currentTimeMillis()
             if (value != null && now - time < freshTtlMs) return value
@@ -1002,6 +1023,27 @@ object MarketDataService {
     private val flowCache     = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val sectorCache   = StaleCache<Pair<List<SectorInfo>, List<SectorInfo>>>(2 * 60_000L, 5 * 60_000L)
     private val forecastFuturesCache = StaleCache<Map<String, FutureQuote>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+
+    data class BreadthDataTimes(
+        val advDec: Long,      // 涨跌家数
+        val limits: Long,      // 涨跌停
+        val turnover: Long,    // 成交额
+        val capTier: Long,     // 大/中/小盘
+        val flow: Long,        // 主力资金
+        val sector: Long,      // 板块涨跌
+        val futures: Long      // 股指期货
+    )
+
+    /** 返回各子项数据的最后成功获取时间（0 = 从未成功） */
+    fun getBreadthDataTimes() = BreadthDataTimes(
+        advDec   = advDecCache.lastSuccessTime,
+        limits   = limitsCache.lastSuccessTime,
+        turnover = turnoverCache.lastSuccessTime,
+        capTier  = capTierCache.lastSuccessTime,
+        flow     = flowCache.lastSuccessTime,
+        sector   = sectorCache.lastSuccessTime,
+        futures  = futuresPositionCacheTime
+    )
 
     /**
      * 获取A股大盘概览。各子项独立请求、独立容错、独立缓存——任意一项失败只影响该项，
