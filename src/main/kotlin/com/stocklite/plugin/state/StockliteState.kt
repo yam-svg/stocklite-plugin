@@ -47,6 +47,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true
     var enablePortfolioStatusBar: Boolean = true
+    var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
 
     // ── AI 分析 ──
     var deepseekApiKey: String   = ""
@@ -138,6 +139,12 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun addRefreshIntervalListener(l: RefreshIntervalListener) { refreshIntervalListeners.add(l) }
     fun removeRefreshIntervalListener(l: RefreshIntervalListener) { refreshIntervalListeners.remove(l) }
     fun notifyRefreshIntervalChanged() = refreshIntervalListeners.forEach { it.onRefreshIntervalChanged() }
+
+    // ── 功能开关变更通知（美股板块 Tab 显隐） ──
+    interface FeatureToggleListener { fun onFeatureToggleChanged() }
+    @Transient private val featureToggleListeners = mutableListOf<FeatureToggleListener>()
+    fun addFeatureToggleListener(l: FeatureToggleListener) { featureToggleListeners.add(l) }
+    fun notifyFeatureToggleChanged() = featureToggleListeners.forEach { it.onFeatureToggleChanged() }
 
     // ── 股票分组 CRUD ──
 

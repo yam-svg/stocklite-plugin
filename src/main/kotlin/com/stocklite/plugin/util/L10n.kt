@@ -202,6 +202,8 @@ object L10n {
     val settingsFundInterval     get() = s("基金（秒）:",     "Funds (sec):")
     val settingsGlobalInterval   get() = s("全球指数（秒）:", "Global (sec):")
     val settingsFeatures    get() = s("功能开关",         "Features")
+    val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
+                                       "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")
