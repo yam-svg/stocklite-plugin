@@ -562,9 +562,7 @@ class StockPanel : JPanel(BorderLayout()),
         val totalPnl   = rows.sumOf { (s, q) ->
             val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
         }
-        val todayPnl   = rows.sumOf { (s, q) ->
-            if (s.quantity > 0) (q?.change ?: 0.0) * s.quantity else 0.0
-        }
+        val todayPnl   = rows.sumOf { (s, q) -> MarketTimeUtil.calcTodayPnl(s, q) }
         fun sign(v: Double) = if (v >= 0) "+" else ""
         summaryLabel.text = buildString {
             append("${L10n.lblTotalValue} ${Fmt.value(totalValue)}")
@@ -588,7 +586,7 @@ class StockPanel : JPanel(BorderLayout()),
                     qty       = s.quantity,  price    = price,    cost = s.costPrice,
                     changePct = q?.changePercent ?: 0.0,
                     pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
-                    todayPnl  = (q?.change ?: 0.0) * s.quantity
+                    todayPnl  = MarketTimeUtil.calcTodayPnl(s, q)
                 )
             }
         PortfolioStatusWidget.update(

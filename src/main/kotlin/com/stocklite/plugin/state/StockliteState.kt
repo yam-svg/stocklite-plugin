@@ -163,6 +163,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // ── 股票 CRUD ──
 
     fun createStock(symbol: String, name: String, groupId: String, costPrice: Double, quantity: Double): StockData {
+        val now = System.currentTimeMillis()
         val s = StockData().apply {
             id = UUID.randomUUID().toString()
             this.symbol = symbol
@@ -171,7 +172,8 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.costPrice = costPrice
             this.quantity = quantity
             sortOrder = stocks.size
-            createdAt = System.currentTimeMillis()
+            createdAt = now
+            updatedAt  = now
         }
         stocks.add(s)
         return s
@@ -182,6 +184,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.costPrice = costPrice
             this.quantity = quantity
             this.groupId = groupId
+            this.updatedAt = System.currentTimeMillis()
         }
     }
 

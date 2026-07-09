@@ -1,6 +1,10 @@
 package com.stocklite.plugin.util
 
+import com.stocklite.plugin.state.StockData
+import com.stocklite.plugin.state.StockQuote
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -43,4 +47,22 @@ object MarketTimeUtil {
 
     /** 行情刷新间隔（ms）：开市 5s，收市 60s */
     fun refreshIntervalMs(): Long = if (isStockMarketOpen()) 5_000L else 60_000L
+
+    /**
+     * 计算单行今日盈亏（全局共用，StockPanel 和 PortfolioWatcherService 统一调用）。
+     * - 若持仓在**今日**有过创建或修改（updatedAt 为今天），以成本价为基准：(现价 - 成本价) × 数量
+     * - 否则以昨收为基准：(现价 - 昨收) × 数量，反映今天市场涨跌的影响
+     * - 老数据 updatedAt == 0 时，兼容原有逻辑（走昨收分支）
+     */
+    fun calcTodayPnl(s: StockData, q: StockQuote?): Double {
+        if (s.quantity <= 0 || q == null) return 0.0
+        val today = LocalDate.now(SHANGHAI_ZONE)
+        val updatedDate = if (s.updatedAt > 0)
+            Instant.ofEpochMilli(s.updatedAt).atZone(SHANGHAI_ZONE).toLocalDate()
+        else null
+        return if (updatedDate == today)
+            (q.price - s.costPrice) * s.quantity   // 今日建仓/调仓：以实际成本为基准
+        else
+            q.change * s.quantity                   // 昨日及以前的持仓：以昨收为基准
+    }
 }

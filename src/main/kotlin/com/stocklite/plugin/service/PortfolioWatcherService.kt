@@ -4,6 +4,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.PortfolioStatusWidget
+import com.stocklite.plugin.util.MarketTimeUtil
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 
@@ -55,7 +56,7 @@ class PortfolioWatcherService : Disposable {
                         qty       = s.quantity, price    = price,   cost = s.costPrice,
                         changePct = q?.changePercent ?: 0.0,
                         pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
-                        todayPnl  = (q?.change ?: 0.0) * s.quantity
+                        todayPnl  = MarketTimeUtil.calcTodayPnl(s, q)
                     )
                 }
                 PortfolioStatusWidget.update(

@@ -19,6 +19,8 @@ class StockData {
     var quantity: Double = 0.0
     var sortOrder: Int = 0
     var createdAt: Long = 0L
+    /** 最后一次修改成本价或持仓数量的时间戳（毫秒），用于今日盈亏的计算口径判断 */
+    var updatedAt: Long = 0L
 }
 
 class FundGroupData {
