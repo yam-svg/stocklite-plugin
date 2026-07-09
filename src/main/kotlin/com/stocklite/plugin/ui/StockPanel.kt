@@ -12,6 +12,7 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
 import com.stocklite.plugin.ui.dialogs.AddTradeRecordDialog
+import com.stocklite.plugin.ui.dialogs.ClosePositionDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.dialogs.SetAlertDialog
 import com.stocklite.plugin.ui.dialogs.TradeHistoryDialog
@@ -355,10 +356,27 @@ class StockPanel : JPanel(BorderLayout()),
         }})
         popup.add(JMenuItem(L10n.btnTradeHistory).also { it.addActionListener {
             TradeHistoryDialog(s) {
-                loadRows()        // 刷新表格行（成本/数量可能已变）
-                fetchQuotesAsync() // 重算今日盈亏
+                loadRows()
+                fetchQuotesAsync()
             }.show()
         }})
+        // 清仓：仅持仓时显示
+        if (s.quantity > 0) {
+            popup.add(JMenuItem(L10n.btnClosePosition).also { it.addActionListener {
+                val currentPrice = q?.price ?: 0.0
+                ClosePositionDialog(s, currentPrice) { price, tradeAt, note ->
+                    try {
+                        state.addTradeRecordAndSync(s.id, s.symbol, s.name, "SELL",
+                            price, s.quantity, tradeAt, note)
+                        loadRows()
+                        fetchQuotesAsync()
+                    } catch (ex: IllegalArgumentException) {
+                        JOptionPane.showMessageDialog(this, ex.message,
+                            L10n.dlgConfirmTitle, JOptionPane.ERROR_MESSAGE)
+                    }
+                }.show()
+            }})
+        }
         popup.addSeparator()
         popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
             com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
