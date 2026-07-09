@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.8.0</version>
+    <version>1.9.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -59,7 +59,24 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Optional AI second opinion: when a DeepSeek API key is configured, an additional AI-generated read on the same data is shown alongside the heuristic score, explicitly distinguishing hedging vs. directional short-adding</li>
 </ul>
 
-<h3>US Sector Board (New in 1.8)</h3>
+<h3>Trade Records</h3>
+<ul>
+  <li>Right-click any stock row to <b>Add Trade Record</b> (buy/sell/adjust) or open <b>Trade History</b></li>
+  <li>Each record stores type, price, quantity, date, and note; auto-generates records when creating or editing a stock holding</li>
+  <li>Today's P&amp;L is calculated precisely per trade: shares held before today use previous-close as baseline; shares bought today use actual cost as baseline</li>
+  <li>Deleting a record automatically recalculates the holding's quantity and weighted-average cost from remaining records</li>
+  <li>Right-click <b>Close Position</b> to sell all shares at once; dialog pre-fills current price and shows estimated realized P&amp;L</li>
+  <li>Stock edit dialog shows cost and quantity as read-only; all changes go through trade records</li>
+</ul>
+
+<h3>Earnings Date</h3>
+<ul>
+  <li>A-share stocks show the last and next earnings announcement date on hover over the Name column</li>
+  <li>Stocks with earnings within 30 days show a colored dot (red ≤ 7 days, orange ≤ 30 days) next to the name</li>
+  <li>Data sourced from EastMoney; cached for the current day</li>
+</ul>
+
+<h3>US Sector Board</h3>
 <ul>
   <li>Dedicated tab showing 30+ SPDR &amp; thematic ETFs across all major US sectors: Tech/AI/Semiconductors/Cloud/Data Center/Cybersecurity/Robotics, Industrial/Defense/Space/EV, Energy/Oil/Gas/Solar/Nuclear/Grid/Clean Energy, Materials/Gold/Copper/Lithium, Healthcare/Biotech, Financials/Banks, Consumer, Communication, and more</li>
   <li><b>Dual view</b>: Close (always shows the last official close change%) / Live (auto-switches by US Eastern time: pre-market → pre-market price, regular hours → real-time, after-hours → post-market price; button label updates accordingly)</li>
@@ -185,7 +202,23 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>可选 AI 二次分析：在设置中配置 DeepSeek API Key 后，会额外展示 AI 结合同一批数据给出的解读，明确区分"对冲加仓"与"方向性加空"两种情形</li>
 </ul>
 
-<h3>美股板块（1.8 新增）</h3>
+<h3>交易记录</h3>
+<ul>
+  <li>股票行右键新增<b>添加交易记录</b>和<b>交易记录</b>入口，支持记录买入/卖出/调整，含价格、数量、日期、备注</li>
+  <li>创建或编辑持仓时自动生成交易记录；删除记录后自动从剩余记录重算持仓和加权均价</li>
+  <li>今日盈亏精确计算：今日买入的仓位以实际成本为基准，昨日及以前的仓位以昨收为基准</li>
+  <li>右键<b>清仓（卖出全部）</b>：弹出确认对话框，预填当前实时价和全部持仓数量，显示预计实现盈亏</li>
+  <li>编辑持仓对话框中成本价和数量改为只读，点击链接跳转到交易记录修改</li>
+</ul>
+
+<h3>财报日期标注</h3>
+<ul>
+  <li>A 股股票名称列悬浮时显示上次财报日和下次财报预约日</li>
+  <li>距财报 30 天内在名称旁显示彩色圆点提示（7天内红色，30天内橙色）</li>
+  <li>数据来自东方财富，当日缓存，不影响行情刷新性能</li>
+</ul>
+
+<h3>美股板块</h3>
 <ul>
   <li>新增"美股板块"标签页，展示 30+ 主流 ETF 行情，按行业分组：科技/AI/半导体/云计算/数据中心/网络安全/AI机器人、工业/军工/商业航天/自动驾驶、能源/石油/天然气/光伏/核电/电网/新能源、材料/黄金/铜有色/锂电池、医疗/生物科技、金融/银行、消费、通信等</li>
   <li><b>收盘 / 实时</b>双视图切换：实时视图根据美东时间自动识别时段（盘前/盘中/盘后），标签文字随之变化</li>
@@ -254,42 +287,39 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.8.0</h3>
+<h3>1.9.0</h3>
 
-<h4>新增：美股板块面板</h4>
+<h4>新增：交易记录</h4>
 <ul>
-  <li>新增"美股板块"标签页，展示 30+ 个主流 SPDR ETF 及主题 ETF 的板块行情，覆盖科技/AI算力/半导体/云计算/数据中心/网络安全/AI机器人、工业/军工/商业航天/自动驾驶、能源/石油/天然气/光伏/核电/电网/新能源、材料/黄金/铜有色/锂电池、医疗/生物科技、金融/银行、消费、通信等全行业</li>
-  <li>双视图切换：<b>收盘</b>（永远显示上次正式收盘涨跌幅）/ <b>实时</b>（根据美东时间自动切换——盘前显示盘前价、盘中显示实时价、盘后显示盘后价，标签文字随时段变化）</li>
-  <li>按行业分组展示，4列网格布局，每张卡片显示板块名称、ETF代码和涨跌幅（红涨绿跌，跟随全局配色方案）</li>
-  <li>悬浮 tooltip 同时显示收盘/盘前/盘后三组数据，方便对比</li>
-  <li>右键复制 ETF 代码；60 秒自动刷新，面板隐藏时暂停</li>
+  <li>股票行右键新增「添加交易记录」和「交易记录」，支持记录买入/卖出，含价格、数量、日期、备注</li>
+  <li>创建/编辑持仓时自动生成对应交易记录；删除记录后自动重算持仓数量和加权均价</li>
+  <li>今日盈亏按每笔记录精确计算：当日买入以实际成本为基准，历史持仓以昨收为基准</li>
+  <li>新增「清仓」快捷操作：预填当前价和全部持仓数量，显示预计实现盈亏后确认执行</li>
+  <li>编辑持仓对话框中成本价和数量改为只读展示，统一通过交易记录修改</li>
 </ul>
 
-<h4>新增：K 线图均线与成交量</h4>
+<h4>新增：财报日期标注</h4>
 <ul>
-  <li>日K/周K/月K 蜡烛图新增 MA5（黄）/ MA10（蓝）/ MA20（紫）均线叠加</li>
-  <li>日K/周K/月K 新增成交量副图（主图底部 20%），涨红跌绿半透明柱，与主图时间轴联动</li>
-  <li>Tooltip 同步展示均线数值与成交量（自动换算万/亿单位）</li>
+  <li>A 股股票名称列悬浮时显示上次财报日和下次预约披露日</li>
+  <li>距财报 30 天内名称旁显示彩色圆点（7天内红色，30天内橙色）</li>
 </ul>
 
-<h4>新增：成交量缩量监测</h4>
+<h4>新增：大盘数据时间标注</h4>
 <ul>
-  <li>A 股大盘概览"两市成交额"后新增昨日同期对比：今日实时成交额 vs 昨日同期（按今日已过分钟数精确对齐，000902中证流通口径），实时显示放量/缩量百分比</li>
-  <li>同期比较使用 sh000300（沪深300）分时分布曲线折算，反映真实开盘/收盘集中效应，比线性时间折算更准确</li>
-  <li>悬浮 tooltip 显示今日累计成交额、昨日同期金额及精确百分比差</li>
+  <li>A 股大盘概览各子项（涨跌家数、成交额、主力资金等）悬浮时独立显示该项数据的实际获取时间</li>
+  <li>数据非今日时以橙色警告标注，避免用旧数据误判</li>
 </ul>
 
-<h4>新增：美股行情搜索增强</h4>
+<h4>优化：今日盈亏计算</h4>
 <ul>
-  <li>股票搜索新增东方财富美股数据库支持：直接用中文名搜索美股（如"英伟达"、"美光科技"、"闪迪"），覆盖全量美股标的，不再局限于有限的映射表</li>
-  <li>美股代码/英文名搜索同样走东方财富接口，结果更全面</li>
-  <li>A股/港股搜索逻辑不变（仍走新浪 API）</li>
+  <li>今日新建仓或调仓时，今日盈亏改以实际成本价为基准，不再错误使用昨收价计算</li>
+  <li>任务栏状态栏今日盈亏与面板保持完全一致，不再出现忽新忽旧的闪烁</li>
 </ul>
 
-<h4>新增：美股盘前/盘后数据</h4>
+<h4>优化：美股板块</h4>
 <ul>
-  <li>股票面板美股标的在盘前/盘后时段，涨跌幅列自动显示双行：上行为上次收盘涨跌幅，下行为灰色小字"盘前 +0.35%"或"盘后 -0.12%"</li>
-  <li>仅在 Yahoo Finance 返回有效延伸交易数据时显示，正常交易时段不显示</li>
+  <li>补充更多板块 ETF，覆盖商业航天/卫星、机器人、核电、电网、锂电池、铜/有色等</li>
+  <li>支持在设置中关闭美股板块标签页（默认关闭，按需开启）</li>
 </ul>
     ]]></change-notes>
 
