@@ -231,6 +231,9 @@ object L10n {
     val settingsOptFundPnlPct   get() = s("盈亏%",    "P&L%")
     // AI 分析面板
     val tradeEditHint     get() = s("通过交易记录修改", "Edit via Trade History")
+    val lblEarningsLast   get() = s("上次财报", "Last earnings")
+    val lblEarningsNext   get() = s("下次财报", "Next earnings")
+    val lblEarningsSoon   get() = s("财报临近", "Earnings soon")
     val btnClosePosition  get() = s("清仓（卖出全部）",    "Close Position")
     val dlgClosePosition  get() = s("清仓确认",           "Confirm Close Position")
     val btnAddTrade       get() = s("添加交易记录",        "Add Trade")

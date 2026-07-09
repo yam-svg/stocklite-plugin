@@ -1410,6 +1410,46 @@ object MarketDataService {
         return result
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // 财报日期（预约披露时间）
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * 获取 A 股股票的最近财报公告日期。
+     * 返回：最近一次历史公告日（格式 "yyyy-MM-dd"），以及下次预约公告日（可能为 null）。
+     * 数据来自东方财富 RPT_LICO_FN_CPD，包含历史和预约披露时间。
+     * @param pureCode 纯6位代码，如 "600519"（不含 sh/sz 前缀）
+     */
+    fun getEarningsDate(pureCode: String): Pair<String?, String?> {
+        return try {
+            val enc = java.net.URLEncoder.encode("(SECURITY_CODE=\"$pureCode\")", "UTF-8")
+            val url = "https://datacenter-web.eastmoney.com/api/data/v1/get" +
+                "?reportName=RPT_LICO_FN_CPD&columns=SECURITY_CODE,NOTICE_DATE" +
+                "&filter=$enc&sortColumns=NOTICE_DATE&sortTypes=-1&pageNumber=1&pageSize=10&source=WEB"
+            val raw = HttpUtil.get(url) ?: return null to null
+            val items = JSONObject(raw).optJSONObject("result")?.optJSONArray("data")
+                ?: return null to null
+            val today = java.time.LocalDate.now(ZoneId.of("Asia/Shanghai")).toString()
+            var lastDate: String? = null
+            var nextDate: String? = null
+            for (i in 0 until items.length()) {
+                val date = items.getJSONObject(i).optString("NOTICE_DATE", "").take(10)
+                if (date.isEmpty()) continue
+                if (date >= today && (nextDate == null || date < nextDate)) nextDate = date
+                if (date < today  && (lastDate == null || date > lastDate)) lastDate = date
+            }
+            lastDate to nextDate
+        } catch (_: Exception) { null to null }
+    }
+
+    /**
+     * 批量获取多只 A 股的财报日期，返回 code -> Pair<last, next>。
+     * 每只股票单独请求（接口不支持 AND 条件批量过滤）。
+     */
+    fun getEarningsDates(pureCodes: List<String>): Map<String, Pair<String?, String?>> {
+        return pureCodes.associateWith { code -> getEarningsDate(code) }
+    }
+
     fun searchStocks(keyword: String): List<StockSearchResult> {
         if (keyword.isBlank()) return emptyList()
         val results = mutableListOf<StockSearchResult>()

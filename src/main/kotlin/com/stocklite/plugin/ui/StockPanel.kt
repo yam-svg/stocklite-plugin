@@ -78,6 +78,22 @@ class StockPanel : JPanel(BorderLayout()),
         }
     }
 
+    /** 名称列 renderer：临近财报时在名称后附加彩色圆点 */
+    private inner class EarningsNameRenderer : QuoteRenderer(QuoteColumnType.PLAIN) {
+        override fun getTableCellRendererComponent(
+            table: JTable, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
+        ): java.awt.Component {
+            val comp = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
+                as javax.swing.JLabel
+            val modelRow = try { table.convertRowIndexToModel(row) } catch (_: Exception) { row }
+            val dot = earningsDotMap[modelRow]
+            if (dot != null) {
+                comp.text = "<html>${value ?: ""}  <span style='color:$dot'>●</span></html>"
+            }
+            return comp
+        }
+    }
+
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
         val alwaysOn: Boolean = false,
@@ -111,6 +127,13 @@ class StockPanel : JPanel(BorderLayout()),
     private var currentGroupId = SystemGroups.ALL_STOCK_ID
     private var rows: List<Pair<StockData, StockQuote?>> = emptyList()
     private val quotes = mutableMapOf<String, StockQuote>()
+    /** 财报日期缓存：纯6位代码 -> (上次财报日, 下次财报日)，当日缓存，不跨天 */
+    private val earningsCache = mutableMapOf<String, Pair<String?, String?>>()
+    private var earningsCacheDate = ""
+    /** modelRow -> tooltip HTML */
+    private val earningsTooltipMap = mutableMapOf<Int, String>()
+    /** modelRow -> 小红点/橙点颜色（临近财报） */
+    private val earningsDotMap = mutableMapOf<Int, String>()
 
     private val tableModel = object : AbstractTableModel() {
         override fun getRowCount()            = rows.size
@@ -207,9 +230,11 @@ class StockPanel : JPanel(BorderLayout()),
     private fun applyRenderers() {
         visibleCols.forEachIndexed { i, col ->
             if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer =
-                    if (col.key == "changePercent") ChangePctRenderer()
-                    else QuoteRenderer(col.type)
+                table.columnModel.getColumn(i).cellRenderer = when (col.key) {
+                    "changePercent" -> ChangePctRenderer()
+                    "name"          -> EarningsNameRenderer()
+                    else            -> QuoteRenderer(col.type)
+                }
             }
         }
         if (table.columnModel.columnCount > 0)
@@ -275,10 +300,19 @@ class StockPanel : JPanel(BorderLayout()),
 
         table.addMouseMotionListener(object : MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
-                val col = table.columnAtPoint(e.point)
+                val col     = table.columnAtPoint(e.point)
+                val viewRow = table.rowAtPoint(e.point)
+                // 鼠标指针
                 table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colChangePct)
                     Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                 else Cursor.getDefaultCursor()
+                // 名称列：显示财报日期 tooltip
+                if (col >= 0 && table.getColumnName(col) == L10n.colName && viewRow >= 0) {
+                    val modelRow = table.convertRowIndexToModel(viewRow)
+                    table.toolTipText = earningsTooltipMap[modelRow]
+                } else {
+                    table.toolTipText = null
+                }
             }
         })
 
@@ -648,10 +682,93 @@ class StockPanel : JPanel(BorderLayout()),
                 rows = rows.map { (s, _) -> s to quotes[s.symbol] }
                 tableModel.fireTableDataChanged()
                 applyRenderers()
+                adjustRowHeights()
                 updateSummary()
                 aiPanel.updateContext(buildAiContext())
             }
         }
+        // 财报日期异步加载（仅 A 股，低频：当日首次加载后缓存全天）
+        fetchEarningsDatesAsync()
+    }
+
+    /** 异步加载当前行中 A 股的财报日期，设置到名称列 tooltip */
+    private fun fetchEarningsDatesAsync() {
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()
+        if (earningsCacheDate != today) { earningsCache.clear(); earningsCacheDate = today }
+
+        // 只处理 A 股（sh/sz 前缀），且不在缓存中的
+        val pending = rows.map { it.first }
+            .filter { s ->
+                (s.symbol.startsWith("sh") || s.symbol.startsWith("sz")) &&
+                !earningsCache.containsKey(s.symbol.drop(2))
+            }
+            .map { it.symbol.drop(2) }
+            .distinct()
+
+        if (pending.isEmpty()) { applyEarningsTooltips(); return }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val results = MarketDataService.getEarningsDates(pending)
+            SwingUtilities.invokeLater {
+                earningsCache.putAll(results)
+                applyEarningsTooltips()
+            }
+        }
+    }
+
+    private fun applyEarningsTooltips() {
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))
+        val nameColIdx = visibleCols.indexOfFirst { it.key == "name" }.takeIf { it >= 0 } ?: return
+
+        rows.forEachIndexed { modelRow, (s, _) ->
+            val pureCode = when {
+                s.symbol.startsWith("sh") || s.symbol.startsWith("sz") -> s.symbol.drop(2)
+                else -> return@forEachIndexed   // 港股/美股暂不支持
+            }
+            val (last, next) = earningsCache[pureCode] ?: return@forEachIndexed
+            if (last == null && next == null) return@forEachIndexed
+
+            val viewRow = try { table.convertRowIndexToView(modelRow) } catch (_: Exception) { modelRow }
+            if (viewRow < 0) return@forEachIndexed
+
+            // 计算距下次财报天数，临近30天高亮
+            val daysToNext = next?.let {
+                try { java.time.temporal.ChronoUnit.DAYS.between(today, java.time.LocalDate.parse(it)).toInt() }
+                catch (_: Exception) { null }
+            }
+
+            val tip = buildString {
+                append("<html>")
+                if (next != null) {
+                    val color = when {
+                        daysToNext != null && daysToNext <= 7  -> "#f44336"   // 红色：一周内
+                        daysToNext != null && daysToNext <= 30 -> "#ff9800"   // 橙色：一个月内
+                        else -> "#888aaa"
+                    }
+                    val daysStr = if (daysToNext != null) "（${daysToNext}天后）" else ""
+                    append("<b style='color:$color'>${L10n.lblEarningsNext}：$next$daysStr</b>")
+                }
+                if (last != null) {
+                    if (next != null) append("<br/>")
+                    append("<span style='color:#888aaa'>${L10n.lblEarningsLast}：$last</span>")
+                }
+                append("</html>")
+            }
+
+            // 设置名称列该行的 tooltip（通过 JTable 的 cell renderer 不方便，
+            // 改用 table.setToolTipText 在 mouseMoved 里动态设置）
+            // 这里存入一个 map，由 mouseMoved 事件读取
+            earningsTooltipMap[modelRow] = tip
+
+            // 如果临近30天，在名称旁追加小红点标注
+            if (daysToNext != null && daysToNext <= 30) {
+                val dotColor = if (daysToNext <= 7) "#f44336" else "#ff9800"
+                earningsDotMap[modelRow] = dotColor
+            } else {
+                earningsDotMap.remove(modelRow)
+            }
+        }
+        tableModel.fireTableDataChanged()
     }
 
     private fun buildAiContext(): String {
