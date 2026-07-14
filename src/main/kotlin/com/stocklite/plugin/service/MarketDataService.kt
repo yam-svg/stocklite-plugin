@@ -809,26 +809,23 @@ object MarketDataService {
         return null
     }
 
-    /** 两市成交额代理：中证流通指数（覆盖沪深京全市场）成交额，单位元 */
+    /**
+     * 两市成交额：新浪上证（sh000001）+ 深证成指（sz399001）字段 9（成交额，元）之和。
+     * 新浪接口盘中实时更新、收盘后直接保持当日收盘值，与已有行情请求复用同一主机，稳定性更高。
+     * 东方财富 push2.eastmoney.com 在部分网络环境下存在直连限制，故不再依赖该域名。
+     */
     private fun fetchTotalTurnover(): Double? {
-        // 优先用实时推送（f48），盘中最准确
-        val realtime = try {
-            val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=1.000902&ut=$EM_UT&fields=f48")
-            raw?.let { JSONObject(it).getJSONObject("data").optDouble("f48", Double.NaN) }
-                ?.takeIf { it.isFinite() && it > 0 }
-        } catch (_: Exception) { null }
-        if (realtime != null) return realtime
-
-        // 收盘后 f48 返回 0 或 null，改从日K历史接口取最近一根成交额
-        return try {
-            val kRaw = HttpUtil.get(
-                "https://push2his.eastmoney.com/api/qt/stock/kline/get" +
-                "?secid=1.000902&fields1=f1,f2&fields2=f51,f57&klt=101&fqt=0&beg=0&end=20500101&lmt=1"
-            ) ?: return null
-            val kline = JSONObject(kRaw).optJSONObject("data")?.optJSONArray("klines")
-                ?.optString(0) ?: return null
-            kline.split(",").getOrElse(1) { "" }.toDoubleOrNull()?.takeIf { it > 0 }
-        } catch (_: Exception) { null }
+        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000001,sz399001",
+            "https://finance.sina.com.cn") ?: return null
+        var sum = 0.0
+        var count = 0
+        for (line in raw.lines()) {
+            val fields = Regex(""""([^"]*)"""").find(line)?.groupValues?.get(1)?.split(",") ?: continue
+            val turnover = fields.getOrElse(9) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+            sum += turnover
+            count++
+        }
+        return if (count == 0) null else sum
     }
 
     /** 大/中/小盘代理：沪深300 / 中证500 / 中证1000 涨跌幅% */

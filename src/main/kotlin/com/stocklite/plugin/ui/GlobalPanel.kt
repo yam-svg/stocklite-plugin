@@ -476,7 +476,9 @@ class GlobalPanel : JPanel(BorderLayout()),
     private fun startBreadthTimer() {
         fetchBreadthAsync()
         breadthTimer?.stop()
-        breadthTimer = Timer(BREADTH_INTERVAL_MS) { fetchBreadthAsync() }.also { it.isRepeats = true; it.start() }
+        breadthTimer = Timer(BREADTH_INTERVAL_MS) {
+            if (MarketTimeUtil.isStockMarketOpen()) fetchBreadthAsync()
+        }.also { it.isRepeats = true; it.start() }
     }
 
     private fun fetchBreadthAsync() {
