@@ -199,7 +199,7 @@ object MarketDataService {
         // A-shares via Sina
         if (aShares.isNotEmpty()) {
             val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${aShares.joinToString(",")}",
-                "http://finance.sina.com.cn") ?: ""
+                "http://finance.sina.com.cn", label = "A股行情") ?: ""
             val re = Regex("""var hq_str_([^=]+)="([^"]+)"""")
             for (m in re.findAll(raw)) {
                 val symbol = m.groupValues[1].trim()
@@ -218,7 +218,8 @@ object MarketDataService {
         for (sym in hkShares) {
             val code   = sym.removePrefix("hk")
             val tSym   = "r_hk$code"
-            val raw    = HttpUtil.get("https://qt.gtimg.cn/q=$tSym", referer = "https://gu.qq.com") ?: continue
+            val raw    = HttpUtil.get("https://qt.gtimg.cn/q=$tSym", referer = "https://gu.qq.com",
+                label = "港股行情") ?: continue
             val m      = Regex("""v_[^=]+="([^"]*)"""").find(raw) ?: continue
             val f      = m.groupValues[1].split("~")
             val price  = f.getOrElse(3) { "" }.toDoubleOrNull() ?: continue
@@ -234,7 +235,8 @@ object MarketDataService {
         for (sym in usShares) {
             try {
                 val enc = URLEncoder.encode(sym, "UTF-8")
-                val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d") ?: continue
+                val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d",
+                    label = "美股/其他行情") ?: continue
                 val meta = JSONObject(raw).optJSONObject("chart")
                     ?.optJSONArray("result")?.optJSONObject(0)
                     ?.optJSONObject("meta") ?: continue
@@ -390,7 +392,7 @@ object MarketDataService {
     }
 
     private fun fetchFundgz(code: String): FundQuote? {
-        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js") ?: return null
+        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js", label = "基金估算净值") ?: return null
         val m = Regex("""jsonpgz\((.*)\);?""").find(raw)?.groupValues?.get(1) ?: return null
         return try {
             val j = JSONObject(m)
@@ -417,7 +419,8 @@ object MarketDataService {
     private fun fetchFundsSina(codes: List<String>): Map<String, FundQuote> {
         if (codes.isEmpty()) return emptyMap()
         val q = codes.joinToString(",") { "fund_$it" }
-        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=$q", "http://finance.sina.com.cn") ?: return emptyMap()
+        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=$q", "http://finance.sina.com.cn",
+            label = "基金行情-新浪") ?: return emptyMap()
         val result = mutableMapOf<String, FundQuote>()
         val re = Regex("""var hq_str_fund_([^=]+)="([^"]*)"""")
         for (m in re.findAll(raw)) {
@@ -451,7 +454,7 @@ object MarketDataService {
     private fun fetchF10Nav(code: String): F10Nav? {
         val raw = HttpUtil.get(
             "https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&sdate=&edate=&code=$code",
-            "https://fundf10.eastmoney.com/") ?: return null
+            "https://fundf10.eastmoney.com/", label = "基金历史净值(F10)") ?: return null
         return parseF10LatestNav(raw)
     }
 
@@ -533,7 +536,7 @@ object MarketDataService {
         if (symbols.isEmpty()) return emptyMap()
         val full = symbols.map { normFutureSymbol(it) }.distinct()
         val raw  = HttpUtil.getGbk("https://hq.sinajs.cn/list=${full.joinToString(",")}",
-            "https://finance.sina.com.cn") ?: return emptyMap()
+            "https://finance.sina.com.cn", label = "期货行情") ?: return emptyMap()
 
         val result = mutableMapOf<String, FutureQuote>()
         val re = Regex("""var hq_str_([^=]+)="([^"]*)"""")
@@ -607,7 +610,8 @@ object MarketDataService {
         // 2. 新浪批量（A 股 / 美股粗行情）
         // 沪深（sh/sz）、港股新浪兜底（rt_hk）为实时行情；海外指数（gb_）新浪标明"至少延时15分钟"
         val sinaSymbols = SINA_SYMBOL_MAP.values.joinToString(",")
-        HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn")
+        HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn",
+            label = "全球指数-新浪")
             ?.let { text ->
                 parseSinaData(text).forEach { (k, v) ->
                     if (!quoteMap.containsKey(k)) {
@@ -663,7 +667,7 @@ object MarketDataService {
     private fun fetchTencentHkQuote(symbol: String): HkQuote? {
         val tSym = TENCENT_HK_MAP[symbol] ?: return null
         val raw  = HttpUtil.get("https://qt.gtimg.cn/q=$tSym",
-            referer = "https://gu.qq.com") ?: return null
+            referer = "https://gu.qq.com", label = "全球指数-腾讯港股") ?: return null
         val m    = Regex("""v_[^=]+="([^"]*)"""").find(raw) ?: return null
         val f    = m.groupValues[1].split("~")
         val price = f.getOrElse(3) { "" }.toDoubleOrNull() ?: return null
@@ -683,7 +687,8 @@ object MarketDataService {
     private fun fetchYahooQuoteWithStatus(symbol: String, now: Long): Pair<Int, Pair<Double, Double>?> {
         val enc = URLEncoder.encode(resolveYahooSymbol(symbol), "UTF-8")
         val (code, raw) = HttpUtil.getWithStatus(
-            "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=5d")
+            "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=5d",
+            label = "全球指数-Yahoo(${symbol})")
         if (code == 429) return 429 to null
         if (raw == null) return code to null
         val data = parseYahooBody(raw, symbol, now)
@@ -776,8 +781,8 @@ object MarketDataService {
     /** 涨跌家数（沪深两市合计）：分别查上证指数(1.000001)、深证综指(0.399106)的成分家数字段后求和 */
     private fun fetchAdvanceDecline(): Triple<Int, Int, Int>? {
         fun fetchOne(secid: String): Triple<Int, Int, Int>? {
-            val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=$secid&ut=$EM_UT&fields=f113,f114,f115")
-                ?: return null
+            val raw = HttpUtil.get("https://push2.eastmoney.com/api/qt/stock/get?secid=$secid&ut=$EM_UT&fields=f113,f114,f115",
+                label = "涨跌家数") ?: return null
             return try {
                 val d = JSONObject(raw).getJSONObject("data")
                 Triple(d.getInt("f113"), d.getInt("f114"), d.getInt("f115"))
@@ -795,7 +800,7 @@ object MarketDataService {
         val shZone  = ZoneId.of("Asia/Shanghai")
         val dateFmt = java.time.format.DateTimeFormatter.BASIC_ISO_DATE
         fun fetchTc(url: String): Int? {
-            val raw = HttpUtil.get(url) ?: return null
+            val raw = HttpUtil.get(url, label = "涨停/跌停") ?: return null
             return try { JSONObject(raw).getJSONObject("data").getInt("tc") } catch (_: Exception) { null }
         }
         // push2ex 支持历史日期，收盘后当天仍可查；若今日无数据则回退到最近可用交易日（最多往前找5天）
@@ -816,7 +821,7 @@ object MarketDataService {
      */
     private fun fetchTotalTurnover(): Double? {
         val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000001,sz399001",
-            "https://finance.sina.com.cn") ?: return null
+            "https://finance.sina.com.cn", label = "两市成交额") ?: return null
         var sum = 0.0
         var count = 0
         for (line in raw.lines()) {
@@ -830,8 +835,8 @@ object MarketDataService {
 
     /** 大/中/小盘代理：沪深300 / 中证500 / 中证1000 涨跌幅% */
     private fun fetchCapTierPct(): Triple<Double, Double, Double>? {
-        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000300,sh000905,sh000852", "https://finance.sina.com.cn")
-            ?: return null
+        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000300,sh000905,sh000852",
+            "https://finance.sina.com.cn", label = "大/中/小盘涨跌") ?: return null
         val quotes = parseSinaData(raw)
         val large = quotes["sh000300"]?.second
         val mid   = quotes["sh000905"]?.second
@@ -851,8 +856,8 @@ object MarketDataService {
             val po = if (descending) 1 else 0
             val url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=30&po=$po&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f14,f3,f104,f105"
             // 该接口偶发被限流/断连（HTTP 层面握手失败），重试一次再放弃
-            var raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/")
-            if (raw == null) raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/")
+            var raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/", label = "领涨/领跌板块")
+            if (raw == null) raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/", label = "领涨/领跌板块")
             raw ?: return null
             return try {
                 val arr = JSONObject(raw).getJSONObject("data").getJSONArray("diff")
@@ -874,7 +879,8 @@ object MarketDataService {
     /** 主力资金净流入（沪深两市合计），单位元，负数为净流出 */
     private fun fetchMainCapitalFlow(): Double? {
         val raw = HttpUtil.get(
-            "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f62"
+            "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids=1.000001,0.399001&fields=f62",
+            label = "主力资金净流入"
         ) ?: return null
         return try {
             val arr = JSONObject(raw).getJSONObject("data").getJSONArray("diff")
@@ -894,7 +900,8 @@ object MarketDataService {
         val filter = URLEncoder.encode("(MEMBER_NAME_ABBR=\"本日合计\")(TYPE=\"2\")(TRADE_CODE=\"IF\")", "UTF-8")
         val raw = HttpUtil.get(
             "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FUTU_DAILYPOSITION" +
-                "&columns=TRADE_DATE&filter=$filter&sortColumns=TRADE_DATE&sortTypes=-1&pageNumber=1&pageSize=1&source=WEB&client=WEB"
+                "&columns=TRADE_DATE&filter=$filter&sortColumns=TRADE_DATE&sortTypes=-1&pageNumber=1&pageSize=1&source=WEB&client=WEB",
+            label = "股指期货交易日"
         ) ?: return null
         return try {
             JSONObject(raw).getJSONObject("result").getJSONArray("data").getJSONObject(0)
@@ -918,7 +925,8 @@ object MarketDataService {
         val raw = HttpUtil.get(
             "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FUTU_DAILYPOSITION" +
                 "&columns=TRADE_CODE,LONG_POSITION,SHORT_POSITION,LP_CHANGE,SP_CHANGE" +
-                "&filter=$filter&pageNumber=1&pageSize=200&source=WEB&client=WEB"
+                "&filter=$filter&pageNumber=1&pageSize=200&source=WEB&client=WEB",
+            label = "股指期货龙虎榜"
         ) ?: return null
         return try {
             val arr = JSONObject(raw).getJSONObject("result").getJSONArray("data")

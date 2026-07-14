@@ -48,6 +48,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableFundNavAlert: Boolean = true
     var enablePortfolioStatusBar: Boolean = true
     var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
+    var enableApiLogPanel: Boolean = false   // 默认关闭，调试用途
 
     // ── AI 分析 ──
     var deepseekApiKey: String   = ""

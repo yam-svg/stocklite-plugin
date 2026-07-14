@@ -4,6 +4,7 @@ import com.intellij.ui.components.JBTabbedPane
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
+import javax.swing.JComponent
 import javax.swing.JPanel
 
 class StocklitePanel : JPanel(BorderLayout()),
@@ -15,13 +16,13 @@ class StocklitePanel : JPanel(BorderLayout()),
     val futurePanel   = FuturePanel()
     val globalPanel   = GlobalPanel()
     val usMarketPanel = UsMarketPanel()
+    val apiLogPanel   = ApiLogPanel()
 
     private val tabs = JBTabbedPane()
     private val state = StockliteState.getInstance()
 
-    // 固定前4个 Tab 索引；美股板块是否存在由 usMarketTabIndex 动态决定
-    private val usMarketTabIndex get() = if (tabs.indexOfComponent(usMarketPanel) >= 0)
-        tabs.indexOfComponent(usMarketPanel) else -1
+    private val usMarketTabIndex get() = tabs.indexOfComponent(usMarketPanel)
+    private val apiLogTabIndex   get() = tabs.indexOfComponent(apiLogPanel)
 
     init {
         tabs.addTab(L10n.tabStock,  stockPanel)
@@ -29,10 +30,8 @@ class StocklitePanel : JPanel(BorderLayout()),
         tabs.addTab(L10n.tabFuture, futurePanel)
         tabs.addTab(L10n.tabGlobal, globalPanel)
 
-        // 根据设置决定是否初始加入美股板块 Tab
-        if (state.enableUsMarketPanel) {
-            tabs.addTab(L10n.tabUsMarket, usMarketPanel)
-        }
+        if (state.enableUsMarketPanel) tabs.addTab(L10n.tabUsMarket, usMarketPanel)
+        if (state.enableApiLogPanel)   tabs.addTab(L10n.tabApiLog,   apiLogPanel)
 
         tabs.addChangeListener {
             when (tabs.selectedComponent) {
@@ -49,22 +48,20 @@ class StocklitePanel : JPanel(BorderLayout()),
         state.addFeatureToggleListener(this)
     }
 
-    /** 由外部（Settings apply 后）调用，同步美股板块 Tab 的显示状态 */
-    fun applyUsMarketPanelVisibility() {
-        val enabled = state.enableUsMarketPanel
-        val exists  = usMarketTabIndex >= 0
+    private fun applyTabVisibility(component: JComponent, enabled: Boolean, label: String) {
+        val exists = tabs.indexOfComponent(component) >= 0
         when {
-            enabled && !exists -> tabs.addTab(L10n.tabUsMarket, usMarketPanel)
+            enabled && !exists -> tabs.addTab(label, component)
             !enabled && exists -> {
-                // 切走再移除，避免移除当前选中 Tab 导致异常
-                if (tabs.selectedComponent == usMarketPanel) tabs.selectedIndex = 0
-                tabs.remove(usMarketPanel)
+                if (tabs.selectedComponent == component) tabs.selectedIndex = 0
+                tabs.remove(component)
             }
         }
     }
 
     override fun onFeatureToggleChanged() {
-        applyUsMarketPanelVisibility()
+        applyTabVisibility(usMarketPanel, state.enableUsMarketPanel, L10n.tabUsMarket)
+        applyTabVisibility(apiLogPanel,   state.enableApiLogPanel,   L10n.tabApiLog)
     }
 
     override fun onLanguageChanged() {
@@ -72,7 +69,9 @@ class StocklitePanel : JPanel(BorderLayout()),
         tabs.setTitleAt(1, L10n.tabFund)
         tabs.setTitleAt(2, L10n.tabFuture)
         tabs.setTitleAt(3, L10n.tabGlobal)
-        val idx = usMarketTabIndex
-        if (idx >= 0) tabs.setTitleAt(idx, L10n.tabUsMarket)
+        val usIdx  = usMarketTabIndex
+        val logIdx = apiLogTabIndex
+        if (usIdx  >= 0) tabs.setTitleAt(usIdx,  L10n.tabUsMarket)
+        if (logIdx >= 0) tabs.setTitleAt(logIdx, L10n.tabApiLog)
     }
 }

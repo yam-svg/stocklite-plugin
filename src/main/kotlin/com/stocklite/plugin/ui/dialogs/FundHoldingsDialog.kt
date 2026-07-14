@@ -8,6 +8,8 @@ import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.FundHoldingsService
 import com.stocklite.plugin.state.FundHoldingItem
 import com.stocklite.plugin.state.FundHoldingsResult
+import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.util.HttpUtil
 import java.awt.*
 import java.awt.event.MouseAdapter
@@ -199,45 +201,43 @@ class FundHoldingsDialog(
         table.columnModel.getColumn(COL_SHARES).cellRenderer = rightRenderer
         table.columnModel.getColumn(COL_VALUE).cellRenderer  = rightRenderer
 
-        // 较上期变化：颜色渲染
+        // 较上期变化：颜色跟随配色方案
         table.columnModel.getColumn(COL_CHANGE).cellRenderer = object : DefaultTableCellRenderer() {
             override fun getTableCellRendererComponent(
                 t: JTable, value: Any?, selected: Boolean, focused: Boolean, row: Int, col: Int
             ): Component {
                 val c = super.getTableCellRendererComponent(t, value, selected, focused, row, col)
                 horizontalAlignment = SwingConstants.CENTER
-                val text = value?.toString() ?: ""
+                if (selected) return c
+                val scheme = StockliteState.getInstance().colorScheme
+                val text   = value?.toString() ?: ""
                 foreground = when {
-                    selected -> t.selectionForeground
                     text.contains("增") || text.contains("新进") ->
-                        Color(0x00, 0xAA, 0x44)
+                        QuoteRenderer.positiveColor(scheme) ?: t.foreground
                     text.contains("减") || text.contains("退出") ->
-                        Color(0xCC, 0x22, 0x22)
-                    else -> UIManager.getColor("Table.foreground") ?: Color.BLACK
+                        QuoteRenderer.negativeColor(scheme) ?: t.foreground
+                    else -> UIManager.getColor("Table.foreground") ?: t.foreground
                 }
                 return c
             }
         }
 
-        // 涨跌幅：红涨绿跌（A 股惯例），NaN 显示 "--"，含加载中样式
+        // 涨跌幅：颜色跟随配色方案，NaN 显示 "--"
         table.columnModel.getColumn(COL_CHG).cellRenderer = object : DefaultTableCellRenderer() {
             override fun getTableCellRendererComponent(
                 t: JTable, value: Any?, selected: Boolean, focused: Boolean, row: Int, col: Int
             ): Component {
                 val d = value as? Double
-                val display = when {
-                    d == null || d.isNaN() -> "--"
-                    else -> "${"%.2f".format(d)}%"
-                }
+                val display = if (d == null || d.isNaN()) "--" else "${"%.2f".format(d)}%"
                 val c = super.getTableCellRendererComponent(t, display, selected, focused, row, col)
                 horizontalAlignment = SwingConstants.RIGHT
+                if (selected) return c
+                val scheme = StockliteState.getInstance().colorScheme
                 foreground = when {
-                    selected || d == null || d.isNaN() ->
-                        if (selected) t.selectionForeground
-                        else UIManager.getColor("Table.foreground") ?: Color.BLACK
-                    d > 0.0  -> Color(0xCC, 0x22, 0x22)   // 上涨：红
-                    d < 0.0  -> Color(0x00, 0xAA, 0x44)   // 下跌：绿
-                    else     -> UIManager.getColor("Table.foreground") ?: Color.BLACK
+                    d == null || d.isNaN() -> UIManager.getColor("Table.foreground") ?: t.foreground
+                    d > 0.0 -> QuoteRenderer.positiveColor(scheme) ?: t.foreground
+                    d < 0.0 -> QuoteRenderer.negativeColor(scheme) ?: t.foreground
+                    else    -> UIManager.getColor("Table.foreground") ?: t.foreground
                 }
                 return c
             }

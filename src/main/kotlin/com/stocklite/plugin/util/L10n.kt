@@ -9,6 +9,7 @@ object L10n {
     private fun s(zh: String, en: String) = if (isEn()) en else zh
 
     val tabUsMarket     get() = s("美股板块", "US Sectors")
+    val tabApiLog       get() = s("日志", "Logs")
     val tabStock       get() = s("股票", "Stocks")
     val tabFund        get() = s("基金", "Funds")
     val tabFuture      get() = s("期货", "Futures")
@@ -204,6 +205,8 @@ object L10n {
     val settingsFeatures    get() = s("功能开关",         "Features")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
+    val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
+                                        "Show API log tab (request monitoring, for debugging)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")
