@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.9.0</version>
+    <version>1.10.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -100,6 +100,18 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Shows: rank, stock code, name, NAV weight %, shares (10k), market value (10k CNY), change vs prior period</li>
   <li>Extra column: real-time / closing price change% for A-shares (red/green), overseas stocks show "--"</li>
   <li>Supports all fund types including QDII, mixed, and tech-theme funds</li>
+</ul>
+
+<h3>API Log Panel</h3>
+<ul>
+  <li>Optional tab (disabled by default, enable in Settings → Features) that records every HTTP request made by the plugin</li>
+  <li>Each entry shows: timestamp, method badge (GET/POST), label (e.g. "A-share quotes"), duration (color-coded: green &lt;500 ms, yellow &lt;2 s, red ≥2 s), and HTTP status</li>
+  <li>Click any row to expand: full URL, Referer, request body (POST), and formatted response body (JSON auto-prettified)</li>
+  <li>One-click <b>Copy as cURL</b>: generates a ready-to-paste curl command including all headers and request body</li>
+  <li>One-click <b>Copy response</b>: copies the prettified response body to clipboard</li>
+  <li>Filter to failed requests only with the "仅失败" toggle button; failure count shown in the toolbar</li>
+  <li>Pagination (20 entries/page); auto-pauses list refresh while you are viewing an expanded entry or non-first page — no layout jumps</li>
+  <li>Rolling buffer: keeps the latest 500 entries; oldest are dropped automatically</li>
 </ul>
 
 <h3>AI Deep Analysis</h3>
@@ -243,6 +255,18 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>支持所有基金类型：QDII、混合、科技主题等</li>
 </ul>
 
+<h3>接口日志面板</h3>
+<ul>
+  <li>新增"日志"标签页（默认关闭，在设置 → 功能开关中开启），记录插件发出的每一条 HTTP 请求</li>
+  <li>每条日志展示：时间、方法标签（GET/POST）、数据标注（如"两市成交额"）、耗时（绿色 &lt;500ms / 黄色 &lt;2s / 红色 ≥2s）、HTTP 状态码</li>
+  <li>点击任意行展开详情：完整 URL、Referer、请求体（POST）、响应体（JSON 自动格式化）</li>
+  <li>一键<b>复制为 cURL</b>：生成可直接粘贴执行的 curl 命令，含所有请求头和请求体</li>
+  <li>一键<b>复制响应体</b>：复制格式化后的响应内容到剪贴板</li>
+  <li>"仅失败"切换按钮：一键过滤失败请求；工具栏同步显示失败总数</li>
+  <li>翻页支持（每页 20 条）；查看展开详情或非第 1 页时自动暂停刷新，不打扰正在查看的内容</li>
+  <li>滚动存储：最多保留 500 条，超出时自动清除最早记录</li>
+</ul>
+
 <h3>AI 深度分析</h3>
 <ul>
   <li>在股票/基金/期货/全球指数行上右键，选择"AI 深度分析"</li>
@@ -287,39 +311,24 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.9.0</h3>
+<h3>1.10.0</h3>
 
-<h4>新增：交易记录</h4>
+<h4>新增：接口日志面板</h4>
 <ul>
-  <li>股票行右键新增「添加交易记录」和「交易记录」，支持记录买入/卖出，含价格、数量、日期、备注</li>
-  <li>创建/编辑持仓时自动生成对应交易记录；删除记录后自动重算持仓数量和加权均价</li>
-  <li>今日盈亏按每笔记录精确计算：当日买入以实际成本为基准，历史持仓以昨收为基准</li>
-  <li>新增「清仓」快捷操作：预填当前价和全部持仓数量，显示预计实现盈亏后确认执行</li>
-  <li>编辑持仓对话框中成本价和数量改为只读展示，统一通过交易记录修改</li>
+  <li>新增"日志"标签页（默认关闭，在设置 → 功能开关中开启），实时记录插件所有 HTTP 请求</li>
+  <li>每条日志展示时间、方法、数据标注、耗时、HTTP 状态码，点击展开完整 URL、请求体、格式化响应体</li>
+  <li>一键复制为 cURL 命令或复制响应体；"仅失败"一键过滤失败请求</li>
+  <li>翻页支持（每页 20 条），查看详情时自动暂停列表刷新，滚动保留最近 500 条</li>
 </ul>
 
-<h4>新增：财报日期标注</h4>
+<h4>优化：两市成交额数据源</h4>
 <ul>
-  <li>A 股股票名称列悬浮时显示上次财报日和下次预约披露日</li>
-  <li>距财报 30 天内名称旁显示彩色圆点（7天内红色，30天内橙色）</li>
+  <li>改用新浪上证/深证成指接口获取成交额，解决部分网络环境下东方财富接口无法直连导致数据长期显示旧快照的问题</li>
 </ul>
 
-<h4>新增：大盘数据时间标注</h4>
+<h4>修复：持仓详情涨跌幅颜色</h4>
 <ul>
-  <li>A 股大盘概览各子项（涨跌家数、成交额、主力资金等）悬浮时独立显示该项数据的实际获取时间</li>
-  <li>数据非今日时以橙色警告标注，避免用旧数据误判</li>
-</ul>
-
-<h4>优化：今日盈亏计算</h4>
-<ul>
-  <li>今日新建仓或调仓时，今日盈亏改以实际成本价为基准，不再错误使用昨收价计算</li>
-  <li>任务栏状态栏今日盈亏与面板保持完全一致，不再出现忽新忽旧的闪烁</li>
-</ul>
-
-<h4>优化：美股板块</h4>
-<ul>
-  <li>补充更多板块 ETF，覆盖商业航天/卫星、机器人、核电、电网、锂电池、铜/有色等</li>
-  <li>支持在设置中关闭美股板块标签页（默认关闭，按需开启）</li>
+  <li>基金持仓明细中的涨跌幅列现在跟随设置中的颜色方案（红涨绿跌 / 绿涨红跌 / 无色）</li>
 </ul>
     ]]></change-notes>
 

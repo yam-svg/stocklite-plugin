@@ -2,7 +2,7 @@
 
 股票 / 基金 / 期货行情与持仓管理，另含全球指数、美股板块看板，原生 Kotlin/Swing 实现，适配所有 JetBrains IDE（2024.1+）。
 
-**当前版本：1.9.0**
+**当前版本：1.10.0**
 
 ## 功能
 
@@ -16,9 +16,10 @@
 | 全球指数（Yahoo Finance）       | ✅          |
 | 港股行情（腾讯 API）              | ✅          |
 | 美股行情（Yahoo Finance）       | ✅          |
-| **交易记录（买入/卖出/清仓，精确今日盈亏计算）** | ✅ 1.9 新增 |
-| **财报日期标注（A 股，名称列悬浮显示，临近提醒）** | ✅ 1.9 新增 |
-| **大盘各子项独立数据时间标注**          | ✅ 1.9 新增 |
+| **接口日志面板（HTTP 请求监控，一键复制 cURL）** | ✅ 1.10 新增 |
+| 交易记录（买入/卖出/清仓，精确今日盈亏计算） | ✅ 1.9 新增 |
+| 财报日期标注（A 股，名称列悬浮显示，临近提醒） | ✅ 1.9 新增 |
+| 大盘各子项独立数据时间标注          | ✅ 1.9 新增 |
 | 美股板块面板（30+ ETF，收盘/实时双视图）  | ✅ 1.8 新增 |
 | 美股盘前/盘后涨跌幅标注（股票面板）       | ✅ 1.8 新增 |
 | 美股搜索增强（东方财富全库，支持中文名）     | ✅ 1.8 新增 |
@@ -139,6 +140,7 @@ src/main/kotlin/com/stocklite/plugin/
     ├── FuturePanel.kt              # 期货标签页
     ├── GlobalPanel.kt              # 全球指数标签页
     ├── UsMarketPanel.kt            # 美股板块标签页（1.8 新增）
+    ├── ApiLogPanel.kt              # 接口日志标签页（1.10 新增）
     ├── InlineChartPanel.kt         # 内嵌日内走势图面板（JBCefBrowser）
     ├── common/
     │   ├── Formatters.kt           # 数值格式化（自动 2/3/4 位小数）
@@ -147,6 +149,8 @@ src/main/kotlin/com/stocklite/plugin/
     │   ├── Formatters.kt           # 数值格式化（自动 2/3/4 位小数）
     │   ├── QuoteRenderer.kt        # 表格着色渲染器（红涨绿跌）
     │   └── FlashRenderer.kt        # 价格闪烁渲染器（继承 QuoteRenderer）
+    ├── service/
+    │   └── ApiLogger.kt            # 接口日志单例（1.10 新增）
     └── dialogs/
         ├── AddStockDialog.kt       # 添加/编辑股票
         ├── AddFundDialog.kt        # 添加/编辑基金
@@ -155,6 +159,17 @@ src/main/kotlin/com/stocklite/plugin/
         ├── SetAlertDialog.kt       # 设置价格到价提醒
         └── ImportExportDialog.kt   # 数据导入/导出
 ```
+
+## v1.10.0 新功能说明
+
+### 接口日志面板
+在设置 → 功能开关中开启"日志"标签页，可实时监控插件发出的所有 HTTP 请求。
+
+- 每条日志展示时间、方法标签（GET/POST）、数据归属（如"两市成交额"）、耗时（颜色区分快/中/慢）、HTTP 状态码
+- 点击展开详情：完整 URL、Referer、请求体（POST）、格式化响应体（JSON 自动美化）
+- **一键复制为 cURL**：生成可直接在终端粘贴的 curl 命令
+- **仅失败**切换按钮：快速过滤异常请求，定位数据获取问题
+- 翻页支持（每页 20 条），查看详情时自动暂停刷新，滚动保留最近 500 条记录
 
 ## v1.9.0 新功能说明
 
