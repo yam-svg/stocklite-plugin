@@ -10,6 +10,7 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.*
 import javax.swing.border.EmptyBorder
+import javax.swing.border.MatteBorder
 
 class ApiLogPanel : JPanel(BorderLayout()) {
 
@@ -37,11 +38,10 @@ class ApiLogPanel : JPanel(BorderLayout()) {
     }
 
     // ── pager ─────────────────────────────────────────────────────────────
-    private val prevBtn  = JButton("‹ 上一页").apply { font = font.deriveFont(11f) }
-    private val nextBtn  = JButton("下一页 ›").apply { font = font.deriveFont(11f) }
-    private val pageLbl  = JLabel("").apply        { font = font.deriveFont(11f); foreground = Color(0x888aaa) }
+    private val prevBtn = JButton("‹ 上一页").apply { font = font.deriveFont(11f) }
+    private val nextBtn = JButton("下一页 ›").apply { font = font.deriveFont(11f) }
+    private val pageLbl = JLabel("").apply         { font = font.deriveFont(11f); foreground = Color(0x888aaa) }
 
-    // 用户是否"正在查看"：有展开项 或 不在第 0 页
     private val userEngaged get() = expandedIds.isNotEmpty() || currentPage > 0
 
     private val visibleEntries get() =
@@ -50,12 +50,8 @@ class ApiLogPanel : JPanel(BorderLayout()) {
     private val logListener: () -> Unit = {
         allEntries = ApiLogger.getAll()
         if (userEngaged) {
-            // 用户正在查看：仅刷新计数，不重绘列表、不重置页码/滚动
             val failCount = allEntries.count { !it.success }
-            countLabel.text = buildString {
-                append("共 ${allEntries.size} 条")
-                if (failCount > 0) append("  失败 $failCount")
-            }
+            countLabel.text = countText(allEntries.size, failCount)
         } else {
             renderPage()
         }
@@ -89,7 +85,7 @@ class ApiLogPanel : JPanel(BorderLayout()) {
         pagerBar.add(prevBtn); pagerBar.add(pageLbl); pagerBar.add(nextBtn)
         prevBtn.addActionListener { if (currentPage > 0) { currentPage--; renderPage() } }
         nextBtn.addActionListener {
-            val max = ((allEntries.size - 1) / PAGE_SIZE).coerceAtLeast(0)
+            val max = ((visibleEntries.size - 1) / PAGE_SIZE).coerceAtLeast(0)
             if (currentPage < max) { currentPage++; renderPage() }
         }
 
@@ -108,6 +104,11 @@ class ApiLogPanel : JPanel(BorderLayout()) {
         }
     }
 
+    private fun countText(total: Int, fail: Int) = buildString {
+        append("共 $total 条")
+        if (fail > 0) append("  失败 $fail")
+    }
+
     private fun renderPage() {
         listPanel.removeAll()
 
@@ -117,10 +118,7 @@ class ApiLogPanel : JPanel(BorderLayout()) {
         currentPage = currentPage.coerceIn(0, maxPage)
 
         val failCount = allEntries.count { !it.success }
-        countLabel.text = buildString {
-            append("共 ${allEntries.size} 条")
-            if (failCount > 0) append("  失败 $failCount")
-        }
+        countLabel.text   = countText(allEntries.size, failCount)
         pageLbl.text      = if (total == 0) "无数据" else "第 ${currentPage + 1} / ${maxPage + 1} 页"
         prevBtn.isEnabled = currentPage > 0
         nextBtn.isEnabled = currentPage < maxPage
@@ -139,7 +137,6 @@ class ApiLogPanel : JPanel(BorderLayout()) {
 
         listPanel.revalidate()
         listPanel.repaint()
-        // 只有非 engaged 状态才重置滚动（此时 userEngaged 一定是 false）
         scrollPane.verticalScrollBar.value = 0
     }
 
@@ -153,46 +150,34 @@ class ApiLogPanel : JPanel(BorderLayout()) {
 
     inner class LogItemPanel(private val entry: ApiLogEntry) : JPanel(BorderLayout()) {
 
-        private val formattedBody: String = formatBody(entry.responseBody)
+        private val formattedBody = formatBody(entry.responseBody)
 
         private val arrowLbl = JLabel("▸").apply {
             font      = font.deriveFont(10f)
             foreground = Color(0x6c7086)
         }
 
-        private val bodyArea = JTextArea(formattedBody).apply {
-            isEditable    = false
-            lineWrap      = true
-            wrapStyleWord = true
-            font          = Font(Font.MONOSPACED, Font.PLAIN, 11)
-            foreground    = Color(0xaaaaaa)
-            background    = Color(0x1e1e2e)
-            border        = EmptyBorder(6, 10, 6, 10)
-            rows          = 8
-        }
-
-        private val bodyContainer = buildBodyContainer()
-
         init {
-            border     = EmptyBorder(0, 4, 0, 4)
+            border     = MatteBorder(0, 0, 1, 0, Color(0x313244))
             background = Color(0x181825)
             isOpaque   = true
 
             val header = buildHeader()
-            add(header,        BorderLayout.NORTH)
-            add(bodyContainer, BorderLayout.CENTER)
+            val detail = buildDetail()
+            add(header, BorderLayout.NORTH)
+            add(detail, BorderLayout.CENTER)
 
             val expanded = entry.id in expandedIds
-            arrowLbl.text        = if (expanded) "▾" else "▸"
-            bodyContainer.isVisible = expanded
+            arrowLbl.text    = if (expanded) "▾" else "▸"
+            detail.isVisible = expanded
 
             header.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             header.addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     val nowExpanded = entry.id !in expandedIds
                     if (nowExpanded) expandedIds.add(entry.id) else expandedIds.remove(entry.id)
-                    arrowLbl.text           = if (nowExpanded) "▾" else "▸"
-                    bodyContainer.isVisible = nowExpanded
+                    arrowLbl.text    = if (nowExpanded) "▾" else "▸"
+                    detail.isVisible = nowExpanded
                     revalidate(); repaint()
                     SwingUtilities.getAncestorOfClass(JScrollPane::class.java, this@LogItemPanel)
                         ?.let { it.revalidate(); it.repaint() }
@@ -204,70 +189,125 @@ class ApiLogPanel : JPanel(BorderLayout()) {
             val p = JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)).apply {
                 background = Color(0x181825); isOpaque = true
             }
-            val icon = JLabel(if (entry.success) "✓" else "✗").apply {
+            p.add(JLabel(if (entry.success) "✓" else "✗").apply {
                 font      = font.deriveFont(Font.BOLD, 12f)
                 foreground = if (entry.success) Color(0xa6e3a1) else Color(0xf38ba8)
-            }
-            val time = JLabel(entry.time).apply {
+            })
+            p.add(JLabel(entry.time).apply {
                 font      = font.deriveFont(11f)
                 foreground = Color(0x6c7086)
-            }
-            val chip = JLabel(" ${entry.label} ").apply {
+            })
+            p.add(JLabel(" ${entry.method} ").apply {
+                font       = font.deriveFont(Font.BOLD, 10f)
+                foreground = Color(0x89b4fa)
+                background = Color(0x1e1e2e)
+                isOpaque   = true
+                border     = EmptyBorder(1, 3, 1, 3)
+            })
+            p.add(JLabel(" ${entry.label} ").apply {
                 font       = font.deriveFont(Font.BOLD, 11f)
                 foreground = Color(0xcdd6f4)
                 background = Color(0x313244)
                 isOpaque   = true
                 border     = EmptyBorder(1, 4, 1, 4)
-            }
-            val dur = JLabel("${entry.durationMs}ms").apply {
+            })
+            p.add(JLabel("${entry.durationMs}ms").apply {
                 font      = font.deriveFont(11f)
                 foreground = when {
                     entry.durationMs < 500  -> Color(0xa6e3a1)
                     entry.durationMs < 2000 -> Color(0xf9e2af)
                     else                    -> Color(0xf38ba8)
                 }
-            }
-            val status = JLabel(if (entry.statusCode == -1) "ERR" else "HTTP ${entry.statusCode}").apply {
+            })
+            p.add(JLabel(if (entry.statusCode == -1) "ERR" else "HTTP ${entry.statusCode}").apply {
                 font      = font.deriveFont(10f)
                 foreground = if (entry.success) Color(0x6c7086) else Color(0xeba0ac)
-            }
-            p.add(icon); p.add(time); p.add(chip); p.add(dur); p.add(status); p.add(arrowLbl)
+            })
+            p.add(arrowLbl)
             return p
         }
 
-        private fun buildBodyContainer(): JPanel {
-            val copyBtn = JButton("复制").apply {
-                font           = font.deriveFont(10f)
-                isFocusPainted = false
-                cursor         = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                toolTipText    = "复制响应内容到剪贴板"
+        private fun buildDetail(): JPanel {
+            val bg = Color(0x1e1e2e)
+
+            fun sectionLabel(text: String) = JLabel(text).apply {
+                font       = font.deriveFont(Font.BOLD, 10f)
+                foreground = Color(0x6c7086)
+                border     = EmptyBorder(6, 10, 2, 10)
+            }
+
+            fun textArea(content: String, rows: Int = 4) = JTextArea(content).apply {
+                isEditable    = false
+                lineWrap      = true
+                wrapStyleWord = true
+                font          = Font(Font.MONOSPACED, Font.PLAIN, 11)
+                foreground    = Color(0xcdd6f4)
+                background    = bg
+                border        = EmptyBorder(2, 10, 6, 10)
+                this.rows     = rows
+            }
+
+            val detail = JPanel().apply {
+                layout     = BoxLayout(this, BoxLayout.Y_AXIS)
+                background = bg
+                isOpaque   = true
+                border     = EmptyBorder(0, 0, 4, 0)
+            }
+
+            // ── 完整 URL ──
+            detail.add(sectionLabel("URL"))
+            val urlArea = textArea(entry.url, rows = 2)
+            detail.add(JScrollPane(urlArea).apply { border = null; maximumSize = Dimension(Int.MAX_VALUE, 60) })
+
+            // ── Referer（若存在）──
+            if (!entry.referer.isNullOrBlank()) {
+                detail.add(sectionLabel("Referer"))
+                detail.add(textArea(entry.referer, rows = 1).also {
+                    it.rows = 1
+                })
+            }
+
+            // ── 请求体（POST）──
+            if (!entry.requestBody.isNullOrBlank()) {
+                detail.add(sectionLabel("请求体"))
+                val reqFmt = formatBody(entry.requestBody)
+                val reqArea = textArea(reqFmt, rows = 5)
+                detail.add(JScrollPane(reqArea).apply { border = null; maximumSize = Dimension(Int.MAX_VALUE, 120) })
+            }
+
+            // ── 响应体 ──
+            detail.add(sectionLabel("响应体"))
+            val respArea = textArea(formattedBody, rows = 8)
+            detail.add(JScrollPane(respArea).apply { border = null; maximumSize = Dimension(Int.MAX_VALUE, 200) })
+
+            // ── 操作按钮栏 ──
+            val btnBar = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 4)).apply {
+                background = bg; isOpaque = true
+            }
+
+            val curlBtn = JButton("复制为 cURL").apply { font = font.deriveFont(10f); isFocusPainted = false }
+            val copyBtn = JButton("复制响应体").apply  { font = font.deriveFont(10f); isFocusPainted = false }
+
+            curlBtn.addActionListener {
+                copyToClipboard(buildCurl(entry))
+                flashButton(curlBtn, "已复制 ✓", "复制为 cURL")
             }
             copyBtn.addActionListener {
-                Toolkit.getDefaultToolkit().systemClipboard
-                    .setContents(StringSelection(formattedBody), null)
-                copyBtn.text = "已复制 ✓"
-                Timer(1500) { copyBtn.text = "复制" }.also { it.isRepeats = false; it.start() }
+                copyToClipboard(formattedBody)
+                flashButton(copyBtn, "已复制 ✓", "复制响应体")
             }
 
-            val bodyToolbar = JPanel(FlowLayout(FlowLayout.RIGHT, 6, 2)).apply {
-                background = Color(0x1e1e2e); isOpaque = true
-                add(copyBtn)
-            }
+            btnBar.add(curlBtn); btnBar.add(copyBtn)
+            detail.add(btnBar)
 
-            val bodyScroll = JScrollPane(bodyArea).apply { border = null }
-
-            val container = JPanel(BorderLayout()).apply {
-                background = Color(0x1e1e2e); isOpaque = true
-                add(bodyToolbar, BorderLayout.NORTH)
-                add(bodyScroll,  BorderLayout.CENTER)
-            }
-            return container
+            return detail
         }
     }
 
     fun dispose() { ApiLogger.removeListener(logListener) }
 
     companion object {
+
         private fun formatBody(raw: String?): String {
             if (raw.isNullOrBlank()) return "(无响应体)"
             val trimmed = raw.trim()
@@ -278,6 +318,27 @@ class ApiLogPanel : JPanel(BorderLayout()) {
                 return try { JSONArray(trimmed).toString(2) } catch (_: Exception) { raw }
             }
             return raw
+        }
+
+        private fun buildCurl(e: ApiLogEntry): String = buildString {
+            append("curl -X ${e.method}")
+            append(" \\\n  '${e.url}'")
+            append(" \\\n  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'")
+            if (!e.referer.isNullOrBlank()) append(" \\\n  -H 'Referer: ${e.referer}'")
+            if (e.method == "POST" && !e.requestBody.isNullOrBlank()) {
+                append(" \\\n  -H 'Content-Type: application/json'")
+                val escaped = e.requestBody.replace("'", "'\\''")
+                append(" \\\n  -d '${escaped}'")
+            }
+        }
+
+        private fun copyToClipboard(text: String) {
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+        }
+
+        private fun flashButton(btn: JButton, flash: String, original: String) {
+            btn.text = flash
+            Timer(1500) { btn.text = original }.also { it.isRepeats = false; it.start() }
         }
     }
 }

@@ -128,7 +128,8 @@ object MarketDataService {
 
         val symbol = MARKET_CALENDAR_SYMBOL[market] ?: return weekdayFallback
         val enc = URLEncoder.encode(resolveYahooSymbol(symbol), "UTF-8")
-        val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1d&range=5d")
+        val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1d&range=5d",
+            label = "市场交易日历")
             ?: return cached?.first ?: weekdayFallback
 
         val isTradingDay = try {
@@ -443,7 +444,7 @@ object MarketDataService {
     }
 
     private fun fetchFundName(code: String): String? {
-        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js") ?: return null
+        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js", label = "基金名称查询") ?: return null
         val m = Regex("""jsonpgz\((.*)\);?""").find(raw)?.groupValues?.get(1) ?: return null
         return try { JSONObject(m).optString("name").ifEmpty { null } } catch (_: Exception) { null }
     }
@@ -698,7 +699,8 @@ object MarketDataService {
     /** 移植 fetchYahooIndexQuote + fetchUnifiedPreviousClose（保留旧方法供内部复用） */
     private fun fetchYahooQuote(symbol: String, now: Long): Pair<Double, Double>? {
         val enc = URLEncoder.encode(resolveYahooSymbol(symbol), "UTF-8")
-        val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=5d") ?: return null
+        val raw = HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=5d",
+            label = "全球指数-Yahoo(${symbol})") ?: return null
         return parseYahooBody(raw, symbol, now)
     }
 
@@ -1357,7 +1359,8 @@ object MarketDataService {
                 val enc = URLEncoder.encode(symbol, "UTF-8")
                 // includePrePost=true 使盘前/盘后分钟数据包含在 indicators 里
                 val raw = HttpUtil.get(
-                    "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d&includePrePost=true"
+                    "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d&includePrePost=true",
+                    label = "美股板块ETF"
                 ) ?: continue
                 val result0 = JSONObject(raw).optJSONObject("chart")
                     ?.optJSONArray("result")?.optJSONObject(0) ?: continue

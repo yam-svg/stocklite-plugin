@@ -21,15 +21,15 @@ object HttpUtil {
             conn.setRequestProperty("Accept", "*/*")
             conn.connectTimeout = TIMEOUT
             conn.readTimeout = TIMEOUT
-            val code  = conn.responseCode
-            val body  = if (code == 200) String(conn.inputStream.readBytes(), Charset.forName(charset)) else null
+            val code = conn.responseCode
+            val body = if (code == 200) String(conn.inputStream.readBytes(), Charset.forName(charset)) else null
             conn.disconnect()
-            ApiLogger.log(label ?: urlLabel(url), url, code == 200, code,
-                System.currentTimeMillis() - t0, body)
+            ApiLogger.log(label ?: urlLabel(url), "GET", url, referer, null,
+                code == 200, code, System.currentTimeMillis() - t0, body)
             body
         } catch (e: Exception) {
-            ApiLogger.log(label ?: urlLabel(url), url, false, -1,
-                System.currentTimeMillis() - t0, e.message)
+            ApiLogger.log(label ?: urlLabel(url), "GET", url, referer, null,
+                false, -1, System.currentTimeMillis() - t0, e.message)
             null
         }
     }
@@ -46,6 +46,10 @@ object HttpUtil {
     fun post(url: String, json: String, authHeader: String? = null, timeoutMs: Int = 45_000,
              label: String? = null): Pair<Int, String?> {
         val t0 = System.currentTimeMillis()
+        // Authorization header 中的 Bearer token 脱敏：只保留前8位
+        val sanitizedReqBody = if (authHeader != null)
+            json.replace(Regex("\"(sk-[A-Za-z0-9]{4})[A-Za-z0-9]+\""), "\"$1…\"")
+        else json
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
@@ -63,12 +67,12 @@ object HttpUtil {
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val body   = stream?.use { String(it.readBytes(), Charsets.UTF_8) }
             conn.disconnect()
-            ApiLogger.log(label ?: urlLabel(url), url, code in 200..299, code,
-                System.currentTimeMillis() - t0, body)
+            ApiLogger.log(label ?: urlLabel(url), "POST", url, null, sanitizedReqBody,
+                code in 200..299, code, System.currentTimeMillis() - t0, body)
             code to body
         } catch (e: Exception) {
-            ApiLogger.log(label ?: urlLabel(url), url, false, -1,
-                System.currentTimeMillis() - t0, e.message)
+            ApiLogger.log(label ?: urlLabel(url), "POST", url, null, sanitizedReqBody,
+                false, -1, System.currentTimeMillis() - t0, e.message)
             -1 to e.message
         }
     }
@@ -84,22 +88,20 @@ object HttpUtil {
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.setRequestProperty("User-Agent", UA)
-            if (referer     != null) conn.setRequestProperty("Referer",       referer)
-            if (authHeader  != null) conn.setRequestProperty("Authorization", authHeader)
+            if (referer    != null) conn.setRequestProperty("Referer",       referer)
+            if (authHeader != null) conn.setRequestProperty("Authorization", authHeader)
             conn.setRequestProperty("Accept", "*/*")
             conn.connectTimeout = TIMEOUT
             conn.readTimeout = TIMEOUT
             val code = conn.responseCode
-            val body = if (code == 200) {
-                String(conn.inputStream.readBytes(), Charset.forName(charset))
-            } else null
+            val body = if (code == 200) String(conn.inputStream.readBytes(), Charset.forName(charset)) else null
             conn.disconnect()
-            ApiLogger.log(label ?: urlLabel(url), url, code == 200, code,
-                System.currentTimeMillis() - t0, body)
+            ApiLogger.log(label ?: urlLabel(url), "GET", url, referer, null,
+                code == 200, code, System.currentTimeMillis() - t0, body)
             code to body
         } catch (e: Exception) {
-            ApiLogger.log(label ?: urlLabel(url), url, false, -1,
-                System.currentTimeMillis() - t0, e.message)
+            ApiLogger.log(label ?: urlLabel(url), "GET", url, referer, null,
+                false, -1, System.currentTimeMillis() - t0, e.message)
             -1 to null
         }
     }

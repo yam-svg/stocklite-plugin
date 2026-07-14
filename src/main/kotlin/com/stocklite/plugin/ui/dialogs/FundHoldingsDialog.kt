@@ -362,7 +362,7 @@ class FundHoldingsDialog(
 
         val url = "http://hq.sinajs.cn/list=${codeToSymbol.values.joinToString(",")}"
         // 新浪用 GBK，但我们只取纯数字字段，用 UTF-8 也能读取
-        val raw = HttpUtil.getGbk(url, "https://finance.sina.com.cn/")
+        val raw = HttpUtil.getGbk(url, "https://finance.sina.com.cn/", label = "持仓股票涨跌幅")
             ?: return emptyMap()
 
         // 解析格式：var hq_str_sh600519="贵州茅台,开盘,昨收,现价,最高,最低,...";
