@@ -42,6 +42,14 @@ object ChartDataService {
     // ── Public API ──────────────────────────────────────────────────────
 
     fun getStockIntraday(symbol: String): List<ChartPoint> {
+        // 港股：hk07709 → 腾讯港股分时接口（新浪/Yahoo 均不支持港股 ETF 分时）
+        if (symbol.startsWith("hk", ignoreCase = true)) {
+            val hkCode = symbol.removePrefix("hk").removePrefix("HK")
+            val pts = fetchHkIntraday(hkCode)
+            if (pts.isNotEmpty()) return pts
+            // 腾讯失败时 fallback 到 Yahoo Finance
+            return fetchYahooIntraday("$hkCode.HK")
+        }
         val oneMin = fetchSinaKline(symbol, scale = 1, datalen = 600)
         if (oneMin.isNotEmpty()) return oneMin
         return fetchSinaKline(symbol, scale = 5, datalen = 288)
@@ -81,6 +89,15 @@ object ChartDataService {
             else
                 fetchGlobalFutureDailyHistory(normalized.removePrefix("hf_"))
             return resampleDaily(daily, period, count)
+        }
+        // 港股：hk07709 → 腾讯 newfqkline 接口，fallback Yahoo Finance
+        if (symbol.startsWith("hk", ignoreCase = true)) {
+            val hkCode = symbol.removePrefix("hk").removePrefix("HK")
+            val pts = fetchHkHistory(hkCode, period, count)
+            if (pts.isNotEmpty()) return pts
+            val yahooInterval = when (period) { "daily" -> "1d"; "weekly" -> "1wk"; "monthly" -> "1mo"; else -> "1d" }
+            val yahooRange    = when (period) { "daily" -> "3mo"; "weekly" -> "1y"; "monthly" -> "5y"; else -> "3mo" }
+            return fetchYahooHistory("$hkCode.HK", yahooInterval, yahooRange, count)
         }
         // A 股 / 国内指数 → 新浪
         if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
@@ -370,6 +387,82 @@ object ChartDataService {
                 list.add(ChartPoint(t, c, o, h, l))
             }
             list.takeLast(maxCount)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    // ── 港股分时 & K 线（腾讯接口）─────────────────────────────────────────
+
+    /**
+     * 港股日内分时，用腾讯 proxy.finance.qq.com 接口。
+     * 返回格式：每条 "HHMM cumPrice cumVol cumAmount"（累计量），需差分算每分钟价格。
+     * 实际价格取每分钟末的实时价（累计量差分仅用于成交量，价格直接用该分钟最新价）。
+     */
+    private fun fetchHkIntraday(code: String): List<ChartPoint> {
+        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/minute/query" +
+                  "?code=hk$code&_var=min_data"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            // 格式：min_data={...}
+            val json  = raw.substringAfter("=").trim()
+            val arr   = JSONObject(json).getJSONObject("data")
+                .getJSONObject("hk$code").getJSONObject("data")
+                .getJSONArray("data")
+            val shZone = ZoneId.of("Asia/Hong_Kong")
+            val today  = java.time.LocalDate.now(shZone).toString()
+            val list   = mutableListOf<ChartPoint>()
+            var prevCumVol = 0.0
+            for (i in 0 until arr.length()) {
+                val parts = arr.getString(i).split(" ")
+                if (parts.size < 2) continue
+                val timeStr   = parts[0]           // "HHMM"
+                val price     = parts[1].toDoubleOrNull() ?: continue
+                val cumVol    = parts.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+                val vol       = (cumVol - prevCumVol).coerceAtLeast(0.0)
+                prevCumVol    = cumVol
+                if (price <= 0) continue
+                val hh = timeStr.take(2).toIntOrNull() ?: continue
+                val mm = timeStr.takeLast(2).toIntOrNull() ?: continue
+                val ts = java.time.LocalDateTime.of(
+                    java.time.LocalDate.now(shZone), java.time.LocalTime.of(hh, mm)
+                ).atZone(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, price))
+            }
+            list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /**
+     * 港股历史 K 线（日/周/月），用腾讯 newfqkline 接口。
+     * 字段顺序：[date, close, open, high, low, volume, {}, change, amount, ...]
+     */
+    private fun fetchHkHistory(code: String, period: String, count: Int): List<ChartPoint> {
+        val periodParam = when (period) {
+            "weekly"  -> "week"
+            "monthly" -> "month"
+            else      -> "day"
+        }
+        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get" +
+                  "?param=hk$code,$periodParam,,,$count,qfq&_var=kline_${periodParam}qfq"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val json  = raw.substringAfter("=").trim()
+            val bars  = JSONObject(json).getJSONObject("data")
+                .getJSONObject("hk$code").getJSONArray(periodParam)
+            val shZone = ZoneId.of("Asia/Hong_Kong")
+            val list   = mutableListOf<ChartPoint>()
+            for (i in 0 until bars.length()) {
+                val bar  = bars.getJSONArray(i)
+                val date = bar.optString(0, "")
+                if (date.isEmpty()) continue
+                val close  = bar.optString(1, "").toDoubleOrNull() ?: continue
+                val open   = bar.optString(2, "").toDoubleOrNull() ?: Double.NaN
+                val high   = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
+                val low    = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
+                val ts     = java.time.LocalDate.parse(date)
+                    .atStartOfDay(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, close, open, high, low))
+            }
+            list.takeLast(count)
         } catch (_: Exception) { emptyList() }
     }
 

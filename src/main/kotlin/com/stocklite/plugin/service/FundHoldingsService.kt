@@ -71,8 +71,8 @@ object FundHoldingsService {
                 "暂无持仓数据。该基金可能为债券型/货币型，或尚未公布季报。")
 
         if (contentHtml.isBlank() || !contentHtml.contains("<tr")) {
-            return FundHoldingsResult("", "", emptyList(), 0,
-                "暂无股票持仓数据。该基金可能为纯债券型或货币市场基金。")
+            return FundHoldingsResult("", "", emptyList(), 0, null)
+            // 返回 error=null 但 items 为空，交由 Dialog 给出更详细提示
         }
 
         // ── 提取报告期（从 content HTML 内的 caption 或日期文本）──

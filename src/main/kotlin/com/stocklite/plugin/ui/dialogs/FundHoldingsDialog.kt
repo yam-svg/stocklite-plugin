@@ -306,7 +306,17 @@ class FundHoldingsDialog(
         infoLabel.text = "  $dateStr$labelStr$countStr"
 
         if (items.isEmpty()) {
-            statusLabel.text = "<html><center>暂无股票持仓明细。<br>该基金可能为债券型或货币市场基金。</center></html>"
+            statusLabel.text = "<html><center>暂无股票持仓明细。<br>" +
+                "可能原因：① 东方财富尚未收录该基金的季报持仓<br>" +
+                "② 该基金为债券型/货币型，无股票持仓<br>" +
+                "③ 港股/海外 ETF 持仓需在东方财富官网查看<br><br>" +
+                "<a href='https://fund.eastmoney.com/$fundCode.html'>点击在浏览器中查看东方财富基金页面</a></center></html>"
+            statusLabel.addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    com.intellij.ide.BrowserUtil.browse("https://fund.eastmoney.com/$fundCode.html")
+                }
+            })
+            statusLabel.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
             showCard("error")
         } else {
             showCard("table")

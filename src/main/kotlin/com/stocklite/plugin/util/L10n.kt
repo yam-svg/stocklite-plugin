@@ -231,6 +231,7 @@ object L10n {
     val settingsOptFundPnlPct   get() = s("盈亏%",    "P&L%")
     // AI 分析面板
     val tradeEditHint     get() = s("通过交易记录修改", "Edit via Trade History")
+    val btnFundHoldings   get() = s("持仓明细", "Holdings Detail")
     val lblEarningsLast   get() = s("上次财报", "Last earnings")
     val lblEarningsNext   get() = s("下次财报", "Next earnings")
     val lblEarningsSoon   get() = s("财报临近", "Earnings soon")

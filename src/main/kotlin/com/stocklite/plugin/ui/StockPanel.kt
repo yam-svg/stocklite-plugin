@@ -13,6 +13,7 @@ import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
 import com.stocklite.plugin.ui.dialogs.AddTradeRecordDialog
 import com.stocklite.plugin.ui.dialogs.ClosePositionDialog
+import com.stocklite.plugin.ui.dialogs.FundHoldingsDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.dialogs.SetAlertDialog
 import com.stocklite.plugin.ui.dialogs.TradeHistoryDialog
@@ -274,23 +275,30 @@ class StockPanel : JPanel(BorderLayout()),
         table.selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
         centerTableHeader(table)
 
-        // 左键：点击涨跌幅列展开图表
+        // 左键：点击涨跌幅列展开图表；点击名称列对 ETF 弹出持仓明细
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
                 if (SwingUtilities.isRightMouseButton(e)) return
-                if (table.getColumnName(viewCol) != L10n.colChangePct) return
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
                 val (s, q) = rows[modelRow]
-                chartPanel.showChart(
-                    displayName   = s.alias.ifBlank { s.name },
-                    displaySymbol = s.symbol,
-                    changePercent = q?.changePercent ?: 0.0,
-                    prevClose     = q?.prevClose ?: 0.0,
-                    fetchData     = { ChartDataService.getStockIntraday(s.symbol) }
-                )
+                when (table.getColumnName(viewCol)) {
+                    L10n.colChangePct -> chartPanel.showChart(
+                        displayName   = s.alias.ifBlank { s.name },
+                        displaySymbol = s.symbol,
+                        changePercent = q?.changePercent ?: 0.0,
+                        prevClose     = q?.prevClose ?: 0.0,
+                        fetchData     = { ChartDataService.getStockIntraday(s.symbol) }
+                    )
+                    L10n.colName -> if (isEtfLike(s.symbol, s.name)) {
+                        FundHoldingsDialog(
+                            fundName = s.alias.ifBlank { s.name },
+                            fundCode = toPureCode(s.symbol)
+                        ).show()
+                    }
+                }
             }
 
             // 右键菜单
@@ -302,10 +310,15 @@ class StockPanel : JPanel(BorderLayout()),
             override fun mouseMoved(e: MouseEvent) {
                 val col     = table.columnAtPoint(e.point)
                 val viewRow = table.rowAtPoint(e.point)
-                // 鼠标指针
-                table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colChangePct)
-                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                else Cursor.getDefaultCursor()
+                // 鼠标指针：涨跌幅列和 ETF 名称列显示手形
+                val colName = if (col >= 0) table.getColumnName(col) else ""
+                val isHandCursor = colName == L10n.colChangePct ||
+                    (colName == L10n.colName && viewRow >= 0 && run {
+                        val mr = try { table.convertRowIndexToModel(viewRow) } catch (_: Exception) { -1 }
+                        mr >= 0 && mr < rows.size && rows[mr].first.let { isEtfLike(it.symbol, it.name) }
+                    })
+                table.cursor = if (isHandCursor) Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                               else Cursor.getDefaultCursor()
                 // 名称列：显示财报日期 tooltip
                 if (col >= 0 && table.getColumnName(col) == L10n.colName && viewRow >= 0) {
                     val modelRow = table.convertRowIndexToModel(viewRow)
@@ -411,6 +424,15 @@ class StockPanel : JPanel(BorderLayout()),
                 }.show()
             }})
         }
+        // ETF/LOF/指数基金：显示持仓明细入口
+        if (isEtfLike(s.symbol, s.name)) {
+            popup.add(JMenuItem(L10n.btnFundHoldings).also { it.addActionListener {
+                FundHoldingsDialog(
+                    fundName = s.alias.ifBlank { s.name },
+                    fundCode = toPureCode(s.symbol)
+                ).show()
+            }})
+        }
         popup.addSeparator()
         popup.add(JMenuItem(L10n.btnAiDeepAnalysis).also { it.addActionListener {
             com.stocklite.plugin.ui.dialogs.AiDeepAnalysisDialog(
@@ -440,6 +462,26 @@ class StockPanel : JPanel(BorderLayout()),
         }
         return sb.toString().trim()
     }
+
+    /**
+     * 判断股票代码是否为 ETF/LOF/指数基金，可以用基金持仓明细接口查持仓。
+     * 规则：A 股代码前缀匹配常见 ETF/LOF 号段，或名称含"ETF"/"LOF"/"指数"。
+     */
+    private fun isEtfLike(symbol: String, name: String): Boolean {
+        val code = symbol.lowercase()
+        val etfPrefixes = listOf(
+            "sh51", "sh15", "sh56", "sh58", "sh50",   // 沪市 ETF
+            "sz15", "sz16", "sz18", "sz16"              // 深市 ETF/LOF
+        )
+        if (etfPrefixes.any { code.startsWith(it) }) return true
+        val upperName = name.uppercase()
+        return upperName.contains("ETF") || upperName.contains("LOF") ||
+               upperName.contains("指数") || upperName.contains("增强")
+    }
+
+    /** 从 sh600519 / sz000858 格式提取纯6位基金代码 */
+    private fun toPureCode(symbol: String): String =
+        symbol.removePrefix("sh").removePrefix("sz").removePrefix("hk")
 
     private fun buildStockUrl(symbol: String): String {
         return when {
