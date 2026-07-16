@@ -13,7 +13,9 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.*
 
-class UsMarketPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
+class UsMarketPanel : JPanel(BorderLayout()),
+    StockliteState.LanguageListener,
+    StockliteState.FeatureToggleListener {
 
     /**
      * CLOSE：永远显示上次正式收盘涨跌幅（regularMarketPrice vs previousClose）
@@ -51,9 +53,11 @@ class UsMarketPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
     init {
         StockliteState.getInstance().addLanguageListener(this)
+        StockliteState.getInstance().addFeatureToggleListener(this)
         buildUI()
         buildGroups()
-        scheduleRefresh()
+        // 功能开关关闭时不启动定时器，避免面板未开启也在后台持续拉取 30+ 个 ETF 数据
+        if (StockliteState.getInstance().enableUsMarketPanel) scheduleRefresh()
         addHierarchyListener { _ ->
             val showing = isShowing
             if (showing != panelActive) {
@@ -68,6 +72,18 @@ class UsMarketPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         updateLiveBtnText()
         updateAllPctLabels()
         revalidate(); repaint()
+    }
+
+    /** 设置里开启/关闭美股板块时，同步启停后台轮询定时器 */
+    override fun onFeatureToggleChanged() {
+        val enabled = StockliteState.getInstance().enableUsMarketPanel
+        if (enabled) {
+            if (refreshTimer == null) scheduleRefresh()
+            fetchAsync()
+        } else {
+            refreshTimer?.stop()
+            refreshTimer = null
+        }
     }
 
     private fun buildUI() {
@@ -205,7 +221,7 @@ class UsMarketPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     fun fetchAsync() {
-        if (!panelActive) return
+        if (!panelActive || !StockliteState.getInstance().enableUsMarketPanel) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val fetched = MarketDataService.getUsSectorQuotes()
             SwingUtilities.invokeLater {
