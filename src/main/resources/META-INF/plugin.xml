@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.10.0</version>
+    <version>1.10.1</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -311,24 +311,12 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.10.0</h3>
+<h3>1.10.1</h3>
 
-<h4>新增：接口日志面板</h4>
+<h4>修复：基金官方涨跌幅长期不更新</h4>
 <ul>
-  <li>新增"日志"标签页（默认关闭，在设置 → 功能开关中开启），实时记录插件所有 HTTP 请求</li>
-  <li>每条日志展示时间、方法、数据标注、耗时、HTTP 状态码，点击展开完整 URL、请求体、格式化响应体</li>
-  <li>一键复制为 cURL 命令或复制响应体；"仅失败"一键过滤失败请求</li>
-  <li>翻页支持（每页 20 条），查看详情时自动暂停列表刷新，滚动保留最近 500 条</li>
-</ul>
-
-<h4>优化：两市成交额数据源</h4>
-<ul>
-  <li>改用新浪上证/深证成指接口获取成交额，解决部分网络环境下东方财富接口无法直连导致数据长期显示旧快照的问题</li>
-</ul>
-
-<h4>修复：持仓详情涨跌幅颜色</h4>
-<ul>
-  <li>基金持仓明细中的涨跌幅列现在跟随设置中的颜色方案（红涨绿跌 / 绿涨红跌 / 无色）</li>
+  <li>东方财富已将基金历史净值接口迁移至新版 JSON API，旧接口对所有基金均返回空数据，导致官方涨跌幅无法更新；QDII 基金因完全依赖该数据源，涨跌幅长期停留在 0.00%</li>
+  <li>已切换至东方财富新版接口，基金官方涨跌幅恢复正常更新</li>
 </ul>
     ]]></change-notes>
 

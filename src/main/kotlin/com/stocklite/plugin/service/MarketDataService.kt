@@ -449,42 +449,34 @@ object MarketDataService {
         return try { JSONObject(m).optString("name").ifEmpty { null } } catch (_: Exception) { null }
     }
 
-    /** 移植 parseF10LatestNav：解析东方财富历史净值 HTML 表格 */
+    /**
+     * 基金历史净值：东方财富官方前端已将该接口迁移至 api.fund.eastmoney.com/f10/lsjz（JSON），
+     * 旧版 fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz（HTML 表格）已被后端废弃，
+     * 现对任意基金代码均返回空响应（HTTP 200，body 仅 "var apidata="），不再更新数据。
+     */
     private data class F10Nav(val date: String, val nav: Double, val changePercent: Double, val prevNav: Double)
 
     private fun fetchF10Nav(code: String): F10Nav? {
         val raw = HttpUtil.get(
-            "https://fundf10.eastmoney.com/F10DataApi.aspx?type=lsjz&sdate=&edate=&code=$code",
-            "https://fundf10.eastmoney.com/", label = "基金历史净值(F10)") ?: return null
+            "https://api.fund.eastmoney.com/f10/lsjz?fundCode=$code&pageIndex=1&pageSize=1",
+            "https://fundf10.eastmoney.com/jjjz_$code.html", label = "基金历史净值(F10)") ?: return null
         return parseF10LatestNav(raw)
     }
 
-    private fun parseF10LatestNav(html: String): F10Nav? {
-        val stripHtml = { s: String -> s.replace(Regex("<[^>]*>"), "").replace("&nbsp;", "").trim() }
-        val thead = Regex("<thead>(.*?)</thead>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1) ?: ""
-        val headers = Regex("<th[^>]*>(.*?)</th>", RegexOption.DOT_MATCHES_ALL)
-            .findAll(thead).map { stripHtml(it.groupValues[1]) }.toList()
-
-        val tbody = Regex("<tbody>(.*?)</tbody>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1) ?: return null
-        val firstRow = Regex("<tr[^>]*>(.*?)</tr>", RegexOption.DOT_MATCHES_ALL).find(tbody)?.groupValues?.get(1) ?: return null
-        val cells = Regex("<td[^>]*>(.*?)</td>", RegexOption.DOT_MATCHES_ALL)
-            .findAll(firstRow).map { stripHtml(it.groupValues[1]) }.toList()
-        if (cells.size < 2) return null
-
-        fun findIdx(kws: List<String>, fallback: Int): Int {
-            val i = headers.indexOfFirst { h -> kws.any { h.contains(it) } }
-            return if (i >= 0) i else fallback
-        }
-        val dateIdx   = findIdx(listOf("净值日期","日期"), 0)
-        val navIdx    = findIdx(listOf("单位净值"), 1)
-        val growthIdx = findIdx(listOf("日增长率","涨跌幅"), 3)
-
-        val date = cells.getOrElse(dateIdx) { "" }
-        val nav  = cells.getOrElse(navIdx) { "" }.replace(Regex("[%+,\\s]"), "").toDoubleOrNull() ?: return null
-        if (nav <= 0) return null
-        val changePct = cells.getOrElse(growthIdx) { "" }.replace(Regex("[%+,\\s]"), "").toDoubleOrNull() ?: Double.NaN
-        val prevNav = if (changePct.isFinite()) nav / (1 + changePct / 100) else Double.NaN
-        return F10Nav(date, nav, changePct, prevNav)
+    private fun parseF10LatestNav(json: String): F10Nav? {
+        return try {
+            val root = JSONObject(json)
+            if (root.optInt("ErrCode", 0) != 0) return null
+            val list = root.optJSONObject("Data")?.optJSONArray("LSJZList") ?: return null
+            if (list.length() == 0) return null
+            val first = list.getJSONObject(0)
+            val date  = first.optString("FSRQ", "")
+            val nav   = first.optString("DWJZ", "").toDoubleOrNull() ?: return null
+            if (nav <= 0) return null
+            val changePct = first.optString("JZZZL", "").toDoubleOrNull() ?: Double.NaN
+            val prevNav = if (changePct.isFinite()) nav / (1 + changePct / 100) else Double.NaN
+            F10Nav(date, nav, changePct, prevNav)
+        } catch (_: Exception) { null }
     }
 
     private fun buildOfficialQuote(code: String, name: String, p: F10Nav): FundQuote {
