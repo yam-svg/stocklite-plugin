@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.10.1</version>
+    <version>1.10.2</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -311,12 +311,12 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.10.1</h3>
+<h3>1.10.2</h3>
 
-<h4>修复：基金官方涨跌幅长期不更新</h4>
+<h4>修复：美股板块未开启时仍在后台持续请求数据</h4>
 <ul>
-  <li>东方财富已将基金历史净值接口迁移至新版 JSON API，旧接口对所有基金均返回空数据，导致官方涨跌幅无法更新；QDII 基金因完全依赖该数据源，涨跌幅长期停留在 0.00%</li>
-  <li>已切换至东方财富新版接口，基金官方涨跌幅恢复正常更新</li>
+  <li>美股板块标签页关闭时（默认关闭），插件仍会在后台每 60 秒拉取一次 30+ 个 ETF 的行情数据，白白消耗网络请求</li>
+  <li>现在仅在设置中开启美股板块后才会拉取数据，关闭后立即停止后台轮询</li>
 </ul>
     ]]></change-notes>
 

@@ -6,7 +6,7 @@
 ./gradlew buildPlugin
 ```
 
-产物：`build/distributions/stocklite-plugin-1.10.1.zip`
+产物：`build/distributions/stocklite-plugin-1.10.2.zip`
 
 ---
 
@@ -42,7 +42,7 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 ./gradlew signPlugin
 ```
 
-签名后产物在：`build/distributions/stocklite-plugin-1.10.1-signed.zip`
+签名后产物在：`build/distributions/stocklite-plugin-1.10.2-signed.zip`
 
 ---
 
@@ -54,7 +54,7 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 
 | 字段          | 填写内容                                |
 |-------------|-------------------------------------|
-| Plugin File | `stocklite-plugin-1.10.1-signed.zip` |
+| Plugin File | `stocklite-plugin-1.10.2-signed.zip` |
 | Plugin Name | `StockLite`                         |
 | Category    | `Tools Integration`                 |
 | License     | `MIT`（或你选择的协议）                      |
