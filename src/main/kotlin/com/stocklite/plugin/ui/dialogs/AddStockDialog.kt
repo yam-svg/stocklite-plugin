@@ -4,11 +4,15 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.state.StockGroupData
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.state.StockQuote
 import com.stocklite.plugin.state.StockSearchResult
+import com.stocklite.plugin.ui.InlineChartPanel
+import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.util.L10n
 import java.awt.*
 import java.awt.event.KeyAdapter
@@ -40,19 +44,27 @@ class AddStockDialog(
     private val isEditMode   get() = existingStock != null
     private val qtyValueLbl  = JLabel("0")
 
+    // 行情卡 + 图表
+    private val quoteCard    = QuoteCard()
+    private val chartPanel   = InlineChartPanel()
+    private var loadSeq      = 0   // 防止乱序回调覆盖最新结果
+
     private var selectedResult: StockSearchResult? = null
 
     init {
         title = if (existingStock == null) L10n.dlgAddStock else L10n.dlgEditStock
         init()
         setupGroups()
-        if (existingStock != null) prefillExisting()
+        if (existingStock != null) {
+            prefillExisting()
+            fetchQuoteAndChart(existingStock.symbol)
+        }
         isOKActionEnabled = existingStock != null
     }
 
     override fun createCenterPanel(): JComponent {
         val panel = JPanel(BorderLayout(8, 8))
-        panel.preferredSize = Dimension(480, 460)
+        panel.preferredSize = Dimension(600, 680)
 
         // 搜索栏（编辑模式下隐藏）
         if (existingStock == null) {
@@ -71,7 +83,7 @@ class AddStockDialog(
 
             val searchPanel = JPanel(BorderLayout(4, 4))
             searchPanel.add(searchBar, BorderLayout.NORTH)
-            searchPanel.add(JBScrollPane(resultList).apply { preferredSize = Dimension(460, 160) }, BorderLayout.CENTER)
+            searchPanel.add(JBScrollPane(resultList).apply { preferredSize = Dimension(580, 120) }, BorderLayout.CENTER)
             panel.add(searchPanel, BorderLayout.NORTH)
 
             resultList.addListSelectionListener {
@@ -80,6 +92,7 @@ class AddStockDialog(
                     symbolLabel.text = r.symbol
                     nameLabel.text   = r.name
                     isOKActionEnabled = true
+                    fetchQuoteAndChart(r.symbol)
                 }
             }
 
@@ -91,7 +104,23 @@ class AddStockDialog(
             })
         }
 
+        // 行情卡 + 图表的中间区
+        val quoteAndChart = JPanel(BorderLayout(0, 0))
+        quoteAndChart.add(quoteCard, BorderLayout.NORTH)
+        quoteAndChart.add(chartPanel, BorderLayout.CENTER)
+
         // 表单
+        val form = buildForm()
+
+        val center = JPanel(BorderLayout(0, 6))
+        center.add(quoteAndChart, BorderLayout.NORTH)
+        center.add(form,          BorderLayout.CENTER)
+
+        panel.add(center, BorderLayout.CENTER)
+        return panel
+    }
+
+    private fun buildForm(): JPanel {
         val form = JPanel(GridBagLayout())
         val gbc = GridBagConstraints().apply {
             insets = Insets(4, 4, 4, 4); anchor = GridBagConstraints.WEST
@@ -111,7 +140,6 @@ class AddStockDialog(
 
         if (isEditMode) {
             val s = existingStock!!
-            // 成本价：纯文本 Label + 交易记录跳转链接
             val costValueLbl = JLabel(s.costPrice.toString())
             val tradeLink = JButton("<html><u>${L10n.btnTradeHistory}</u></html>").apply {
                 isBorderPainted = false; isContentAreaFilled = false; isFocusPainted = false
@@ -121,7 +149,6 @@ class AddStockDialog(
                 toolTipText = L10n.tradeEditHint
                 addActionListener {
                     TradeHistoryDialog(s) {
-                        // 交易记录变更后刷新 label 显示
                         costValueLbl.text = s.costPrice.toString()
                         qtyValueLbl.text  = s.quantity.toString()
                     }.show()
@@ -135,7 +162,6 @@ class AddStockDialog(
             gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
             form.add(costRow, gbc); gbc.weightx = 0.0
 
-            // 持仓数量：纯文本 Label + 灰色提示
             gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE
             form.add(JLabel(L10n.dlgQtyLbl), gbc)
             val qtyRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0)).apply {
@@ -149,15 +175,113 @@ class AddStockDialog(
 
             row(L10n.dlgGroupLbl, groupCombo, 5)
         } else {
-            // 新增模式：正常可编辑
             row(L10n.dlgCostLbl,  costField,  3)
             row(L10n.dlgQtyLbl,   qtyField,   4)
             row(L10n.dlgGroupLbl, groupCombo, 5)
         }
 
-        panel.add(form, BorderLayout.CENTER)
-        return panel
+        return form
     }
+
+    // ── 行情卡 ────────────────────────────────────────────────────────────
+
+    private inner class QuoteCard : JPanel(BorderLayout()) {
+        private val priceLabel  = JLabel("--", SwingConstants.LEFT)
+        private val changeLbl   = JLabel("--")
+        private val metaLabel   = JLabel("--")   // 昨收 / 今开 / 高 / 低
+
+        init {
+            isVisible = false
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, Color(0x3A3A5A)),
+                BorderFactory.createEmptyBorder(6, 8, 6, 8)
+            )
+            priceLabel.font  = priceLabel.font.deriveFont(Font.BOLD, 18f)
+            changeLbl.font   = changeLbl.font.deriveFont(Font.BOLD, 13f)
+            metaLabel.font   = metaLabel.font.deriveFont(11f)
+            metaLabel.foreground = Color(0x888aaa)
+
+            val top = JPanel(FlowLayout(FlowLayout.LEFT, 10, 0))
+            top.add(priceLabel)
+            top.add(changeLbl)
+            add(top,       BorderLayout.NORTH)
+            add(metaLabel, BorderLayout.SOUTH)
+        }
+
+        fun showLoading() {
+            isVisible = true
+            priceLabel.text  = L10n.dlgQuoteLoading
+            priceLabel.foreground = Color(0x888aaa)
+            changeLbl.text   = ""
+            metaLabel.text   = ""
+            revalidate(); repaint()
+        }
+
+        fun showQuote(q: StockQuote) {
+            isVisible = true
+            val scheme = try { StockliteState.getInstance().colorScheme } catch (_: Exception) { "RED_UP" }
+            val pct = q.changePercent
+            val upColor   = if (scheme == "RED_DOWN") Color(0x26a69a) else Color(0xef5350)
+            val downColor = if (scheme == "RED_DOWN") Color(0xef5350) else Color(0x26a69a)
+            val color = when { scheme == "NONE" -> Color(0x888aaa); pct >= 0 -> upColor; else -> downColor }
+            priceLabel.text      = Fmt.price(q.price)
+            priceLabel.foreground = color
+            changeLbl.text       = Fmt.pct(pct)
+            changeLbl.foreground  = color
+
+            metaLabel.text = buildString {
+                append("${L10n.dlgQuotePrevClose} ${Fmt.price(q.prevClose)}")
+                // 拉取到开高低时展示（需从行情 API 补充，当前 StockQuote 暂无 open/high/low 字段，故省略）
+            }
+            revalidate(); repaint()
+        }
+
+        fun hideCard() {
+            isVisible = false
+            revalidate(); repaint()
+        }
+    }
+
+    // ── 行情 + 图表异步加载 ───────────────────────────────────────────────
+
+    private fun fetchQuoteAndChart(symbol: String) {
+        val seq = ++loadSeq
+        quoteCard.showLoading()
+        // 图表先显示（立即以空状态展开，等数据回填）
+        chartPanel.showChart(
+            displayName   = symbolLabel.text.ifBlank { symbol },
+            displaySymbol = symbol,
+            changePercent = 0.0,
+            prevClose     = 0.0,
+            fetchData     = { ChartDataService.getStockIntraday(symbol) }
+        )
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val quotes = MarketDataService.getStockQuotes(listOf(symbol))
+            val q = quotes[symbol]
+            SwingUtilities.invokeLater {
+                if (seq != loadSeq) return@invokeLater
+                if (q != null) {
+                    quoteCard.showQuote(q)
+                    // 当 costField 仍为默认值 0.00 时，自动预填当前价，方便用户
+                    if (!isEditMode && (costField.text.toDoubleOrNull() ?: 0.0) == 0.0) {
+                        costField.text = Fmt.price(q.price)
+                    }
+                    // 重新触发图表以带入 prevClose（基线涨跌幅计算需要）
+                    chartPanel.showChart(
+                        displayName   = nameLabel.text.ifBlank { symbol },
+                        displaySymbol = symbol,
+                        changePercent = q.changePercent,
+                        prevClose     = q.prevClose,
+                        fetchData     = { ChartDataService.getStockIntraday(symbol) }
+                    )
+                } else {
+                    quoteCard.hideCard()
+                }
+            }
+        }
+    }
+
+    // ── 以下原有逻辑保持不变 ─────────────────────────────────────────────
 
     private fun doSearch() {
         val kw = searchField.text.trim().ifEmpty { return }
@@ -185,7 +309,6 @@ class AddStockDialog(
         nameLabel.text    = s.name
         aliasField.text   = s.alias
         qtyValueLbl.text  = s.quantity.toString()
-        // costField/qtyField 编辑模式下不显示，但新增模式的初始值仍走 costField
         costField.text    = s.costPrice.toString()
         qtyField.text     = s.quantity.toString()
         val idx = groups.indexOfFirst { it.id == s.groupId }.takeIf { it >= 0 } ?: 0
@@ -199,7 +322,6 @@ class AddStockDialog(
         existingStock?.alias = aliasField.text.trim()
 
         if (isEditMode) {
-            // 编辑模式：成本/数量只读，保持不变
             val s = existingStock!!
             onSave(symbol, name, gid, s.costPrice, s.quantity)
         } else {
@@ -208,5 +330,10 @@ class AddStockDialog(
             onSave(symbol, name, gid, cost, qty)
         }
         super.doOKAction()
+    }
+
+    override fun dispose() {
+        chartPanel.disposeResources()
+        super.dispose()
     }
 }
