@@ -33,7 +33,8 @@ class FundPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
     StockliteState.LanguageListener,
     StockliteState.RefreshIntervalListener,
-    StockliteState.FundQuotesRefreshListener {
+    StockliteState.FundQuotesRefreshListener,
+    StockliteState.DataChangeListener {
 
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
@@ -120,6 +121,7 @@ class FundPanel : JPanel(BorderLayout()),
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
         state.addFundQuotesListener(this)
+        state.addDataChangeListener(this)
         rebuildVisibleCols()
         setupTable()
         table.rowSorter = TableRowSorter(tableModel)
@@ -136,6 +138,8 @@ class FundPanel : JPanel(BorderLayout()),
     }
 
     override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }
+
+    override fun onDataChanged() { refreshGroups() }
 
     override fun onLanguageChanged() {
         rebuildVisibleCols()

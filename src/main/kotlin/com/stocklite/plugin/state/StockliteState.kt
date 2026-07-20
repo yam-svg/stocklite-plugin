@@ -147,6 +147,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun addFeatureToggleListener(l: FeatureToggleListener) { featureToggleListeners.add(l) }
     fun notifyFeatureToggleChanged() = featureToggleListeners.forEach { it.onFeatureToggleChanged() }
 
+    // ── 数据变更通知（股票/基金/期货增删改，用于跨 IDE 窗口同步） ──
+    interface DataChangeListener { fun onDataChanged() }
+    @Transient private val dataChangeListeners = mutableListOf<DataChangeListener>()
+    fun addDataChangeListener(l: DataChangeListener) { dataChangeListeners.add(l) }
+    fun removeDataChangeListener(l: DataChangeListener) { dataChangeListeners.remove(l) }
+    fun notifyDataChanged() = dataChangeListeners.forEach { it.onDataChanged() }
+
     // ── 股票分组 CRUD ──
 
     fun createStockGroup(name: String): StockGroupData {
@@ -156,17 +163,20 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             createdAt = System.currentTimeMillis()
         }
         stockGroups.add(g)
+        notifyDataChanged()
         return g
     }
 
     fun updateStockGroup(id: String, name: String) {
         stockGroups.find { it.id == id }?.name = name
+        notifyDataChanged()
     }
 
     fun deleteStockGroup(id: String) {
         stockGroups.removeIf { it.id == id }
         val fallback = stockGroups.firstOrNull()?.id ?: return
         stocks.filter { it.groupId == id }.forEach { it.groupId = fallback }
+        notifyDataChanged()
     }
 
     // ── 股票 CRUD ──
@@ -191,6 +201,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         if (quantity > 0) {
             addTradeRecord(s.id, symbol, name, "BUY", costPrice, quantity, now, "初始建仓")
         }
+        notifyDataChanged()
         return s
     }
 
@@ -223,9 +234,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
                     addTradeRecord(id, symbol, name, "ADJUST", costPrice, quantity, now, "成本调整")
             }
         }
+        notifyDataChanged()
     }
 
-    fun deleteStock(id: String) = stocks.removeIf { it.id == id }
+    fun deleteStock(id: String) {
+        stocks.removeIf { it.id == id }
+        notifyDataChanged()
+    }
 
     fun getStocksForGroup(groupId: String): List<StockData> = when (groupId) {
         SystemGroups.ALL_STOCK_ID -> stocks.sortedBy { it.sortOrder }
@@ -242,17 +257,20 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             createdAt = System.currentTimeMillis()
         }
         fundGroups.add(g)
+        notifyDataChanged()
         return g
     }
 
     fun updateFundGroup(id: String, name: String) {
         fundGroups.find { it.id == id }?.name = name
+        notifyDataChanged()
     }
 
     fun deleteFundGroup(id: String) {
         fundGroups.removeIf { it.id == id }
         val fallback = fundGroups.firstOrNull()?.id ?: return
         funds.filter { it.groupId == id }.forEach { it.groupId = fallback }
+        notifyDataChanged()
     }
 
     // ── 基金 CRUD ──
@@ -269,6 +287,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             createdAt = System.currentTimeMillis()
         }
         funds.add(f)
+        notifyDataChanged()
         return f
     }
 
@@ -278,9 +297,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.shares = shares
             this.groupId = groupId
         }
+        notifyDataChanged()
     }
 
-    fun deleteFund(id: String) = funds.removeIf { it.id == id }
+    fun deleteFund(id: String) {
+        funds.removeIf { it.id == id }
+        notifyDataChanged()
+    }
 
     fun getFundsForGroup(groupId: String): List<FundData> = when (groupId) {
         SystemGroups.ALL_FUND_ID -> funds.sortedBy { it.sortOrder }
@@ -297,17 +320,20 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             createdAt = System.currentTimeMillis()
         }
         futureGroups.add(g)
+        notifyDataChanged()
         return g
     }
 
     fun updateFutureGroup(id: String, name: String) {
         futureGroups.find { it.id == id }?.name = name
+        notifyDataChanged()
     }
 
     fun deleteFutureGroup(id: String) {
         futureGroups.removeIf { it.id == id }
         val fallback = futureGroups.firstOrNull()?.id ?: return
         futures.filter { it.groupId == id }.forEach { it.groupId = fallback }
+        notifyDataChanged()
     }
 
     // ── 期货 CRUD ──
@@ -322,14 +348,19 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             createdAt = System.currentTimeMillis()
         }
         futures.add(f)
+        notifyDataChanged()
         return f
     }
 
     fun updateFuture(id: String, groupId: String) {
         futures.find { it.id == id }?.groupId = groupId
+        notifyDataChanged()
     }
 
-    fun deleteFuture(id: String) = futures.removeIf { it.id == id }
+    fun deleteFuture(id: String) {
+        futures.removeIf { it.id == id }
+        notifyDataChanged()
+    }
 
     fun getFuturesForGroup(groupId: String): List<FutureData> = when (groupId) {
         SystemGroups.ALL_FUTURE_ID -> futures.sortedBy { it.sortOrder }
@@ -383,6 +414,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             }
             this.updatedAt = now
         }
+        notifyDataChanged()
         return record
     }
 
@@ -417,6 +449,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         val rec = tradeRecords.find { it.id == id } ?: return
         tradeRecords.removeIf { it.id == id }
         recalcStockFromRecords(rec.stockId)
+        notifyDataChanged()
     }
 
     /** 从该股票的所有交易记录重新推算持仓数量和成本价。 */

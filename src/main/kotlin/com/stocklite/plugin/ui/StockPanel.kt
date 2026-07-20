@@ -36,7 +36,8 @@ import javax.swing.table.TableRowSorter
 class StockPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
     StockliteState.LanguageListener,
-    StockliteState.RefreshIntervalListener {
+    StockliteState.RefreshIntervalListener,
+    StockliteState.DataChangeListener {
 
     private val chartPanel = InlineChartPanel()
     private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForStock)
@@ -176,6 +177,7 @@ class StockPanel : JPanel(BorderLayout()),
         state.addColumnListener(this)
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
+        state.addDataChangeListener(this)
         rebuildVisibleCols()
         setupTable()
         buildUI()
@@ -193,6 +195,8 @@ class StockPanel : JPanel(BorderLayout()),
     }
 
     override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }
+
+    override fun onDataChanged() { refreshGroups() }
 
     override fun onLanguageChanged() {
         rebuildVisibleCols()
