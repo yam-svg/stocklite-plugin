@@ -84,12 +84,16 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
             }
             return lbl
         }
+        val totalCost   = h.sumOf { it.cost * it.qty }
+        val totalPnlPct = if (totalCost > 0) totalPnl / totalCost * 100.0 else 0.0
+
         summaryPanel.add(JLabel("总市值 ${Fmt.value(totalValue)}"))
         summaryPanel.add(colorLabel("总盈亏 ${Fmt.sign(totalPnl)}${Fmt.value(totalPnl)}", totalPnl))
+        summaryPanel.add(colorLabel("收益率 ${Fmt.pct(totalPnlPct)}", totalPnlPct))
         summaryPanel.add(colorLabel("今日盈亏 ${Fmt.sign(todayPnl)}${Fmt.value(todayPnl)}", todayPnl))
 
         // ── 持仓明细表 ──
-        val cols = arrayOf("名称", "代码", "现价", "涨跌幅", "持仓盈亏", "今日盈亏")
+        val cols = arrayOf("名称", "代码", "现价", "涨跌幅", "持仓盈亏", "收益率", "今日盈亏")
         val model = object : AbstractTableModel() {
             override fun getRowCount()    = h.size
             override fun getColumnCount() = cols.size
@@ -98,7 +102,9 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
             override fun getValueAt(row: Int, col: Int): Any = h[row].let { r ->
                 when (col) {
                     0 -> r.name; 1 -> r.symbol
-                    2 -> r.price; 3 -> r.changePct; 4 -> r.pnl; 5 -> r.todayPnl
+                    2 -> r.price; 3 -> r.changePct; 4 -> r.pnl
+                    5 -> if (r.cost > 0) (r.price - r.cost) / r.cost * 100.0 else 0.0
+                    6 -> r.todayPnl
                     else -> ""
                 }
             }
@@ -118,8 +124,8 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
                 }
                 lbl.text = when (col) {
                     2 -> Fmt.price(v)
-                    3 -> Fmt.pct(v)
-                    4, 5 -> if (v == 0.0) "--" else "${Fmt.sign(v)}${Fmt.value(v)}"
+                    3, 5 -> Fmt.pct(v)
+                    4, 6 -> if (v == 0.0) "--" else "${Fmt.sign(v)}${Fmt.value(v)}"
                     else -> Fmt.value(v)
                 }
                 return lbl
@@ -132,11 +138,11 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
         table.columnModel.getColumn(0).preferredWidth = 100
         table.columnModel.getColumn(1).preferredWidth = 80
-        for (i in 2..5) table.columnModel.getColumn(i).preferredWidth = 80
+        for (i in 2..6) table.columnModel.getColumn(i).preferredWidth = 80
 
         val tableHeight = minOf(h.size * 24 + table.tableHeader.preferredSize.height + 4, 280)
         val scroll = JBScrollPane(table)
-        scroll.preferredSize = Dimension(510, tableHeight)
+        scroll.preferredSize = Dimension(590, tableHeight)
 
         val panel = JPanel(BorderLayout())
         panel.add(summaryPanel, BorderLayout.NORTH)
