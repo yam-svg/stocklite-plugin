@@ -212,6 +212,7 @@ object L10n {
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
                                         "Show API log tab (request monitoring, for debugging)")
+    val settingsChartMA     get() = s("K线图显示均线（MA5 / MA10 / MA20）", "Show moving averages on chart (MA5 / MA10 / MA20)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")
@@ -231,6 +232,7 @@ object L10n {
     val settingsOptStockValue   get() = s("市值",     "Market Value")
     val settingsOptStockPnl     get() = s("盈亏",     "P&L")
     val settingsOptStockPnlPct  get() = s("盈亏%",    "P&L%")
+    val settingsOptFundTodayEst get() = s("今日估算", "Today Est.")
     val settingsOptFundCode     get() = s("代码",    "Code")
     val settingsOptFundShares   get() = s("持仓份额", "Shares")
     val settingsOptFundCostNav  get() = s("成本净值", "Cost NAV")

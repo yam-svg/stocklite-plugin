@@ -52,7 +52,7 @@ class FundPanel : JPanel(BorderLayout()),
             val d = q?.date ?: return@ColDef "--"
             if (d.length >= 10) d.substring(5) else d
         },
-        ColDef("todayChange",  L10n.colTodayEst,   QuoteColumnType.PCT,    true) { _, q  ->
+        ColDef("todayChange",  L10n.colTodayEst,   QuoteColumnType.PCT,    false) { _, q  ->
             when {
                 q == null        -> SENTINEL_NO_ESTIMATE
                 q.hasEstimate    -> q.estimatedChangePercent ?: 0.0

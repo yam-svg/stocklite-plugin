@@ -40,6 +40,7 @@ class StockliteConfigurable : Configurable {
     private val alertsCheckBox          = JBCheckBox(L10n.settingsPriceAlerts)
     private val fundNavAlertCheckBox    = JBCheckBox(L10n.settingsFundNavAlert)
     private val portfolioBarCheckBox    = JBCheckBox(L10n.settingsPortfolioBar)
+    private val chartMACheckBox         = JBCheckBox(L10n.settingsChartMA)
 
     // AI 分析
     private val apiKeyField    = JPasswordField(30)
@@ -90,6 +91,7 @@ class StockliteConfigurable : Configurable {
 
     // 基金可选列
     private val fundOptional get() = listOf(
+        "todayChange" to L10n.settingsOptFundTodayEst,
         "code"        to L10n.settingsOptFundCode,
         "shares"      to L10n.settingsOptFundShares,
         "costNav"     to L10n.settingsOptFundCostNav,
@@ -164,6 +166,7 @@ class StockliteConfigurable : Configurable {
         gbc.gridy = row++; panel.add(alertsCheckBox,        gbc)
         gbc.gridy = row++; panel.add(fundNavAlertCheckBox,  gbc)
         gbc.gridy = row++; panel.add(portfolioBarCheckBox,  gbc)
+        gbc.gridy = row++; panel.add(chartMACheckBox,       gbc)
 
         // ── AI 分析 ──
         sep(L10n.settingsAiSection, row); row += 2
@@ -250,7 +253,6 @@ class StockliteConfigurable : Configurable {
         alwaysRow(L10n.settingsFundNav,         row++)
         alwaysRow(L10n.settingsFundOfficialChg, row++)
         alwaysRow(L10n.settingsFundNavDate,     row++)
-        alwaysRow(L10n.settingsFundTodayEst,    row++)
         for ((key, label) in fundOptional) optionalRow(key, label, fundBoxes, row++)
 
         // 撑开底部
@@ -279,6 +281,7 @@ class StockliteConfigurable : Configurable {
                alertsCheckBox.isSelected       != state.enablePriceAlerts ||
                fundNavAlertCheckBox.isSelected != state.enableFundNavAlert ||
                portfolioBarCheckBox.isSelected != state.enablePortfolioStatusBar ||
+               chartMACheckBox.isSelected      != state.enableChartMA ||
                String(apiKeyField.password)        != state.deepseekApiKey ||
                modelCombo.selectedItem?.toString() != state.deepseekModel  ||
                aiInjectDataCheckBox.isSelected  != state.aiInjectRealTimeData  ||
@@ -304,6 +307,7 @@ class StockliteConfigurable : Configurable {
         state.enableFundNavAlert       = fundNavAlertCheckBox.isSelected
         state.enablePortfolioStatusBar = portfolioBarCheckBox.isSelected
         if (!state.enablePortfolioStatusBar) PortfolioStatusWidget.update(0.0, 0.0, 0.0, emptyList())
+        state.enableChartMA = chartMACheckBox.isSelected
         state.deepseekApiKey     = String(apiKeyField.password)
         state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
         state.aiInjectRealTimeData  = aiInjectDataCheckBox.isSelected
@@ -334,6 +338,7 @@ class StockliteConfigurable : Configurable {
         alertsCheckBox.isSelected       = state.enablePriceAlerts
         fundNavAlertCheckBox.isSelected = state.enableFundNavAlert
         portfolioBarCheckBox.isSelected = state.enablePortfolioStatusBar
+        chartMACheckBox.isSelected      = state.enableChartMA
         apiKeyField.text                = state.deepseekApiKey
         // 若 combo 为空（首次打开），先用保存的值填入作为占位；有 Key 时自动拉取列表
         val savedModel = state.deepseekModel.ifBlank { "deepseek-chat" }

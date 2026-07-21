@@ -49,6 +49,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enablePortfolioStatusBar: Boolean = true
     var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
     var enableApiLogPanel: Boolean = false   // 默认关闭，调试用途
+    var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
 
     // ── AI 分析 ──
     var deepseekApiKey: String   = ""

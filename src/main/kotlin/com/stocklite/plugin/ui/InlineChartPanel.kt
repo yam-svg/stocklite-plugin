@@ -356,8 +356,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
       series.createPriceLine({price:PREV,color:'#666688',lineWidth:1,
         lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'$prevCloseLabel'});
     }
-    // 均线 MA5 / MA10 / MA20
-    var MA_DEFS=[{n:5,color:'#f5c518'},{n:10,color:'#2196f3'},{n:20,color:'#e040fb'}];
+    // 均线 MA5 / MA10 / MA20（由设置控制）
+    var MA_DEFS=${if (StockliteState.getInstance().enableChartMA) "[{n:5,color:'#f5c518'},{n:10,color:'#2196f3'},{n:20,color:'#e040fb'}]" else "[]"};
     var maSeries=MA_DEFS.map(function(def){
       var s=chart.addLineSeries({color:def.color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
       var maData=[];
