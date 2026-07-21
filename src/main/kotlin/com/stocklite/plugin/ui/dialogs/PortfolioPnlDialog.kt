@@ -49,10 +49,9 @@ class PortfolioPnlDialog : DialogWrapper(true) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val allPnl = holdings.mapNotNull { stock ->
                 val records = state.getTradeRecordsForStock(stock.id)
-                if (records.isEmpty()) return@mapNotNull null
                 val kline = ChartDataService.getHistoryKLine(stock.symbol, "daily", 9999)
                 if (kline.isEmpty()) return@mapNotNull null
-                PnlChartService.calcStockPnl(stock, records, kline)
+                PnlChartService.calcStockPnl(stock, records, kline).takeIf { it.isNotEmpty() }
             }
 
             val merged = PnlChartService.mergePortfolioPnl(allPnl)

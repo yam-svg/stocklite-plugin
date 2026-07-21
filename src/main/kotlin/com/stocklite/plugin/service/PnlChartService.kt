@@ -13,70 +13,27 @@ object PnlChartService {
     data class DailyPnl(val date: LocalDate, val pnl: Double)
 
     /**
-     * 计算单只股票持仓期间每日浮动盈亏。
-     * 原理：遍历历史 K 线，在每个交易日按交易记录重放持仓，
-     * 用「当日收盘价 × 当日持仓量 − 历史累计买入成本」得出浮动盈亏。
-     *
-     * @param stock 股票数据（用于 symbol）
-     * @param records 交易记录（按时间升序）
-     * @param kline 历史日 K 线（ChartPoint 列表，time 为 Unix 秒）
+     * 计算单只股票的每日浮动盈亏。
+     * 计算方式与面板表格一致：(历史收盘价 - 当前成本价) × 当前持仓量。
+     * 仅展示第一笔买入记录日期之后的数据点。
      */
     fun calcStockPnl(
         stock: StockData,
         records: List<TradeRecordData>,
         kline: List<ChartDataService.ChartPoint>
     ): List<DailyPnl> {
-        if (records.isEmpty() || kline.isEmpty()) return emptyList()
+        if (stock.quantity <= 0 || stock.costPrice <= 0 || kline.isEmpty()) return emptyList()
 
-        // 交易记录按日期升序排列
-        val sortedRecords = records.sortedBy { it.tradeAt }
-        val firstTradeDate = Instant.ofEpochMilli(sortedRecords.first().tradeAt)
-            .atZone(SH).toLocalDate()
+        val firstTradeDate = records.minOfOrNull { it.tradeAt }
+            ?.let { Instant.ofEpochMilli(it).atZone(SH).toLocalDate() }
+            ?: return emptyList()
 
-        // K 线 → date : closePrice
-        val priceByDate = kline.associate { pt ->
-            Instant.ofEpochSecond(pt.time).atZone(SH).toLocalDate() to pt.value
-        }
-
-        // 按日期遍历 K 线，重放持仓状态
-        var qty  = 0.0
-        var cost = 0.0   // 累计买入总成本
-        var recIdx = 0
-        val result = mutableListOf<DailyPnl>()
-
-        for (pt in kline.sortedBy { it.time }) {
+        return kline.sortedBy { it.time }.mapNotNull { pt ->
             val date = Instant.ofEpochSecond(pt.time).atZone(SH).toLocalDate()
-            if (date < firstTradeDate) continue
-
-            // 应用当天及之前所有未处理的交易记录
-            while (recIdx < sortedRecords.size) {
-                val rec = sortedRecords[recIdx]
-                val recDate = Instant.ofEpochMilli(rec.tradeAt).atZone(SH).toLocalDate()
-                if (recDate > date) break
-                when (rec.tradeType) {
-                    "BUY" -> {
-                        cost += rec.price * rec.quantity
-                        qty  += rec.quantity
-                    }
-                    "SELL" -> {
-                        // 卖出按加权均价扣减成本
-                        if (qty > 0) cost -= (cost / qty) * rec.quantity
-                        qty = (qty - rec.quantity).coerceAtLeast(0.0)
-                        if (qty <= 0) cost = 0.0
-                    }
-                    "ADJUST" -> {
-                        cost = rec.price * qty
-                    }
-                }
-                recIdx++
-            }
-
-            if (qty <= 0) continue
-            val closePrice = pt.value
-            val pnl = closePrice * qty - cost
-            result.add(DailyPnl(date, pnl))
+            if (date < firstTradeDate) return@mapNotNull null
+            val pnl = (pt.value - stock.costPrice) * stock.quantity
+            DailyPnl(date, pnl)
         }
-        return result
     }
 
     /**

@@ -217,8 +217,8 @@ class TradeHistoryDialog(
     }
 
     private fun loadPnlChart() {
+        if (stock.quantity <= 0) { pnlStatusLbl.text = L10n.pnlNoRecords; return }
         val recs = state.getTradeRecordsForStock(stock.id)
-        if (recs.isEmpty()) { pnlStatusLbl.text = L10n.pnlNoRecords; return }
         pnlStatusLbl.text = L10n.chartLoading
 
         ApplicationManager.getApplication().executeOnPooledThread {
