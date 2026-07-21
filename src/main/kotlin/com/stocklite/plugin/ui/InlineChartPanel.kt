@@ -313,9 +313,13 @@ body{background:#1e1e2e;overflow:hidden;}
       upColor:CU, downColor:CD, borderUpColor:CU, borderDownColor:CD,
       wickUpColor:CU, wickDownColor:CD, priceLineVisible:false, lastValueVisible:true,
     });
-    series.setData(raw.map(function(d){
+    series.setData(raw.map(function(d,i){
       var o=d.open!=null?d.open:d.price, h=d.high!=null?d.high:d.price, l=d.low!=null?d.low:d.price;
-      return{time:d.time,open:o,high:Math.max(h,o,d.price),low:Math.min(l,o,d.price),close:d.price};
+      var c=d.price, bc;
+      if(c>o) bc=CU; else if(c<o) bc=CD;
+      else{ var pct=i>0?(c-raw[i-1].price)/raw[i-1].price:0; bc=pct>=0?CU:CD; }
+      return{time:d.time,open:o,high:Math.max(h,o,c),low:Math.min(l,o,c),close:c,
+             color:bc,borderColor:bc,wickColor:bc};
     }));
     if(HAS){
       series.createPriceLine({price:PREV,color:'#666688',lineWidth:1,
@@ -350,8 +354,8 @@ body{background:#1e1e2e;overflow:hidden;}
       ?(String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'))
       :(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'));
     if(HAS_OHLC){
-      var col=sd.close>=sd.open?CU:CD;
       var pct=pctMap[p.time];
+      var col=sd.close>sd.open?CU:(sd.close<sd.open?CD:(pct!=null&&pct<0?CD:CU));
       var pctTxt=(pct!=null)?('&nbsp;&nbsp;'+(pct>=0?'+':'')+pct.toFixed(2)+'%'):'';
       tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
         +'<b style="color:'+col+'">'+pctTxt+'</b><br/>'
