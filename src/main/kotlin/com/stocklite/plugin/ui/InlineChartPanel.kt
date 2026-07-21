@@ -281,9 +281,11 @@ body{background:#1e1e2e;overflow:hidden;}
   background:rgba(20,20,36,.92);border:1px solid #3a3a5a;
   border-radius:5px;padding:4px 8px;font:11px/1.6 system-ui,sans-serif;
   pointer-events:none;display:none;color:#cdd6f4;}
+.hl-lbl{position:absolute;font:10px/1.4 system-ui,sans-serif;white-space:nowrap;
+  padding:1px 4px;border-radius:2px;pointer-events:none;z-index:5;display:none;}
 </style>
 </head><body>
-<div id="chart"><div id="tip"></div></div>
+<div id="chart"><div id="tip"></div><div id="hi" class="hl-lbl"></div><div id="lo" class="hl-lbl"></div></div>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
@@ -409,8 +411,50 @@ body{background:#1e1e2e;overflow:hidden;}
     tip.style.display='block';
   });
 
+  // ── 可见区间最高/最低价标注 ──────────────────────────────────────────
+  var hiEl=document.getElementById('hi'), loEl=document.getElementById('lo');
+
+  function updateHiLo(){
+    var lr=chart.timeScale().getVisibleLogicalRange();
+    if(!lr) return;
+    var from=Math.max(0,Math.floor(lr.from)), to=Math.min(raw.length-1,Math.ceil(lr.to));
+    var hiVal=-Infinity, loVal=Infinity, hiTime=0, loTime=0;
+    for(var i=from;i<=to;i++){
+      var d=raw[i];
+      var h=d.high!=null?d.high:d.price, l=d.low!=null?d.low:d.price;
+      if(HAS_OHLC){ if(h>hiVal){hiVal=h;hiTime=d.time;} if(l<loVal){loVal=l;loTime=d.time;} }
+      else{ if(d.price>hiVal){hiVal=d.price;hiTime=d.time;} if(d.price<loVal){loVal=d.price;loTime=d.time;} }
+    }
+    if(!isFinite(hiVal)||!isFinite(loVal)||hiVal===loVal){hiEl.style.display='none';loEl.style.display='none';return;}
+
+    function place(labelEl, val, time, isHi){
+      // baseline series 用百分比坐标，area/candle 用绝对价格坐标
+      var coordVal=(HAS&&!HAS_OHLC)?((val-PREV)/PREV*100):val;
+      var y=series.priceToCoordinate(coordVal);
+      var x=chart.timeScale().timeToCoordinate(time);
+      if(y==null||x==null){labelEl.style.display='none';return;}
+      var col=isHi?'#ef5350':'#26a69a';
+      labelEl.textContent=val.toFixed(3);
+      labelEl.style.color=col;
+      labelEl.style.background='rgba(20,20,36,.85)';
+      labelEl.style.border='1px solid '+col;
+      labelEl.style.display='block';
+      var lw=labelEl.offsetWidth||44, lh=labelEl.offsetHeight||16;
+      var priceAxisW=62;
+      var cx=Math.min(Math.max(x-lw/2, 2), el.clientWidth-priceAxisW-lw-2);
+      labelEl.style.left=cx+'px';
+      labelEl.style.top=(isHi?y-lh-4:y+4)+'px';
+    }
+    place(hiEl, hiVal, hiTime, true);
+    place(loEl, loVal, loTime, false);
+  }
+
+  chart.timeScale().subscribeVisibleLogicalRangeChange(updateHiLo);
+  updateHiLo();
+
   new ResizeObserver(function(){
     chart.applyOptions({width:el.clientWidth,height:el.clientHeight});
+    updateHiLo();
   }).observe(el);
 })();
 </script></body></html>"""
