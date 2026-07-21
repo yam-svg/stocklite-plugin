@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.11.0</version>
+    <version>1.11.1</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -70,6 +70,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Stock edit dialog shows cost and quantity as read-only; all changes go through trade records</li>
   <li><b>Trade History dialog</b> now has two tabs: <b>Trade Records</b> (existing table) + <b>P&amp;L Chart</b> — replays trade records against historical daily close prices to draw a cumulative floating P&amp;L curve for that single stock</li>
   <li><b>Portfolio P&amp;L History</b>: click the summary bar at the bottom of the Stock panel to open a chart showing the combined daily floating P&amp;L across all holdings</li>
+  <li><b>P&amp;L calculation alignment</b>: P&amp;L charts now use the same cost-price and position rules as the main holdings table, including holdings that have quantity but no trade records</li>
 </ul>
 
 <h3>Earnings Date</h3>
@@ -240,6 +241,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>编辑持仓对话框中成本价和数量改为只读，点击链接跳转到交易记录修改</li>
   <li><b>交易记录</b>对话框新增「盈亏走势」Tab：根据交易记录重放持仓，结合历史日线收盘价，绘制该股持有期间的逐日浮动盈亏曲线</li>
   <li><b>总持仓盈亏走势</b>：点击股票面板底部汇总栏文字，弹出合并所有持仓股的每日盈亏折线图</li>
+  <li><b>盈亏计算口径统一</b>：盈亏走势图与主面板持仓盈亏使用同一套成本价与持仓数量规则，且仅有持仓数量时也可展示走势图</li>
 </ul>
 
 <h3>财报日期标注</h3>
@@ -333,28 +335,11 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.11.0</h3>
-
-<h4>盈亏历史图表</h4>
+<h3>1.11.1</h3>
+<h4>盈亏计算优化</h4>
 <ul>
-  <li>交易记录对话框新增「盈亏走势」Tab，根据历史交易记录与日线收盘价推算持有期间每日浮动盈亏曲线</li>
-  <li>点击股票面板底部汇总栏，弹出总持仓盈亏走势图，合并显示所有持仓股的每日综合盈亏</li>
-</ul>
-
-<h4>基金 K 线图</h4>
-<ul>
-  <li>基金面板点击涨跌幅列，内嵌展开日K/周K/月K图表；场外基金使用天天基金净值历史，场内 ETF 使用腾讯前复权数据</li>
-  <li>今日估算列支持在设置中关闭</li>
-</ul>
-
-<h4>K 线图优化</h4>
-<ul>
-  <li>A 股日K 改用腾讯前复权接口，分页拉取全量上市历史，修复 ETF 分红拆分导致的价格断层问题</li>
-  <li>可见区间最高/最低价直接标注在对应蜡烛上方/下方</li>
-  <li>横坐标及悬浮时间标签改为中文日期格式</li>
-  <li>MA5/MA10/MA20 均线改为默认关闭，可在设置中开启</li>
-  <li>悬浮提示栏移至图表顶部固定显示，不再遮挡 K 线内容</li>
-  <li>悬浮时折线/面积图（日内、基金净值）同步显示涨跌幅%</li>
+  <li>优化交易记录盈亏走势与总持仓盈亏走势的计算口径，与主面板持仓盈亏保持一致</li>
+  <li>修复部分仅有持仓数量但无交易记录的场景下无法展示盈亏走势图的问题</li>
 </ul>
     ]]></change-notes>
 
