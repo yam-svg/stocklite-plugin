@@ -1,11 +1,15 @@
 package com.stocklite.plugin.ui.dialogs
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.ChartDataService
+import com.stocklite.plugin.service.PnlChartService
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.state.TradeRecordData
+import com.stocklite.plugin.ui.InlineChartPanel
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.util.L10n
@@ -74,6 +78,10 @@ class TradeHistoryDialog(
     private val table       = JBTable(tableModel)
     private val addBtn      = JButton(L10n.btnAddTrade2)
     private val summaryLbl  = JLabel("").apply { font = font.deriveFont(11f); foreground = Color(0x888aaa) }
+    private val pnlChartPanel = InlineChartPanel()
+    private val pnlStatusLbl  = JLabel(L10n.chartLoading, SwingConstants.CENTER).apply {
+        font = font.deriveFont(12f); foreground = Color(0x888aaa)
+    }
 
     init {
         title = "${stock.alias.ifBlank { stock.name }}  ${L10n.dlgTradeHistory}"
@@ -84,19 +92,38 @@ class TradeHistoryDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        val panel = JPanel(BorderLayout(0, 8)).apply {
-            preferredSize = Dimension(600, 380)
-            border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
+        val outer = JPanel(BorderLayout()).apply {
+            preferredSize = Dimension(680, 420)
         }
 
+        // ── Tab 1：交易明细 ──
         summaryLbl.text = buildSummary()
-        panel.add(summaryLbl, BorderLayout.NORTH)
+        val detailTab = JPanel(BorderLayout(0, 6)).apply {
+            border = BorderFactory.createEmptyBorder(8, 8, 4, 8)
+            add(summaryLbl, BorderLayout.NORTH)
+            add(JBScrollPane(table).apply { border = BorderFactory.createEmptyBorder() }, BorderLayout.CENTER)
+        }
 
-        panel.add(JBScrollPane(table).apply {
-            border = BorderFactory.createEmptyBorder()
-        }, BorderLayout.CENTER)
+        // ── Tab 2：盈亏走势 ──
+        val pnlTab = JPanel(BorderLayout()).apply {
+            border = BorderFactory.createEmptyBorder(4, 4, 4, 4)
+            add(pnlStatusLbl,  BorderLayout.NORTH)
+            add(pnlChartPanel, BorderLayout.CENTER)
+        }
 
-        return panel
+        val tabs = JTabbedPane()
+        tabs.addTab(L10n.tabTradeDetail, detailTab)
+        tabs.addTab(L10n.tabPnlChart,    pnlTab)
+
+        // 切换到盈亏走势时懒加载
+        tabs.addChangeListener {
+            if (tabs.selectedIndex == 1 && pnlChartPanel.preferredSize.height == 0) {
+                loadPnlChart()
+            }
+        }
+
+        outer.add(tabs, BorderLayout.CENTER)
+        return outer
     }
 
     override fun createActions(): Array<Action> =
@@ -187,5 +214,31 @@ class TradeHistoryDialog(
         records = state.getTradeRecordsForStock(stock.id).toMutableList()
         tableModel.fireTableDataChanged()
         summaryLbl.text = buildSummary()
+    }
+
+    private fun loadPnlChart() {
+        val recs = state.getTradeRecordsForStock(stock.id)
+        if (recs.isEmpty()) { pnlStatusLbl.text = L10n.pnlNoRecords; return }
+        pnlStatusLbl.text = L10n.chartLoading
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val kline = ChartDataService.getHistoryKLine(stock.symbol, "daily", 9999)
+            val pnlList = PnlChartService.calcStockPnl(stock, recs, kline)
+            val points  = PnlChartService.toChartPoints(pnlList)
+            val latestPnl = pnlList.lastOrNull()?.pnl ?: 0.0
+
+            SwingUtilities.invokeLater {
+                pnlStatusLbl.text = ""
+                if (points.isEmpty()) { pnlStatusLbl.text = L10n.chartNoData; return@invokeLater }
+                pnlChartPanel.showPnlChart(
+                    stock.alias.ifBlank { stock.name }, points, latestPnl
+                )
+            }
+        }
+    }
+
+    override fun dispose() {
+        pnlChartPanel.disposeResources()
+        super.dispose()
     }
 }

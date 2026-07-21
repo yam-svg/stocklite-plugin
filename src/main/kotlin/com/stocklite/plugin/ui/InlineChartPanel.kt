@@ -5,6 +5,7 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.util.L10n
 import java.awt.*
 import javax.swing.*
@@ -133,6 +134,51 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         revalidate(); repaint()
         (parent as? JComponent)?.revalidate()
         loadCurrentPeriod()
+    }
+
+    /**
+     * 直接显示预计算好的盈亏折线图（不走网络）。
+     * 用于持仓历史盈亏场景，隐藏周期切换栏（只显示折线）。
+     */
+    fun showPnlChart(
+        displayName: String,
+        points: List<ChartDataService.ChartPoint>,
+        totalPnl: Double
+    ) {
+        closeBtn.toolTipText = L10n.chartCloseTip
+        updatePeriodButtonTexts()
+
+        currentName      = displayName
+        currentSymbol    = "__pnl__"
+        currentChangePct = 0.0
+        currentPrevClose = 0.0
+        currentFetchIntraday = null
+
+        val scheme = StockliteState.getInstance().colorScheme
+        val color  = pctHexColor(totalPnl, scheme)
+        val sign   = if (totalPnl >= 0) "+" else ""
+        infoLabel.text = "<html><b>$displayName</b>&nbsp;&nbsp;" +
+            "<b style='color:$color'>$sign${Fmt.value(totalPnl)}</b></html>"
+
+        // 隐藏周期切换栏
+        periodBtns.values.forEach { it.isEnabled = false; it.foreground = Color(0x555568) }
+
+        preferredSize = Dimension(0, PANEL_HEIGHT)
+        isVisible = true
+        revalidate(); repaint()
+        (parent as? JComponent)?.revalidate()
+
+        if (!JBCefApp.isSupported()) { showFallback(L10n.chartUnsupported); return }
+        val b = ensureBrowser()
+        val id = ++loadId
+        SwingUtilities.invokeLater {
+            if (loadId != id) return@invokeLater
+            b.loadHTML(
+                if (points.isEmpty()) errorHtml()
+                else buildChartHtml(points, 0.0, 0.0, isIntraday = false, period = PERIOD_DAILY),
+                "http://stocklite.local/"
+            )
+        }
     }
 
     fun close() {
@@ -436,9 +482,10 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
     var chgPct=HAS?val:pct;
     var col=chgPct!=null?(chgPct>=0?UP:DN):'#cdd6f4';
     var sign=chgPct!=null&&chgPct>=0?'+':'';
+    var priceTxt=price!=null?(HAS_OHLC||HAS?price.toFixed(3):((price>=0?'+':'')+price.toFixed(2))):null;
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
       +(chgPct!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+chgPct.toFixed(2)+'%</b>':'')
-      +(price!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+price.toFixed(3)+'</b>':'');
+      +(priceTxt!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+priceTxt+'</b>':'');
   });
 
   // ── 可见区间最高/最低价标注 ──────────────────────────────────────────

@@ -16,6 +16,7 @@ import com.stocklite.plugin.ui.dialogs.ClosePositionDialog
 import com.stocklite.plugin.ui.dialogs.FundHoldingsDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.dialogs.SetAlertDialog
+import com.stocklite.plugin.ui.dialogs.PortfolioPnlDialog
 import com.stocklite.plugin.ui.dialogs.TradeHistoryDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
@@ -158,8 +159,14 @@ class StockPanel : JPanel(BorderLayout()),
     private val table        = JBTable(tableModel)
     private val groupCombo   = JComboBox<String>()
     private var updatingCombo = false
-    private val summaryLabel = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --")
-    private val statusLabel  = JLabel(MarketTimeUtil.getMarketStatusText())
+    private val summaryLabel   = JLabel("${L10n.lblTotalValue} --   ${L10n.lblTotalPnl} --").apply {
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        toolTipText = L10n.btnPortfolioPnl
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) { PortfolioPnlDialog().show() }
+        })
+    }
+    private val statusLabel    = JLabel(MarketTimeUtil.getMarketStatusText())
 
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton

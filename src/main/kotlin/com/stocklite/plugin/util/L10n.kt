@@ -184,6 +184,12 @@ object L10n {
     // 图表
     val chartLoading     get() = s("数据加载中…", "Loading…")
     val chartNoData      get() = s("暂无当日数据", "No data for today")
+    val dlgPortfolioPnl  get() = s("总持仓盈亏走势", "Portfolio P&L History")
+    val tabTradeDetail   get() = s("交易明细", "Trade Records")
+    val tabPnlChart      get() = s("盈亏走势", "P&L Chart")
+    val pnlNoHoldings    get() = s("暂无持仓记录", "No holdings found")
+    val pnlNoRecords     get() = s("暂无交易记录", "No trade records")
+    val btnPortfolioPnl  get() = s("持仓盈亏走势", "Portfolio P&L")
     val chartCloseTip    get() = s("关闭图表",     "Close chart")
     val chartPrevClose   get() = s("昨收",         "Prev Close")
     val chartUnsupported get() = s("当前 IDE 不支持内嵌浏览器（需 JetBrains IDE 2023.3+）", "Inline browser not supported (requires JetBrains IDE 2023.3+)")
