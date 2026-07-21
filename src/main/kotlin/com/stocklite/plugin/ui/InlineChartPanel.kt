@@ -275,17 +275,17 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#1e1e2e;overflow:hidden;}
-#chart{width:100vw;height:100vh;position:relative;}
-#tip{position:absolute;top:6px;left:10px;z-index:10;
-  background:rgba(20,20,36,.92);border:1px solid #3a3a5a;
-  border-radius:5px;padding:4px 8px;font:11px/1.6 system-ui,sans-serif;
-  pointer-events:none;display:none;color:#cdd6f4;}
+html,body{height:100%;}
+body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
+#infobar{height:22px;flex-shrink:0;padding:0 8px;
+  font:11px/22px system-ui,sans-serif;white-space:nowrap;overflow:hidden;
+  color:#888aaa;border-bottom:1px solid #252538;}
+#chart{width:100%;flex:1;min-height:0;position:relative;}
 .hl-lbl{position:absolute;font:10px/1.4 system-ui,sans-serif;white-space:nowrap;
   padding:1px 4px;border-radius:2px;pointer-events:none;z-index:5;display:none;}
 </style>
 </head><body>
-<div id="chart"><div id="tip"></div><div id="hi" class="hl-lbl"></div><div id="lo" class="hl-lbl"></div></div>
+<div id="infobar"></div><div id="chart"><div id="hi" class="hl-lbl"></div><div id="lo" class="hl-lbl"></div></div>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
@@ -301,7 +301,7 @@ body{background:#1e1e2e;overflow:hidden;}
     if(prevC>0) pctMap[raw[pi].time]=(raw[pi].price-prevC)/prevC*100;
   }
 
-  var el=document.getElementById('chart'), tip=document.getElementById('tip');
+  var el=document.getElementById('chart'), tip=document.getElementById('infobar');
   var chart=LightweightCharts.createChart(el,{
     width:el.clientWidth, height:el.clientHeight,
     layout:{background:{color:'#1e1e2e'},textColor:'#cdd6f4'},
@@ -350,6 +350,19 @@ body{background:#1e1e2e;overflow:hidden;}
       series.createPriceLine({price:PREV,color:'#666688',lineWidth:1,
         lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title:'$prevCloseLabel'});
     }
+    // 均线 MA5 / MA10 / MA20
+    var MA_DEFS=[{n:5,color:'#f5c518'},{n:10,color:'#2196f3'},{n:20,color:'#e040fb'}];
+    var maSeries=MA_DEFS.map(function(def){
+      var s=chart.addLineSeries({color:def.color,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+      var maData=[];
+      for(var mi=def.n-1;mi<raw.length;mi++){
+        var sum=0;
+        for(var mj=mi-def.n+1;mj<=mi;mj++) sum+=raw[mj].price;
+        maData.push({time:raw[mi].time,value:sum/def.n});
+      }
+      s.setData(maData);
+      return{s:s,n:def.n,color:def.color,data:maData};
+    });
   } else if(HAS){
     var data=raw.map(function(d){return{time:d.time,value:(d.price-PREV)/PREV*100};});
     series=chart.addBaselineSeries({
@@ -381,9 +394,9 @@ body{background:#1e1e2e;overflow:hidden;}
   })();
 
   chart.subscribeCrosshairMove(function(p){
-    if(!p.point||!p.time){tip.style.display='none';return;}
+    if(!p.point||!p.time){tip.innerHTML='';return;}
     var sd=p.seriesData&&p.seriesData.get(series);
-    if(!sd){tip.style.display='none';return;}
+    if(!sd){tip.innerHTML='';return;}
     var dt=new Date(p.time*1000);
     var ts=ISINTRADAY
       ?(String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'))
@@ -392,23 +405,31 @@ body{background:#1e1e2e;overflow:hidden;}
       var pct=pctMap[p.time];
       var col=sd.close>sd.open?CU:(sd.close<sd.open?CD:(pct!=null&&pct<0?CD:CU));
       var pctTxt=(pct!=null)?('&nbsp;&nbsp;'+(pct>=0?'+':'')+pct.toFixed(2)+'%'):'';
+      var maTxt='';
+      if(typeof maSeries!=='undefined'){
+        maSeries.forEach(function(ma){
+          var idx=-1;
+          for(var mi=0;mi<ma.data.length;mi++){if(ma.data[mi].time===p.time){idx=mi;break;}}
+          if(idx>=0) maTxt+='&nbsp;&nbsp;<span style="color:'+ma.color+'">MA'+ma.n+' '+ma.data[idx].value.toFixed(3)+'</span>';
+        });
+      }
       tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
-        +'<b style="color:'+col+'">'+pctTxt+'</b><br/>'
-        +'<b style="color:'+col+'">'
-        +'$lblOpen '+sd.open.toFixed(3)+'&nbsp;&nbsp;$lblHigh '+sd.high.toFixed(3)+'<br/>'
-        +'$lblLow '+sd.low.toFixed(3)+'&nbsp;&nbsp;$lblClose '+sd.close.toFixed(3)+'</b>';
-      tip.style.display='block';
+        +'&nbsp;&nbsp;<b style="color:'+col+'">'+pctTxt.trim()+'</b>'
+        +'&nbsp;&nbsp;<span style="color:#cdd6f4">$lblOpen <b style="color:'+col+'">'+sd.open.toFixed(3)+'</b>'
+        +'&nbsp;$lblHigh <b style="color:'+col+'">'+sd.high.toFixed(3)+'</b>'
+        +'&nbsp;$lblLow <b style="color:'+col+'">'+sd.low.toFixed(3)+'</b>'
+        +'&nbsp;$lblClose <b style="color:'+col+'">'+sd.close.toFixed(3)+'</b></span>'
+        +maTxt;
       return;
     }
     var val=sd.value!==undefined?sd.value:(sd.lowerValue!==undefined?sd.lowerValue:null);
-    if(val===null){tip.style.display='none';return;}
+    if(val===null){tip.innerHTML='';return;}
     var price=priceMap[p.time];
     var col=HAS?(val>=0?UP:DN):'#cdd6f4';
     var sign=val>=0?'+':'';
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
       +(HAS?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+val.toFixed(2)+'%</b>':'')
-      +(price!=null?'&nbsp;&nbsp;<span>'+price.toFixed(3)+'</span>':'');
-    tip.style.display='block';
+      +(price!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+price.toFixed(3)+'</b>':'');
   });
 
   // ── 可见区间最高/最低价标注 ──────────────────────────────────────────
