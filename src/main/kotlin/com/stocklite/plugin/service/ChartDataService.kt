@@ -99,19 +99,18 @@ object ChartDataService {
             val yahooRange    = when (period) { "daily" -> "3mo"; "weekly" -> "1y"; "monthly" -> "5y"; else -> "3mo" }
             return fetchYahooHistory("$hkCode.HK", yahooInterval, yahooRange, count)
         }
-        // A 股 / 国内指数 → 新浪
+        // A 股 / 国内指数 → 腾讯 qfq（前复权，避免分红拆分断层），fallback 新浪
         if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
-            val scale = when (period) {
-                "daily"   -> 240
-                "weekly"  -> 1200
-                "monthly" -> 5000
-                else      -> 240
-            }
+            val pts = fetchTencentAShareHistory(symbol, period, count)
+            if (pts.isNotEmpty()) return pts
+            val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
             return fetchSinaKlineHistory(symbol, scale, count)
         }
         // A 股指数（Yahoo symbol → Sina）
         val sinaSymbol = CN_SINA_MAP[symbol]
         if (sinaSymbol != null) {
+            val pts = fetchTencentAShareHistory(sinaSymbol, period, count)
+            if (pts.isNotEmpty()) return pts
             val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
             return fetchSinaKlineHistory(sinaSymbol, scale, count)
         }
@@ -458,6 +457,42 @@ object ChartDataService {
                 list.add(ChartPoint(ts, price))
             }
             list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /**
+     * A 股历史 K 线（日/周/月），腾讯 qfq 前复权接口。
+     * 字段顺序：[date, open, close, high, low, volume, {}, change%, amount, ...]
+     */
+    private fun fetchTencentAShareHistory(symbol: String, period: String, count: Int): List<ChartPoint> {
+        val periodParam = when (period) {
+            "weekly"  -> "week"
+            "monthly" -> "month"
+            else      -> "day"
+        }
+        val varName = "kline_${periodParam}qfq"
+        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get" +
+                  "?param=$symbol,$periodParam,,,$count,qfq&_var=$varName"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val json  = raw.substringAfter("=").trim()
+            val bars  = JSONObject(json).getJSONObject("data")
+                .getJSONObject(symbol).getJSONArray("qfq$periodParam")
+            val shZone = ZoneId.of("Asia/Shanghai")
+            val list   = mutableListOf<ChartPoint>()
+            for (i in 0 until bars.length()) {
+                val bar  = bars.getJSONArray(i)
+                val date = bar.optString(0, "")
+                if (date.isEmpty()) continue
+                val open  = bar.optString(1, "").toDoubleOrNull() ?: Double.NaN
+                val close = bar.optString(2, "").toDoubleOrNull() ?: continue
+                val high  = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
+                val low   = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
+                val ts    = java.time.LocalDate.parse(date)
+                    .atStartOfDay(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, close, open, high, low))
+            }
+            list.takeLast(count)
         } catch (_: Exception) { emptyList() }
     }
 
