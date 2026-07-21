@@ -36,6 +36,8 @@ class FundPanel : JPanel(BorderLayout()),
     StockliteState.FundQuotesRefreshListener,
     StockliteState.DataChangeListener {
 
+    private val chartPanel = InlineChartPanel()
+
     private data class ColDef(
         val key: String, val title: String, val type: QuoteColumnType,
         val alwaysOn: Boolean = false,
@@ -219,22 +221,30 @@ class FundPanel : JPanel(BorderLayout()),
             override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }
             override fun mouseClicked(e: MouseEvent) {
                 if (SwingUtilities.isRightMouseButton(e)) return
-                // 单击名称列 → 弹出持仓详情
                 val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
-                if (table.getColumnName(viewCol) != L10n.colName) return
                 val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
                 val modelRow = table.convertRowIndexToModel(viewRow)
                 if (modelRow < 0 || modelRow >= rows.size) return
-                val (f, _) = rows[modelRow]
-                com.stocklite.plugin.ui.dialogs.FundHoldingsDialog(f.name, f.code).show()
+                val (f, q) = rows[modelRow]
+                when (table.getColumnName(viewCol)) {
+                    L10n.colName -> com.stocklite.plugin.ui.dialogs.FundHoldingsDialog(f.name, f.code).show()
+                    L10n.colOfficialChg, L10n.colTodayEst -> chartPanel.showChart(
+                        displayName   = f.alias.ifBlank { f.name },
+                        displaySymbol = f.code,
+                        changePercent = q?.changePercent ?: 0.0,
+                        prevClose     = 0.0,
+                        fetchData     = null   // 基金无分时数据，仅支持日/周/月K
+                    )
+                }
             }
         })
 
-        // 鼠标悬停在名称列时显示手型光标
+        // 鼠标悬停在名称/涨跌幅列时显示手型光标
+        val clickableCols = setOf(L10n.colName, L10n.colOfficialChg, L10n.colTodayEst)
         table.addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
                 val col = table.columnAtPoint(e.point)
-                table.cursor = if (col >= 0 && table.getColumnName(col) == L10n.colName)
+                table.cursor = if (col >= 0 && table.getColumnName(col) in clickableCols)
                     Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                 else Cursor.getDefaultCursor()
             }
@@ -334,11 +344,15 @@ class FundPanel : JPanel(BorderLayout()),
 
         val centerWrapper = JPanel(BorderLayout())
         centerWrapper.add(JBScrollPane(table), BorderLayout.CENTER)
-        centerWrapper.add(bottomBar, BorderLayout.SOUTH)
+        centerWrapper.add(chartPanel,  BorderLayout.SOUTH)
+
+        val bottomBar2 = JPanel(BorderLayout())
+        bottomBar2.add(bottomBar, BorderLayout.NORTH)
 
         val mainWrapper = JPanel(BorderLayout())
         mainWrapper.add(centerWrapper, BorderLayout.CENTER)
-        mainWrapper.add(aiPanel,       BorderLayout.SOUTH)
+        mainWrapper.add(bottomBar2,    BorderLayout.SOUTH)
+        bottomBar2.add(aiPanel,        BorderLayout.CENTER)
 
         add(toolbar,     BorderLayout.NORTH)
         add(mainWrapper, BorderLayout.CENTER)

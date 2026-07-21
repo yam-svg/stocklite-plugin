@@ -99,6 +99,17 @@ object ChartDataService {
             val yahooRange    = when (period) { "daily" -> "3mo"; "weekly" -> "1y"; "monthly" -> "5y"; else -> "3mo" }
             return fetchYahooHistory("$hkCode.HK", yahooInterval, yahooRange, count)
         }
+        // 基金（纯数字代码，如 "017437"）→ 天天基金净值历史，resample 到日/周/月
+        if (symbol.all { it.isDigit() } && symbol.length == 6) {
+            val daily = fetchFundNavHistory(symbol)
+            if (daily.isNotEmpty()) return resampleDaily(daily, period, count)
+            // fallback：部分场内 ETF 有 K 线
+            val prefixed = if (symbol.startsWith("6")) "sh$symbol" else "sz$symbol"
+            val pts = fetchTencentAShareHistory(prefixed, period, count)
+            if (pts.isNotEmpty()) return pts
+            val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
+            return fetchSinaKlineHistory(prefixed, scale, count)
+        }
         // A 股 / 国内指数 → 腾讯 qfq（前复权，避免分红拆分断层），fallback 新浪
         if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
             val pts = fetchTencentAShareHistory(symbol, period, count)
@@ -482,8 +493,12 @@ object ChartDataService {
             val raw  = HttpUtil.get(url) ?: break
             val page = try {
                 val json = raw.substringAfter("=").trim()
-                val bars = JSONObject(json).getJSONObject("data")
-                    .getJSONObject(symbol).getJSONArray("qfq$periodParam")
+                val symObj = JSONObject(json).getJSONObject("data").getJSONObject(symbol)
+                // 优先前复权（qfqday/qfqweek/qfqmonth），不支持时 fallback 非复权（day/week/month）
+                val bars = symObj.optJSONArray("qfq$periodParam")
+                    ?.takeIf { it.length() > 0 }
+                    ?: symObj.optJSONArray(periodParam)
+                    ?: break
                 val list = mutableListOf<ChartPoint>()
                 for (i in 0 until bars.length()) {
                     val bar  = bars.getJSONArray(i)
@@ -545,6 +560,27 @@ object ChartDataService {
                 list.add(ChartPoint(ts, close, open, high, low))
             }
             list.takeLast(count)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    // ── Fund NAV history（天天基金 pingzhongdata）─────────────────────────
+
+    private fun fetchFundNavHistory(code: String): List<ChartPoint> {
+        val url = "https://fund.eastmoney.com/pingzhongdata/$code.js"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            // 提取 Data_netWorthTrend = [{"x":ms,"y":nav,...},...]
+            val m = Regex("""Data_netWorthTrend\s*=\s*(\[.*?]);""", RegexOption.DOT_MATCHES_ALL)
+                .find(raw) ?: return emptyList()
+            val arr = JSONArray(m.groupValues[1])
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val ms  = obj.optLong("x", -1L).takeIf { it > 0 } ?: continue
+                val nav = obj.optDouble("y", Double.NaN).takeIf { it.isFinite() && it > 0 } ?: continue
+                list.add(ChartPoint(ms / 1000L, nav))   // ms → seconds
+            }
+            list
         } catch (_: Exception) { emptyList() }
     }
 

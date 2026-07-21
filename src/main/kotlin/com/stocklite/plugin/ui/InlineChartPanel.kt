@@ -101,7 +101,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         displaySymbol: String,
         changePercent: Double,
         prevClose: Double,
-        fetchData: () -> List<ChartDataService.ChartPoint>
+        fetchData: (() -> List<ChartDataService.ChartPoint>)? = null
     ) {
         closeBtn.toolTipText = L10n.chartCloseTip
         updatePeriodButtonTexts()
@@ -120,9 +120,13 @@ class InlineChartPanel : JPanel(BorderLayout()) {
             "<span style='color:#888aaa;font-size:11px'>$displaySymbol</span>&nbsp;&nbsp;" +
             "<b style='color:$color'>$sign${pct}%</b></html>"
 
-        // Reset to intraday on new chart
-        currentPeriod = PERIOD_INTRADAY
-        highlightPeriodBtn(PERIOD_INTRADAY)
+        // 无日内数据时默认显示日K，并禁用日内按钮
+        val hasIntraday = fetchData != null
+        periodBtns[PERIOD_INTRADAY]?.isEnabled = hasIntraday
+        periodBtns[PERIOD_INTRADAY]?.foreground = if (hasIntraday) Color(0x888aaa) else Color(0x555568)
+        val defaultPeriod = if (hasIntraday) PERIOD_INTRADAY else PERIOD_DAILY
+        currentPeriod = defaultPeriod
+        highlightPeriodBtn(defaultPeriod)
 
         preferredSize = Dimension(0, PANEL_HEIGHT)
         isVisible = true
@@ -143,6 +147,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
 
     private fun selectPeriod(period: String) {
         if (currentSymbol.isEmpty()) return
+        if (period == PERIOD_INTRADAY && currentFetchIntraday == null) return
         currentPeriod = period
         highlightPeriodBtn(period)
         loadCurrentPeriod()
@@ -192,7 +197,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
                 btn.foreground = Color(0xcdd6f4)
                 btn.font = btn.font.deriveFont(Font.BOLD, 11f)
             } else {
-                btn.foreground = Color(0x888aaa)
+                // 禁用的按钮保持灰暗色，不恢复为普通灰色
+                if (btn.isEnabled) btn.foreground = Color(0x888aaa)
                 btn.font = btn.font.deriveFont(Font.PLAIN, 11f)
             }
         }
@@ -425,10 +431,13 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
     var val=sd.value!==undefined?sd.value:(sd.lowerValue!==undefined?sd.lowerValue:null);
     if(val===null){tip.innerHTML='';return;}
     var price=priceMap[p.time];
-    var col=HAS?(val>=0?UP:DN):'#cdd6f4';
-    var sign=val>=0?'+':'';
+    var pct=pctMap[p.time];
+    // 日内 baseline：val 已是相对昨收的涨跌幅；其他折线图：用 pctMap 计算逐 bar 涨跌幅
+    var chgPct=HAS?val:pct;
+    var col=chgPct!=null?(chgPct>=0?UP:DN):'#cdd6f4';
+    var sign=chgPct!=null&&chgPct>=0?'+':'';
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
-      +(HAS?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+val.toFixed(2)+'%</b>':'')
+      +(chgPct!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+chgPct.toFixed(2)+'%</b>':'')
       +(price!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+price.toFixed(3)+'</b>':'');
   });
 
