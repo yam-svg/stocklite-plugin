@@ -172,7 +172,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
                 if (loadId != id) return@invokeLater
                 b.loadHTML(
                     if (points.isEmpty()) errorHtml()
-                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY),
+                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period),
                     "http://stocklite.local/"
                 )
             }
@@ -230,7 +230,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         points: List<ChartDataService.ChartPoint>,
         prevClose: Double,
         changePercent: Double,
-        isIntraday: Boolean
+        isIntraday: Boolean,
+        period: String = PERIOD_INTRADAY
     ): String {
         val scheme = StockliteState.getInstance().colorScheme
 
@@ -263,6 +264,13 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val lblLow   = L10n.chartLow.replace("'", "\\'")
         val lblClose = L10n.chartClose.replace("'", "\\'")
         val timeVisible = if (isIntraday) "true" else "false"
+        // 初始可见 K 线根数（滚动查看历史；日K显示半年，周K显示2年，月K显示5年）
+        val initBars = when (period) {
+            PERIOD_DAILY   -> 120
+            PERIOD_WEEKLY  -> 104
+            PERIOD_MONTHLY -> 60
+            else           -> 0   // 日内：fitContent
+        }
 
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -358,7 +366,17 @@ body{background:#1e1e2e;overflow:hidden;}
     series.setData(data);
   }
 
-  chart.timeScale().fitContent();
+  (function(){
+    var INIT_BARS=$initBars;
+    if(INIT_BARS>0&&raw.length>INIT_BARS){
+      chart.timeScale().setVisibleRange({
+        from:raw[raw.length-INIT_BARS].time,
+        to:raw[raw.length-1].time
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
+  })();
 
   chart.subscribeCrosshairMove(function(p){
     if(!p.point||!p.time){tip.style.display='none';return;}

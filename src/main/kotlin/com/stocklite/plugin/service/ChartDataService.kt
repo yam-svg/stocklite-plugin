@@ -461,39 +461,56 @@ object ChartDataService {
     }
 
     /**
-     * A 股历史 K 线（日/周/月），腾讯 qfq 前复权接口。
+     * A 股历史 K 线（日/周/月），腾讯 qfq 前复权接口，分页拉取全量历史。
      * 字段顺序：[date, open, close, high, low, volume, {}, change%, amount, ...]
      */
-    private fun fetchTencentAShareHistory(symbol: String, period: String, count: Int): List<ChartPoint> {
+    private fun fetchTencentAShareHistory(symbol: String, period: String, @Suppress("UNUSED_PARAMETER") count: Int): List<ChartPoint> {
         val periodParam = when (period) {
             "weekly"  -> "week"
             "monthly" -> "month"
             else      -> "day"
         }
-        val varName = "kline_${periodParam}qfq"
-        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get" +
-                  "?param=$symbol,$periodParam,,,$count,qfq&_var=$varName"
-        val raw = HttpUtil.get(url) ?: return emptyList()
-        return try {
-            val json  = raw.substringAfter("=").trim()
-            val bars  = JSONObject(json).getJSONObject("data")
-                .getJSONObject(symbol).getJSONArray("qfq$periodParam")
-            val shZone = ZoneId.of("Asia/Shanghai")
-            val list   = mutableListOf<ChartPoint>()
-            for (i in 0 until bars.length()) {
-                val bar  = bars.getJSONArray(i)
-                val date = bar.optString(0, "")
-                if (date.isEmpty()) continue
-                val open  = bar.optString(1, "").toDoubleOrNull() ?: Double.NaN
-                val close = bar.optString(2, "").toDoubleOrNull() ?: continue
-                val high  = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
-                val low   = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
-                val ts    = java.time.LocalDate.parse(date)
-                    .atStartOfDay(shZone).toInstant().epochSecond
-                list.add(ChartPoint(ts, close, open, high, low))
-            }
-            list.takeLast(count)
-        } catch (_: Exception) { emptyList() }
+        val shZone  = ZoneId.of("Asia/Shanghai")
+        val PAGE    = 300
+        val all     = mutableListOf<ChartPoint>()
+        var endDate = ""   // 空字符串表示拉到最新
+
+        while (true) {
+            val varName = "kline_${periodParam}qfq"
+            val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get" +
+                      "?param=$symbol,$periodParam,,$endDate,$PAGE,qfq&_var=$varName"
+            val raw  = HttpUtil.get(url) ?: break
+            val page = try {
+                val json = raw.substringAfter("=").trim()
+                val bars = JSONObject(json).getJSONObject("data")
+                    .getJSONObject(symbol).getJSONArray("qfq$periodParam")
+                val list = mutableListOf<ChartPoint>()
+                for (i in 0 until bars.length()) {
+                    val bar  = bars.getJSONArray(i)
+                    val date = bar.optString(0, "")
+                    if (date.isEmpty()) continue
+                    val open  = bar.optString(1, "").toDoubleOrNull() ?: Double.NaN
+                    val close = bar.optString(2, "").toDoubleOrNull() ?: continue
+                    val high  = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
+                    val low   = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
+                    val ts    = java.time.LocalDate.parse(date)
+                        .atStartOfDay(shZone).toInstant().epochSecond
+                    list.add(ChartPoint(ts, close, open, high, low))
+                }
+                list
+            } catch (_: Exception) { break }
+
+            if (page.isEmpty()) break
+            // 插到列表头部（向前翻页）
+            all.addAll(0, page)
+            // 已到上市首日（返回条数不足一页），结束
+            if (page.size < PAGE) break
+            // 下一页 endDate = 本页最早日期的前一天
+            val earliest = java.time.Instant.ofEpochSecond(page.first().time)
+                .atZone(shZone).toLocalDate().minusDays(1).toString()
+            endDate = earliest
+        }
+        return all
     }
 
     /**
