@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.10.3</version>
+    <version>1.11.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -23,12 +23,13 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <h3>Funds</h3>
 <ul>
   <li>EastMoney real-time NAV estimates; auto-refresh every 30 seconds (configurable)</li>
-  <li>Dual change columns: <b>Official Change</b> (T-1 historical NAV) + <b>Today Estimate</b> (intraday)</li>
+  <li>Dual change columns: <b>Official Change</b> (T-1 historical NAV) + <b>Today Estimate</b> (intraday); Today Estimate column can be hidden in Settings</li>
   <li>Today Estimate automatically switches to <b>Official</b> label once the daily NAV is published</li>
   <li>QDII fund auto-detection; unified data pipeline merges EastMoney fundgz + F10 by date, always showing the most recent official NAV</li>
   <li>QDII funds do not show intraday estimates (unreliable for overseas-NAV funds)</li>
   <li>Portfolio tracking identical to the Stocks module (cost NAV, shares, P&amp;L)</li>
   <li>Right-click: Edit · Delete · Copy Code · Copy Name · Open in Browser (EastMoney fund page) · <b>Rename</b> (custom alias)</li>
+  <li>Click the <b>Official Change</b> or <b>Today Estimate</b> column to open an embedded Daily/Weekly/Monthly K-line chart; uses EastMoney NAV history for open-end funds, Tencent qfq data for exchange-listed ETFs</li>
 </ul>
 
 <h3>Futures</h3>
@@ -59,7 +60,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Optional AI second opinion: when a DeepSeek API key is configured, an additional AI-generated read on the same data is shown alongside the heuristic score, explicitly distinguishing hedging vs. directional short-adding</li>
 </ul>
 
-<h3>Trade Records</h3>
+<h3>Trade Records &amp; P&amp;L History</h3>
 <ul>
   <li>Right-click any stock row to <b>Add Trade Record</b> (buy/sell/adjust) or open <b>Trade History</b></li>
   <li>Each record stores type, price, quantity, date, and note; auto-generates records when creating or editing a stock holding</li>
@@ -67,6 +68,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Deleting a record automatically recalculates the holding's quantity and weighted-average cost from remaining records</li>
   <li>Right-click <b>Close Position</b> to sell all shares at once; dialog pre-fills current price and shows estimated realized P&amp;L</li>
   <li>Stock edit dialog shows cost and quantity as read-only; all changes go through trade records</li>
+  <li><b>Trade History dialog</b> now has two tabs: <b>Trade Records</b> (existing table) + <b>P&amp;L Chart</b> — replays trade records against historical daily close prices to draw a cumulative floating P&amp;L curve for that single stock</li>
+  <li><b>Portfolio P&amp;L History</b>: click the summary bar at the bottom of the Stock panel to open a chart showing the combined daily floating P&amp;L across all holdings</li>
 </ul>
 
 <h3>Earnings Date</h3>
@@ -95,8 +98,10 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>Add Stock dialog</b>: after selecting a search result, instantly shows the current quote (price + change%) and an inline chart so you can review the stock before confirming — cost price is auto-filled with the current price</li>
   <li><b>Four periods</b>: Intraday · Daily K · Weekly K · Monthly K, switchable with one click</li>
   <li>Intraday: line/area chart, Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
-  <li>Daily/Weekly/Monthly: real candlestick charts with <b>MA5/MA10/MA20 moving averages</b> overlaid (yellow/blue/purple) and a <b>volume histogram</b> sub-chart (bottom 20%, red/green bars synced with the main chart's time axis)</li>
-  <li>Candlestick tooltip shows O/H/L/C, change% vs previous bar, MA values, and volume (auto-scaled to 万/亿)</li>
+  <li>Daily/Weekly/Monthly: real candlestick charts with optional <b>MA5/MA10/MA20 moving averages</b> overlaid (yellow/blue/purple, toggle in Settings); visible-range <b>high/low price labels</b> shown at the corresponding candle</li>
+  <li>A-share Daily K uses Tencent qfq (forward-adjusted) data to eliminate split/dividend gaps; full listing history fetched via pagination</li>
+  <li>Candlestick tooltip shows O/H/L/C, change% vs previous bar, and MA values</li>
+  <li>Time axis and crosshair tooltip use Chinese date format (yyyy/M/d)</li>
   <li>Powered by lightweight-charts v4.2.0 (TradingView OSS)</li>
 </ul>
 
@@ -189,12 +194,13 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <h3>基金</h3>
 <ul>
   <li>实时估值，默认每 30 秒刷新（可配置），数据来自天天基金</li>
-  <li>双涨跌幅列：<b>官方涨跌</b>（T-1 历史净值）+ <b>今日估算</b>（盘中实时）</li>
+  <li>双涨跌幅列：<b>官方涨跌</b>（T-1 历史净值）+ <b>今日估算</b>（盘中实时）；今日估算列可在设置中关闭</li>
   <li>官方净值发布后，"今日估算"自动标注"官方"字样，净值日期同步更新为今日</li>
   <li>自动识别 QDII 基金；统一数据通道整合 fundgz + F10，按日期取最新官方净值，不再交替显示</li>
   <li>QDII 基金不展示今日估算（境外基金估值不准确）</li>
   <li>持仓管理与盈亏计算，逻辑与股票模块一致</li>
   <li>右键菜单：编辑 · 删除 · 复制代码 · 复制名称 · 在浏览器中打开（天天基金页）· <b>修改名称</b>（自定义别名）</li>
+  <li>点击"官方涨跌"或"今日估算"列，面板底部内嵌展开日K/周K/月K图表；场外基金使用天天基金净值历史，场内 ETF 使用腾讯前复权数据</li>
 </ul>
 
 <h3>期货</h3>
@@ -225,13 +231,15 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>可选 AI 二次分析：在设置中配置 DeepSeek API Key 后，会额外展示 AI 结合同一批数据给出的解读，明确区分"对冲加仓"与"方向性加空"两种情形</li>
 </ul>
 
-<h3>交易记录</h3>
+<h3>交易记录与盈亏历史</h3>
 <ul>
   <li>股票行右键新增<b>添加交易记录</b>和<b>交易记录</b>入口，支持记录买入/卖出/调整，含价格、数量、日期、备注</li>
   <li>创建或编辑持仓时自动生成交易记录；删除记录后自动从剩余记录重算持仓和加权均价</li>
   <li>今日盈亏精确计算：今日买入的仓位以实际成本为基准，昨日及以前的仓位以昨收为基准</li>
   <li>右键<b>清仓（卖出全部）</b>：弹出确认对话框，预填当前实时价和全部持仓数量，显示预计实现盈亏</li>
   <li>编辑持仓对话框中成本价和数量改为只读，点击链接跳转到交易记录修改</li>
+  <li><b>交易记录</b>对话框新增「盈亏走势」Tab：根据交易记录重放持仓，结合历史日线收盘价，绘制该股持有期间的逐日浮动盈亏曲线</li>
+  <li><b>总持仓盈亏走势</b>：点击股票面板底部汇总栏文字，弹出合并所有持仓股的每日盈亏折线图</li>
 </ul>
 
 <h3>财报日期标注</h3>
@@ -254,8 +262,10 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>添加股票对话框</b>：选中搜索结果后立即展示该股当前行情（现价 + 涨跌幅）和日内走势图，方便决策；成本价自动预填当前价格，可手动修改</li>
   <li><b>四档周期切换</b>：日内 · 日K · 周K · 月K，一键切换</li>
   <li>日内：折线/面积图，Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
-  <li>日K/周K/月K 新增 <b>MA5/MA10/MA20 均线</b>叠加（黄/蓝/紫）和<b>成交量副图</b>（主图底部20%，涨红跌绿柱，与主图时间轴同步联动）</li>
-  <li>悬浮提示：蜡烛图同时显示开/高/低/收、涨跌幅%、均线数值和成交量（自动换算万/亿）</li>
+  <li>日K/周K/月K：真实蜡烛图，可选叠加 <b>MA5/MA10/MA20 均线</b>（黄/蓝/紫，设置中开启，默认关闭）；可见区间最高/最低价直接标注在对应蜡烛位置</li>
+  <li>A 股日K 使用腾讯前复权（qfq）接口，分页拉取全量上市历史，消除分红/拆分断层</li>
+  <li>悬浮提示：蜡烛图显示开/高/低/收、涨跌幅%、均线数值；折线/面积图显示涨跌幅% 和净值/原始价格</li>
+  <li>横坐标使用中文日期格式（年/月/日），悬浮时间标签同步中文化</li>
   <li>图表基于 lightweight-charts v4.2.0（TradingView 开源库）</li>
 </ul>
 
@@ -323,24 +333,28 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.10.3</h3>
+<h3>1.11.0</h3>
 
-<h4>多窗口数据同步</h4>
+<h4>盈亏历史图表</h4>
 <ul>
-  <li>同时打开多个 IDE 窗口时，在任一窗口添加、编辑或删除股票/基金/期货，其他窗口立即自动更新，无需手动刷新</li>
+  <li>交易记录对话框新增「盈亏走势」Tab，根据历史交易记录与日线收盘价推算持有期间每日浮动盈亏曲线</li>
+  <li>点击股票面板底部汇总栏，弹出总持仓盈亏走势图，合并显示所有持仓股的每日综合盈亏</li>
 </ul>
 
-<h4>添加股票时支持查看行情与K线图</h4>
+<h4>基金 K 线图</h4>
 <ul>
-  <li>搜索并选中股票后，对话框内即时展示当前行情卡片（现价、涨跌幅、昨收）和日内走势图</li>
-  <li>支持切换日内/日K/周K/月K，方便在添加前确认走势</li>
-  <li>成本价自动预填当前实时价，可手动修改</li>
+  <li>基金面板点击涨跌幅列，内嵌展开日K/周K/月K图表；场外基金使用天天基金净值历史，场内 ETF 使用腾讯前复权数据</li>
+  <li>今日估算列支持在设置中关闭</li>
 </ul>
 
-<h4>收益率展示增强</h4>
+<h4>K 线图优化</h4>
 <ul>
-  <li>IDE 状态栏持仓弹窗的汇总行新增总收益率显示</li>
-  <li>持仓明细表格新增"收益率"列，展示每只股票的累计收益率</li>
+  <li>A 股日K 改用腾讯前复权接口，分页拉取全量上市历史，修复 ETF 分红拆分导致的价格断层问题</li>
+  <li>可见区间最高/最低价直接标注在对应蜡烛上方/下方</li>
+  <li>横坐标及悬浮时间标签改为中文日期格式</li>
+  <li>MA5/MA10/MA20 均线改为默认关闭，可在设置中开启</li>
+  <li>悬浮提示栏移至图表顶部固定显示，不再遮挡 K 线内容</li>
+  <li>悬浮时折线/面积图（日内、基金净值）同步显示涨跌幅%</li>
 </ul>
     ]]></change-notes>
 
