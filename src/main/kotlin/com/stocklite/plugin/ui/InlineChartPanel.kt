@@ -297,11 +297,26 @@ body{background:#1e1e2e;overflow:hidden;}
     layout:{background:{color:'#1e1e2e'},textColor:'#cdd6f4'},
     grid:{vertLines:{color:'#252538'},horzLines:{color:'#252538'}},
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
-    timeScale:{timeVisible:$timeVisible,secondsVisible:false,borderColor:'#3a3a5a'},
+    timeScale:{timeVisible:$timeVisible,secondsVisible:false,borderColor:'#3a3a5a',
+      tickMarkFormatter:function(t,type){
+        var d=new Date(t*1000);
+        var TM=LightweightCharts.TickMarkType;
+        if(type===TM.Year) return d.getFullYear()+'年';
+        if(type===TM.Month) return (d.getMonth()+1)+'月';
+        if(type===TM.DayOfMonth) return (d.getMonth()+1)+'月'+d.getDate()+'日';
+        return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      }},
     rightPriceScale:{borderColor:'#3a3a5a'},
-    localization:{priceFormatter:(HAS&&!HAS_OHLC)
-      ?function(p){return(p>=0?'+':'')+p.toFixed(2)+'%';}
-      :function(p){return p.toFixed(3);}},
+    localization:{
+      priceFormatter:(HAS&&!HAS_OHLC)
+        ?function(p){return(p>=0?'+':'')+p.toFixed(2)+'%';}
+        :function(p){return p.toFixed(3);},
+      timeFormatter:function(t){
+        var d=new Date(t*1000);
+        if(ISINTRADAY) return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()
+          +' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+        return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();
+      }},
   });
 
   var series;
