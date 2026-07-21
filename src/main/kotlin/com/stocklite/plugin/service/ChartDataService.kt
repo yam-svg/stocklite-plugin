@@ -156,14 +156,14 @@ object ChartDataService {
         } catch (_: Exception) { emptyList() }
     }
 
-    /** 历史 K 线：不过滤今日，取全部 */
+    /** 历史 K 线：不过滤今日，取全部；追加实时今日 bar（日内场中也能显示当日K线） */
     private fun fetchSinaKlineHistory(symbol: String, scale: Int, datalen: Int): List<ChartPoint> {
         val url = "https://quotes.sina.cn/cn/api/json_v2.php/" +
             "CN_MarketDataService.getKLineData?symbol=$symbol&scale=$scale&ma=no&datalen=$datalen"
         val raw = HttpUtil.get(url) ?: return emptyList()
-        return try {
+        val list = try {
             val arr = JSONArray(raw)
-            val list = mutableListOf<ChartPoint>()
+            val result = mutableListOf<ChartPoint>()
             for (i in 0 until arr.length()) {
                 val obj    = arr.getJSONObject(i)
                 val dayStr = obj.optString("day", "")
@@ -174,10 +174,40 @@ object ChartDataService {
                 val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
                 val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
                 val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
-                list.add(ChartPoint(t, close, open, high, low))
+                result.add(ChartPoint(t, close, open, high, low))
             }
-            list
-        } catch (_: Exception) { emptyList() }
+            result
+        } catch (_: Exception) { return emptyList() }
+
+        // 仅日K（scale=240）追加今日实时 bar；周/月K无需（收盘前数据无意义）
+        if (scale != 240) return list
+        val todayBar = fetchSinaTodayBar(symbol) ?: return list
+        val todayStr = todayKey()
+        val todayTs  = runCatching {
+            sdfShanghai.get().parse("$todayStr 00:00:00")!!.time / 1000L
+        }.getOrNull() ?: return list
+        // 若末尾已有今日数据则替换，否则追加
+        if (list.isNotEmpty() && list.last().time == todayTs) {
+            return list.dropLast(1) + todayBar.copy(time = todayTs)
+        }
+        return list + todayBar.copy(time = todayTs)
+    }
+
+    /** 通过新浪实时行情接口获取今日 open/high/low/close */
+    private fun fetchSinaTodayBar(symbol: String): ChartPoint? {
+        val raw = HttpUtil.getGbk(
+            "http://hq.sinajs.cn/list=$symbol", "http://finance.sina.com.cn", label = "日K今日bar"
+        ) ?: return null
+        return try {
+            val m = Regex("""hq_str_[^=]+="([^"]+)"""").find(raw) ?: return null
+            val f = m.groupValues[1].split(",")
+            // 新浪 A 股字段：0=名称,1=今开,2=昨收,3=现价,4=最高,5=最低,...
+            val open  = f.getOrElse(1) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+            val close = f.getOrElse(3) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+            val high  = f.getOrElse(4) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+            val low   = f.getOrElse(5) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+            ChartPoint(0L, close, open, high, low)
+        } catch (_: Exception) { null }
     }
 
     // ── Domestic futures intraday (nf_) ────────────────────────────────
