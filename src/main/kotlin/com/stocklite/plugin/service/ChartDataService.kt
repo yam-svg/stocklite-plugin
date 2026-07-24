@@ -248,7 +248,7 @@ object ChartDataService {
     /** 国内期货日K线（供周期切换的日/周/月使用；周/月由 resampleDaily 本地聚合） */
     private fun fetchDomesticFutureDailyHistory(contract: String): List<ChartPoint> {
         val url = "https://stock2.finance.sina.com.cn/futures/api/json.php/" +
-            "InnerFuturesNewService.getDailyKLine?symbol=$contract"
+            "InnerFuturesNewService.getDailyKLine?symbol=$contract&datalen=2000"
         val raw = HttpUtil.get(url) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
@@ -305,7 +305,7 @@ object ChartDataService {
      */
     private fun fetchGlobalFutureDailyHistory(contract: String): List<ChartPoint> {
         val url = "https://stock2.finance.sina.com.cn/futures/api/json.php/" +
-            "GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=$contract"
+            "GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=$contract&datalen=2000"
         val raw = HttpUtil.get(url) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
