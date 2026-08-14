@@ -117,11 +117,17 @@ class StockPanel : JPanel(BorderLayout()),
         },
         ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
         ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->
-            val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val p = q?.price ?: 0.0
+            val floatingPnl = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            s.realizedPnl + floatingPnl
         },
         ColDef("pnlPercent",   L10n.colPnlPct,   QuoteColumnType.PCT)          { s, q  ->
             val p = q?.price ?: 0.0
-            if (p > 0 && s.costPrice > 0) (p - s.costPrice) / s.costPrice * 100.0 else 0.0
+            val floatingPnl = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val totalPnl = s.realizedPnl + floatingPnl
+            // 有历史买入成本时用累计成本作分母，否则降级为当前成本价
+            val base = if (s.totalBuyCost > 0) s.totalBuyCost else s.costPrice * s.quantity
+            if (base > 0) totalPnl / base * 100.0 else 0.0
         },
     )
 
@@ -686,7 +692,9 @@ class StockPanel : JPanel(BorderLayout()),
     private fun updateSummary() {
         val totalValue = rows.sumOf { (s, q) -> (q?.price ?: 0.0) * s.quantity }
         val totalPnl   = rows.sumOf { (s, q) ->
-            val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val p = q?.price ?: 0.0
+            val floatingPnl = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            s.realizedPnl + floatingPnl
         }
         val todayPnl   = rows.sumOf { (s, q) ->
             MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
@@ -713,7 +721,7 @@ class StockPanel : JPanel(BorderLayout()),
                     name      = s.name,      symbol   = s.symbol,
                     qty       = s.quantity,  price    = price,    cost = s.costPrice,
                     changePct = q?.changePercent ?: 0.0,
-                    pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
+                    pnl       = run { val fp = if (price > 0) (price - s.costPrice) * s.quantity else 0.0; s.realizedPnl + fp },
                     todayPnl  = MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
                 )
             }
