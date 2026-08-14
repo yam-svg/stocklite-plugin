@@ -26,6 +26,7 @@ import com.intellij.ide.BrowserUtil
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 class GlobalPanel : JPanel(BorderLayout()),
     StockliteState.LanguageListener,
@@ -132,7 +133,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         setupTable()
         buildUI()
         fetchAsync()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         startTimer()
         startBreadthTimer()
         addHierarchyListener { _ ->
@@ -147,7 +148,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     override fun onLanguageChanged() {
         tableModel.fireTableStructureChanged()
         tableModel.fireTableDataChanged()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         applyRenderers()
         titleLbl.text   = L10n.lblGlobalTitle
         refreshBtn.text = L10n.btnRefresh

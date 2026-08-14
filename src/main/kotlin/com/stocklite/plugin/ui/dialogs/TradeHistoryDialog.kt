@@ -23,6 +23,7 @@ import javax.swing.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 class TradeHistoryDialog(
     private val stock: StockData,
@@ -148,7 +149,7 @@ class TradeHistoryDialog(
         table.autoResizeMode = JTable.AUTO_RESIZE_ALL_COLUMNS
         table.rowHeight = 24
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
 
         // 列宽
         table.columnModel.getColumn(COL_DATE).preferredWidth  = 100

@@ -26,6 +26,7 @@ import javax.swing.event.TableColumnModelEvent
 import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 class FuturePanel : JPanel(BorderLayout()),
     StockliteState.LanguageListener,
@@ -84,7 +85,7 @@ class FuturePanel : JPanel(BorderLayout()),
         state.addRefreshIntervalListener(this)
         state.addDataChangeListener(this)
         setupTable()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
@@ -101,7 +102,7 @@ class FuturePanel : JPanel(BorderLayout()),
 
     override fun onLanguageChanged() {
         tableModel.fireTableStructureChanged()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         applyRenderers()
         refreshGroups()
         groupLbl.text   = L10n.lblGroup

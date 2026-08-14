@@ -33,6 +33,7 @@ import javax.swing.event.TableColumnModelEvent
 import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 class StockPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
@@ -231,7 +232,7 @@ class StockPanel : JPanel(BorderLayout()),
         val enabled = state.stockVisibleColumns.toSet()
         visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
-        val sorter = TableRowSorter(tableModel)
+        val sorter = TriStateRowSorter(tableModel)
         // changePercent 列值为 ChangePctValue 或 Double，统一用 changePct 字段排序
         visibleCols.indexOfFirst { it.key == "changePercent" }.takeIf { it >= 0 }?.let { colIdx ->
             sorter.setComparator(colIdx, Comparator<Any?> { a, b ->

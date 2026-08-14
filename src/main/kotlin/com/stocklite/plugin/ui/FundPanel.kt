@@ -28,6 +28,7 @@ import javax.swing.event.TableColumnModelEvent
 import javax.swing.event.TableColumnModelListener
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 class FundPanel : JPanel(BorderLayout()),
     StockliteState.ColumnSettingsListener,
@@ -126,7 +127,7 @@ class FundPanel : JPanel(BorderLayout()),
         state.addDataChangeListener(this)
         rebuildVisibleCols()
         setupTable()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         buildUI()
         refreshGroups()
         scheduleRefresh()
@@ -168,7 +169,7 @@ class FundPanel : JPanel(BorderLayout()),
         val enabled = state.fundVisibleColumns.toSet()
         visibleCols = allCols.filter { it.alwaysOn || it.key in enabled }
         tableModel.fireTableStructureChanged()
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
         applyRenderers()
         restoreColumnWidths()
         installColumnWidthListener()

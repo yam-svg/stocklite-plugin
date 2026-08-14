@@ -18,6 +18,7 @@ import javax.swing.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.TableRowSorter
+import com.stocklite.plugin.ui.common.TriStateRowSorter
 
 /**
  * 基金持仓详情弹窗。
@@ -244,7 +245,7 @@ class FundHoldingsDialog(
         }
 
         // 可排序
-        table.rowSorter = TableRowSorter(tableModel)
+        table.rowSorter = TriStateRowSorter(tableModel)
 
         // 双击股票名称/代码 → 东财查看
         table.addMouseListener(object : MouseAdapter() {
