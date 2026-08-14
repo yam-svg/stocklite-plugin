@@ -83,18 +83,6 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     override fun loadState(state: StockliteState) {
         XmlSerializerUtil.copyBean(state, this)
-        migrateRealizedPnl()
-    }
-
-    /**
-     * 存量数据迁移：为 totalBuyCost == 0 且有 BUY 记录的股票重算 realizedPnl / totalBuyCost。
-     * 只在字段缺失（初始为 0）时触发，幂等。
-     */
-    private fun migrateRealizedPnl() {
-        val stocksNeedingMigration = stocks.filter { s ->
-            s.totalBuyCost == 0.0 && tradeRecords.any { it.stockId == s.id && it.tradeType == "BUY" }
-        }
-        stocksNeedingMigration.forEach { recalcStockFromRecords(it.id, touchUpdatedAt = false) }
     }
 
     // ── 列宽 CRUD ──
@@ -413,15 +401,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
                     this.quantity  = newQty
                     val rawAvg     = if (newQty > 0) totalCost / newQty else price
                     // 与 Fmt.price() 保持相同精度：自动检测 2/3/4 位小数
-                    this.costPrice   = roundToMatchPrice(rawAvg)
-                    this.totalBuyCost += price * quantity
+                    this.costPrice = roundToMatchPrice(rawAvg)
                 }
                 "SELL" -> {
                     if (quantity > this.quantity + 1e-8) {
                         // 超卖：抛出异常让调用方展示错误提示
                         throw IllegalArgumentException("卖出数量(${quantity})超过当前持仓(${this.quantity})")
                     }
-                    this.realizedPnl += (price - this.costPrice) * quantity
                     this.quantity = (this.quantity - quantity).coerceAtLeast(0.0)
                 }
                 "ADJUST" -> {
@@ -468,38 +454,28 @@ class StockliteState : PersistentStateComponent<StockliteState> {
         notifyDataChanged()
     }
 
-    /** 从该股票的所有交易记录重新推算持仓数量、成本价、历史已实现盈亏和累计买入成本。
-     *  @param touchUpdatedAt false 时不更新 updatedAt，用于迁移场景，避免破坏今日盈亏快照。
-     */
-    private fun recalcStockFromRecords(stockId: String, touchUpdatedAt: Boolean = true) {
+    /** 从该股票的所有交易记录重新推算持仓数量和成本价。 */
+    private fun recalcStockFromRecords(stockId: String) {
         val stock = stocks.find { it.id == stockId } ?: return
         val sorted = tradeRecords
             .filter { it.stockId == stockId }
             .sortedBy { it.tradeAt }
-        var qty         = 0.0
-        var cost        = 0.0
-        var realizedPnl = 0.0
-        var totalBuyCost = 0.0
+        var qty  = 0.0
+        var cost = 0.0
         for (r in sorted) {
             when (r.tradeType) {
                 "BUY" -> {
                     val newQty = qty + r.quantity
                     cost = if (newQty > 0) (cost * qty + r.price * r.quantity) / newQty else r.price
                     qty  = newQty
-                    totalBuyCost += r.price * r.quantity
                 }
-                "SELL" -> {
-                    realizedPnl += (r.price - cost) * r.quantity
-                    qty  = (qty - r.quantity).coerceAtLeast(0.0)
-                }
+                "SELL"   -> qty  = (qty - r.quantity).coerceAtLeast(0.0)
                 "ADJUST" -> cost = r.price
             }
         }
-        stock.quantity     = qty
-        stock.costPrice    = if (qty > 0) roundToMatchPrice(cost) else 0.0
-        stock.realizedPnl  = realizedPnl
-        stock.totalBuyCost = totalBuyCost
-        if (touchUpdatedAt) stock.updatedAt = System.currentTimeMillis()
+        stock.quantity  = qty
+        stock.costPrice = if (qty > 0) roundToMatchPrice(cost) else 0.0
+        stock.updatedAt = System.currentTimeMillis()
     }
 
     fun getTradeRecordsForStock(stockId: String): List<TradeRecordData> =
