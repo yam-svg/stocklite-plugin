@@ -15,12 +15,15 @@ object ChartDataService {
     /**
      * @param value 收盘价（历史遗留字段名，各处仍按“最新价”语义使用）
      * @param open/high/low 真实开高低价；数据源不提供时为 NaN，前端据此回退为折线/面积图，不伪造K线
+     * @param volume 成交量；数据源不提供时为 NaN，前端按 hasVolume 判断是否绘制底部成交量柱
      */
     data class ChartPoint(
         val time: Long, val value: Double,
-        val open: Double = Double.NaN, val high: Double = Double.NaN, val low: Double = Double.NaN
+        val open: Double = Double.NaN, val high: Double = Double.NaN, val low: Double = Double.NaN,
+        val volume: Double = Double.NaN
     ) {
         val hasOhlc: Boolean get() = open.isFinite() && high.isFinite() && low.isFinite()
+        val hasVolume: Boolean get() = volume.isFinite() && volume > 0
     }
 
     private val CN_SINA_MAP = mapOf(
@@ -155,7 +158,8 @@ object ChartDataService {
                 val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
                 val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
                 val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
-                list.add(ChartPoint(t, close, open, high, low))
+                val vol  = obj.optString("volume", "").toDoubleOrNull() ?: Double.NaN
+                list.add(ChartPoint(t, close, open, high, low, vol))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -179,7 +183,8 @@ object ChartDataService {
                 val open = obj.optString("open", "").toDoubleOrNull() ?: Double.NaN
                 val high = obj.optString("high", "").toDoubleOrNull() ?: Double.NaN
                 val low  = obj.optString("low", "").toDoubleOrNull() ?: Double.NaN
-                result.add(ChartPoint(t, close, open, high, low))
+                val vol  = obj.optString("volume", "").toDoubleOrNull() ?: Double.NaN
+                result.add(ChartPoint(t, close, open, high, low, vol))
             }
             result
         } catch (_: Exception) { return emptyList() }
@@ -198,7 +203,7 @@ object ChartDataService {
         return list + todayBar.copy(time = todayTs)
     }
 
-    /** 通过新浪实时行情接口获取今日 open/high/low/close */
+    /** 通过新浪实时行情接口获取今日 open/high/low/close/volume */
     private fun fetchSinaTodayBar(symbol: String): ChartPoint? {
         val raw = HttpUtil.getGbk(
             "http://hq.sinajs.cn/list=$symbol", "http://finance.sina.com.cn", label = "日K今日bar"
@@ -206,12 +211,13 @@ object ChartDataService {
         return try {
             val m = Regex("""hq_str_[^=]+="([^"]+)"""").find(raw) ?: return null
             val f = m.groupValues[1].split(",")
-            // 新浪 A 股字段：0=名称,1=今开,2=昨收,3=现价,4=最高,5=最低,...
+            // 新浪 A 股字段：0=名称,1=今开,2=昨收,3=现价,4=最高,5=最低,...,8=今日累计成交量(股)
             val open  = f.getOrElse(1) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
             val close = f.getOrElse(3) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
             val high  = f.getOrElse(4) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
             val low   = f.getOrElse(5) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
-            ChartPoint(0L, close, open, high, low)
+            val vol   = f.getOrElse(8) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: Double.NaN
+            ChartPoint(0L, close, open, high, low, vol)
         } catch (_: Exception) { null }
     }
 
@@ -234,7 +240,8 @@ object ChartDataService {
                 val open = obj.optDouble("o", Double.NaN)
                 val high = obj.optDouble("h", Double.NaN)
                 val low  = obj.optDouble("l", Double.NaN)
-                list.add(ChartPoint(t, price, open, high, low))
+                val vol  = obj.optDouble("v", Double.NaN)
+                list.add(ChartPoint(t, price, open, high, low, vol))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -258,7 +265,8 @@ object ChartDataService {
                 val open = obj.optDouble("o", Double.NaN)
                 val high = obj.optDouble("h", Double.NaN)
                 val low  = obj.optDouble("l", Double.NaN)
-                list.add(ChartPoint(t, close, open, high, low))
+                val vol  = obj.optDouble("v", Double.NaN)
+                list.add(ChartPoint(t, close, open, high, low, vol))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -336,12 +344,15 @@ object ChartDataService {
             buckets.getOrPut(key) { mutableListOf() }.add(p)
         }
         return buckets.values.map { bucket ->
+            // 周期内成交量求和（过滤 NaN/负值）
+            val sumVol = bucket.mapNotNull { it.volume.takeIf { v -> v.isFinite() && v > 0 } }.sum()
             ChartPoint(
                 time  = bucket.last().time,
                 value = bucket.last().value,
                 open  = bucket.first().open,
                 high  = bucket.mapNotNull { it.high.takeIf(Double::isFinite) }.maxOrNull() ?: Double.NaN,
-                low   = bucket.mapNotNull { it.low.takeIf(Double::isFinite) }.minOrNull() ?: Double.NaN
+                low   = bucket.mapNotNull { it.low.takeIf(Double::isFinite) }.minOrNull() ?: Double.NaN,
+                volume = if (sumVol > 0) sumVol else Double.NaN
             )
         }.takeLast(count)
     }
@@ -376,6 +387,7 @@ object ChartDataService {
             val opens  = quote.optJSONArray("open")
             val highs  = quote.optJSONArray("high")
             val lows   = quote.optJSONArray("low")
+            val vols   = quote.optJSONArray("volume")
             val list = mutableListOf<ChartPoint>()
             for (i in 0 until timestamps.length()) {
                 val t = timestamps.optLong(i, -1L)
@@ -385,7 +397,8 @@ object ChartDataService {
                 val o = if (opens != null && !opens.isNull(i)) opens.optDouble(i, Double.NaN) else Double.NaN
                 val h = if (highs != null && !highs.isNull(i)) highs.optDouble(i, Double.NaN) else Double.NaN
                 val l = if (lows  != null && !lows.isNull(i))  lows.optDouble(i, Double.NaN)  else Double.NaN
-                list.add(ChartPoint(t, c, o, h, l))
+                val v = if (vols  != null && !vols.isNull(i))  vols.optDouble(i, Double.NaN)  else Double.NaN
+                list.add(ChartPoint(t, c, o, h, l, v))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -410,6 +423,7 @@ object ChartDataService {
             val opens  = quote.optJSONArray("open")
             val highs  = quote.optJSONArray("high")
             val lows   = quote.optJSONArray("low")
+            val vols   = quote.optJSONArray("volume")
             val list = mutableListOf<ChartPoint>()
             for (i in 0 until timestamps.length()) {
                 val t = timestamps.optLong(i, -1L)
@@ -419,7 +433,8 @@ object ChartDataService {
                 val o = if (opens != null && !opens.isNull(i)) opens.optDouble(i, Double.NaN) else Double.NaN
                 val h = if (highs != null && !highs.isNull(i)) highs.optDouble(i, Double.NaN) else Double.NaN
                 val l = if (lows  != null && !lows.isNull(i))  lows.optDouble(i, Double.NaN)  else Double.NaN
-                list.add(ChartPoint(t, c, o, h, l))
+                val v = if (vols  != null && !vols.isNull(i))  vols.optDouble(i, Double.NaN)  else Double.NaN
+                list.add(ChartPoint(t, c, o, h, l, v))
             }
             list.takeLast(maxCount)
         } catch (_: Exception) { emptyList() }
@@ -460,7 +475,7 @@ object ChartDataService {
                 val ts = java.time.LocalDateTime.of(
                     java.time.LocalDate.now(shZone), java.time.LocalTime.of(hh, mm)
                 ).atZone(shZone).toInstant().epochSecond
-                list.add(ChartPoint(ts, price))
+                list.add(ChartPoint(ts, price, volume = vol))
             }
             list
         } catch (_: Exception) { emptyList() }
@@ -503,9 +518,10 @@ object ChartDataService {
                     val close = bar.optString(2, "").toDoubleOrNull() ?: continue
                     val high  = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
                     val low   = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
+                    val vol   = bar.optString(5, "").toDoubleOrNull() ?: Double.NaN
                     val ts    = java.time.LocalDate.parse(date)
                         .atStartOfDay(shZone).toInstant().epochSecond
-                    list.add(ChartPoint(ts, close, open, high, low))
+                    list.add(ChartPoint(ts, close, open, high, low, vol))
                 }
                 list
             } catch (_: Exception) { break }
@@ -550,9 +566,10 @@ object ChartDataService {
                 val open   = bar.optString(2, "").toDoubleOrNull() ?: Double.NaN
                 val high   = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
                 val low    = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
+                val vol    = bar.optString(5, "").toDoubleOrNull() ?: Double.NaN
                 val ts     = java.time.LocalDate.parse(date)
                     .atStartOfDay(shZone).toInstant().epochSecond
-                list.add(ChartPoint(ts, close, open, high, low))
+                list.add(ChartPoint(ts, close, open, high, low, vol))
             }
             list.takeLast(count)
         } catch (_: Exception) { emptyList() }

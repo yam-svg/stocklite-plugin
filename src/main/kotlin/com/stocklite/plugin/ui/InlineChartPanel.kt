@@ -306,15 +306,18 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         // 且只有当绝大多数数据点都带真实开高低收时才画蜡烛图，否则保留折线/面积图（不伪造K线）
         val ohlcCount = points.count { it.hasOhlc }
         val hasOhlc = !isIntraday && points.isNotEmpty() && ohlcCount >= points.size * 0.8
+        // 成交量：设置开启且有任意有效数据时才绘制底部柱
+        val hasVol = StockliteState.getInstance().enableChartVolume && points.any { it.hasVolume }
         fun num(d: Double) = if (d.isFinite()) "%.6f".format(d) else "null"
         val rawJs = points.joinToString(",") {
-            """{"time":${it.time},"price":${it.value},"open":${num(it.open)},"high":${num(it.high)},"low":${num(it.low)}}"""
+            """{"time":${it.time},"price":${it.value},"open":${num(it.open)},"high":${num(it.high)},"low":${num(it.low)},"vol":${num(it.volume)}}"""
         }
         val prevCloseLabel = L10n.chartPrevClose.replace("'", "\\'")
         val lblOpen  = L10n.chartOpen.replace("'", "\\'")
         val lblHigh  = L10n.chartHigh.replace("'", "\\'")
         val lblLow   = L10n.chartLow.replace("'", "\\'")
         val lblClose = L10n.chartClose.replace("'", "\\'")
+        val lblVol   = L10n.chartVol.replace("'", "\\'")
         val timeVisible = if (isIntraday) "true" else "false"
         // 初始可见 K 线根数（滚动查看历史；日K显示半年，周K显示2年，月K显示5年）
         val initBars = when (period) {
@@ -342,10 +345,12 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
 <script>
 (function(){
   var PREV=$prevJs, HAS=${if (hasPrev) "true" else "false"}, HAS_OHLC=${if (hasOhlc) "true" else "false"};
+  var HAS_VOL=${if (hasVol) "true" else "false"};
   var ISINTRADAY=${if (isIntraday) "true" else "false"};
   var UP='${pal.upL}', DN='${pal.dnL}';
   var raw=[$rawJs];
   var priceMap={};raw.forEach(function(d){priceMap[d.time]=d.price;});
+  var volMap={};raw.forEach(function(d){if(d.vol!=null&&d.vol>0) volMap[d.time]=d.vol;});
   // 每根K线相对上一根收盘价的涨跌幅，用于蜡烛图悬浮提示
   var pctMap={};
   for(var pi=1;pi<raw.length;pi++){
@@ -368,7 +373,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
         if(type===TM.DayOfMonth) return (d.getMonth()+1)+'月'+d.getDate()+'日';
         return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
       }},
-    rightPriceScale:{borderColor:'#3a3a5a'},
+    rightPriceScale:{borderColor:'#3a3a5a',
+      scaleMargins:HAS_VOL?{top:0.08,bottom:0.28}:{top:0.08,bottom:0.08}},
     localization:{
       priceFormatter:(HAS&&!HAS_OHLC)
         ?function(p){return(p>=0?'+':'')+p.toFixed(2)+'%';}
@@ -433,6 +439,39 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
     series.setData(data);
   }
 
+  // ── 成交量柱（底部叠加层，红绿与主图涨跌色一致）──
+  var volSeries=null;
+  function fmtVol(v){
+    if(v==null||!isFinite(v)) return '';
+    if(v>=1e8) return (v/1e8).toFixed(2)+'亿';
+    if(v>=1e4) return (v/1e4).toFixed(2)+'万';
+    return Math.round(v).toString();
+  }
+  if(HAS_VOL){
+    volSeries=chart.addHistogramSeries({
+      priceFormat:{type:'volume'},
+      priceScaleId:'',
+      priceLineVisible:false,
+      lastValueVisible:false,
+    });
+    volSeries.priceScale().applyOptions({
+      scaleMargins:{top:0.74,bottom:0},
+    });
+    volSeries.setData(raw.map(function(d,i){
+      var v=(d.vol!=null&&d.vol>0)?d.vol:0;
+      var col;
+      if(HAS_OHLC){
+        var o=d.open!=null?d.open:d.price;
+        col=d.price>=o?'#ef5350':'#26a69a';
+      } else if(HAS){
+        col=d.price>=PREV?UP:DN;
+      } else {
+        col=(i>0&&d.price<raw[i-1].price)?DN:UP;
+      }
+      return {time:d.time,value:v,color:col};
+    }));
+  }
+
   (function(){
     var INIT_BARS=$initBars;
     if(INIT_BARS>0&&raw.length>INIT_BARS){
@@ -471,7 +510,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
         +'&nbsp;$lblHigh <b style="color:'+col+'">'+sd.high.toFixed(3)+'</b>'
         +'&nbsp;$lblLow <b style="color:'+col+'">'+sd.low.toFixed(3)+'</b>'
         +'&nbsp;$lblClose <b style="color:'+col+'">'+sd.close.toFixed(3)+'</b></span>'
-        +maTxt;
+        +maTxt
+        +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'');
       return;
     }
     var val=sd.value!==undefined?sd.value:(sd.lowerValue!==undefined?sd.lowerValue:null);
@@ -485,7 +525,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
     var priceTxt=price!=null?(HAS_OHLC||HAS?price.toFixed(3):((price>=0?'+':'')+price.toFixed(2))):null;
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
       +(chgPct!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+chgPct.toFixed(2)+'%</b>':'')
-      +(priceTxt!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+priceTxt+'</b>':'');
+      +(priceTxt!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+priceTxt+'</b>':'')
+      +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'');
   });
 
   // ── 可见区间最高/最低价标注 ──────────────────────────────────────────

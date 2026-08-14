@@ -6,6 +6,7 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.util.L10n
 import java.awt.Dimension
 import javax.swing.*
 
@@ -111,12 +112,17 @@ class ChartDialog(
         }
         val pctStr = (if (changePercent >= 0) "+" else "") + "%.2f".format(changePercent) + "%"
 
-        // rawData 包含原始价格，供 tooltip 展示
-        val rawDataJs = points.joinToString(",") { """{"time":${it.time},"price":${it.value}}""" }
+        // rawData 包含原始价格+成交量，供 tooltip 展示
+        val rawDataJs = points.joinToString(",") {
+            """{"time":${it.time},"price":${it.value},"vol":${if (it.volume.isFinite()) "%.6f".format(it.volume) else "null"}}"""
+        }
 
         // prevClose > 0 时：Y 轴显示相对昨收的涨跌幅 %；否则显示绝对价格
         val hasPrev = prevClose > 0.0
         val prevCloseJs = "%.6f".format(prevClose)
+        // 成交量柱（设置开启且有数据时绘制）
+        val hasVol = StockliteState.getInstance().enableChartVolume && points.any { it.hasVolume }
+        val lblVol = L10n.chartVol.replace("'", "\\'")
 
         return """<!DOCTYPE html>
 <html>
@@ -151,6 +157,7 @@ body { background:#1e1e2e; color:#cdd6f4; font-family:system-ui,sans-serif; over
 (function() {
   const PREV_CLOSE = $prevCloseJs;
   const HAS_PREV   = ${ if (hasPrev) "true" else "false" };
+  const HAS_VOL    = ${ if (hasVol) "true" else "false" };
   const UP_COLOR   = '${pal.upLine}';
   const DN_COLOR   = '${pal.dnLine}';
 
@@ -178,7 +185,7 @@ body { background:#1e1e2e; color:#cdd6f4; font-family:system-ui,sans-serif; over
     rightPriceScale: {
       borderColor: '#3a3a5a',
       // Y 轴标签：有昨收则显示 ±x.xx%，否则显示价格
-      scaleMargins: { top: 0.12, bottom: 0.08 },
+      scaleMargins: HAS_VOL ? { top: 0.1, bottom: 0.28 } : { top: 0.12, bottom: 0.08 },
     },
     localization: {
       priceFormatter: HAS_PREV
@@ -220,13 +227,46 @@ body { background:#1e1e2e; color:#cdd6f4; font-family:system-ui,sans-serif; over
   }
 
   series.setData(chartData.map(function(d) { return {time: d.time, value: d.value}; }));
+
+  // ── 成交量柱（底部叠加层，红绿与分时涨跌色一致）──
+  function fmtVol(v){
+    if(v==null||!isFinite(v)) return '';
+    if(v>=1e8) return (v/1e8).toFixed(2)+'亿';
+    if(v>=1e4) return (v/1e4).toFixed(2)+'万';
+    return Math.round(v).toString();
+  }
+  var volByTime = {};
+  if (HAS_VOL) {
+    var volSeries = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    volSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.74, bottom: 0 },
+    });
+    volSeries.setData(rawData.map(function(d, i) {
+      var v = (d.vol != null && d.vol > 0) ? d.vol : 0;
+      if (v > 0) volByTime[d.time] = v;
+      // 日内分时：有昨收按相对昨收涨跌着色，否则按逐 bar 涨跌着色
+      var col;
+      if (HAS_PREV) {
+        col = d.price >= PREV_CLOSE ? UP_COLOR : DN_COLOR;
+      } else {
+        col = (i > 0 && d.price < rawData[i-1].price) ? DN_COLOR : UP_COLOR;
+      }
+      return { time: d.time, value: v, color: col };
+    }));
+  }
+
   chart.timeScale().fitContent();
 
   // 用时间戳快速查找原始价格
   var priceByTime = {};
   chartData.forEach(function(d) { priceByTime[d.time] = d.price; });
 
-  // 悬浮 Tooltip：时间 + 涨跌幅 + 价格
+  // 悬浮 Tooltip：时间 + 涨跌幅 + 价格 + 成交量
   chart.subscribeCrosshairMove(function(param) {
     if (!param.point || !param.time || !param.seriesData || !param.seriesData.size) {
       tip.style.display = 'none';
@@ -252,10 +292,13 @@ body { background:#1e1e2e; color:#cdd6f4; font-family:system-ui,sans-serif; over
     var priceLine = price != null
       ? '<div style="font-size:13px;color:#cdd6f4">' + (HAS_PREV ? '价格 ' : '') + price.toFixed(3) + '</div>'
       : '';
+    var volLine = (HAS_VOL && volByTime[param.time])
+      ? '<div style="font-size:12px;color:#888aaa">$lblVol <b style="color:' + color + '">' + fmtVol(volByTime[param.time]) + '</b></div>'
+      : '';
 
     tip.innerHTML =
       '<div style="color:#888aaa;font-size:11px">' + hh + ':' + mm + '</div>' +
-      pctLine + priceLine;
+      pctLine + priceLine + volLine;
     tip.style.display = 'block';
   });
 

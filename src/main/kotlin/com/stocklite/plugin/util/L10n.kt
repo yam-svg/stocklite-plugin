@@ -201,6 +201,7 @@ object L10n {
     val chartHigh  get() = s("高", "H")
     val chartLow   get() = s("低", "L")
     val chartClose get() = s("收", "C")
+    val chartVol   get() = s("量", "V")
     // 设置
     val settingsLanguage    get() = s("界面语言",           "Interface Language")
     val settingsLangZh      get() = s("中文",               "中文 (Chinese)")
@@ -219,6 +220,7 @@ object L10n {
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
                                         "Show API log tab (request monitoring, for debugging)")
     val settingsChartMA     get() = s("K线图显示均线（MA5 / MA10 / MA20）", "Show moving averages on chart (MA5 / MA10 / MA20)")
+    val settingsChartVolume get() = s("K线图底部显示成交量（红绿柱）", "Show volume bars at chart bottom (red/green)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")
