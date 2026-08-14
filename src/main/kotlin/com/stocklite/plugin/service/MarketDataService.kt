@@ -219,7 +219,7 @@ object MarketDataService {
         for (sym in hkShares) {
             val code   = sym.removePrefix("hk")
             val tSym   = "r_hk$code"
-            val raw    = HttpUtil.get("https://qt.gtimg.cn/q=$tSym", referer = "https://gu.qq.com",
+            val raw    = HttpUtil.getGbk("https://qt.gtimg.cn/q=$tSym", referer = "https://gu.qq.com",
                 label = "港股行情") ?: continue
             val m      = Regex("""v_[^=]+="([^"]*)"""").find(raw) ?: continue
             val f      = m.groupValues[1].split("~")
@@ -659,7 +659,7 @@ object MarketDataService {
 
     private fun fetchTencentHkQuote(symbol: String): HkQuote? {
         val tSym = TENCENT_HK_MAP[symbol] ?: return null
-        val raw  = HttpUtil.get("https://qt.gtimg.cn/q=$tSym",
+        val raw  = HttpUtil.getGbk("https://qt.gtimg.cn/q=$tSym",
             referer = "https://gu.qq.com", label = "全球指数-腾讯港股") ?: return null
         val m    = Regex("""v_[^=]+="([^"]*)"""").find(raw) ?: return null
         val f    = m.groupValues[1].split("~")
@@ -1450,6 +1450,24 @@ object MarketDataService {
         return pureCodes.associateWith { code -> getEarningsDate(code) }
     }
 
+    /** 判断搜索结果中的名称是否"看起来有问题"（代码/乱码/空），需要用行情接口纠正 */
+    private fun isNameBad(name: String, symbol: String): Boolean {
+        val n = name.trim()
+        if (n.isEmpty() || n == symbol) return true
+        // 纯代码格式：sh/sz/hk + 数字
+        if (n.matches(Regex("^(sh|sz|hk)\\d{5,6}$"))) return true
+        // 纯数字代码
+        if (n.matches(Regex("^\\d{5,6}$"))) return true
+        // 包含乱码字符（U+FFFD 替换符、控制字符、或全是问号/特殊符号）
+        if (n.any { it == '\uFFFD' || it.code < 0x20 }) return true
+        // 去除中英文字母后剩余字符极少（大部分是乱码符号）
+        val cjk = n.filter { it.code in 0x4E00..0x9FFF || it.code in 0x3040..0x30FF }
+        val latin = n.filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+        val meaningful = cjk.length + latin.length
+        if (meaningful < n.length / 2 && n.length > 2) return true
+        return false
+    }
+
     fun searchStocks(keyword: String): List<StockSearchResult> {
         if (keyword.isBlank()) return emptyList()
         val results = mutableListOf<StockSearchResult>()
@@ -1505,7 +1523,22 @@ object MarketDataService {
             } catch (_: Exception) {}
         }
 
-        return results.distinctBy { it.symbol }.take(15)
+        // ── 3. 行情名称补全：搜索API有时返回代码而非真实名称，用行情接口纠正 ──
+        val enriched = results.distinctBy { it.symbol }.take(15).toMutableList()
+        val needsNameFix = enriched.filter { r -> isNameBad(r.name, r.symbol) }
+        if (needsNameFix.isNotEmpty()) {
+            val quotes = getStockQuotes(needsNameFix.map { it.symbol })
+            for (i in enriched.indices) {
+                val r = enriched[i]
+                val q = quotes[r.symbol]
+                if (q != null && q.name.isNotBlank()) {
+                    if (isNameBad(r.name, r.symbol)) {
+                        enriched[i] = r.copy(name = q.name)
+                    }
+                }
+            }
+        }
+        return enriched
     }
 
     // ══════════════════════════════════════════════════════════════
