@@ -76,7 +76,12 @@ class AddFundDialog(
             }
             searchBtn.addActionListener { doSearch() }
             searchField.addKeyListener(object : KeyAdapter() {
-                override fun keyPressed(e: KeyEvent) { if (e.keyCode == KeyEvent.VK_ENTER) doSearch() }
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode == KeyEvent.VK_ENTER) {
+                        doSearch()
+                        e.consume()
+                    }
+                }
             })
         }
 
