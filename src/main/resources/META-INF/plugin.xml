@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.11.1</version>
+    <version>1.12.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -99,7 +99,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>Add Stock dialog</b>: after selecting a search result, instantly shows the current quote (price + change%) and an inline chart so you can review the stock before confirming — cost price is auto-filled with the current price</li>
   <li><b>Four periods</b>: Intraday · Daily K · Weekly K · Monthly K, switchable with one click</li>
   <li>Intraday: line/area chart, Y-axis shows change% relative to previous close; 0% baseline shown as a dashed line</li>
-  <li>Daily/Weekly/Monthly: real candlestick charts with optional <b>MA5/MA10/MA20 moving averages</b> overlaid (yellow/blue/purple, toggle in Settings); visible-range <b>high/low price labels</b> shown at the corresponding candle</li>
+  <li>Daily/Weekly/Monthly: real candlestick charts with optional <b>MA5/MA10/MA20 moving averages</b> overlaid (yellow/blue/purple, toggle in Settings); visible-range <b>high/low price labels</b> shown at the corresponding candle; <b>volume bars</b> at the chart bottom (red/green, toggle in Settings, default on)</li>
   <li>A-share Daily K uses Tencent qfq (forward-adjusted) data to eliminate split/dividend gaps; full listing history fetched via pagination</li>
   <li>Candlestick tooltip shows O/H/L/C, change% vs previous bar, and MA values</li>
   <li>Time axis and crosshair tooltip use Chinese date format (yyyy/M/d)</li>
@@ -161,7 +161,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>General</h3>
 <ul>
-  <li>Click column headers to sort; ↑↓ buttons reorder rows (sort order persisted)</li>
+  <li>Click column headers to sort (3-state: ascending → descending → original order); ↑↓ buttons reorder rows (sort order persisted)</li>
   <li>Column widths are remembered per column across sessions</li>
   <li>Panel pauses auto-refresh when hidden, resumes immediately when shown — low background resource usage</li>
   <li>Smart decimal places: auto-selects 2 / 3 / 4 decimals (ETF and low-price stock compatible)</li>
@@ -264,7 +264,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>添加股票对话框</b>：选中搜索结果后立即展示该股当前行情（现价 + 涨跌幅）和日内走势图，方便决策；成本价自动预填当前价格，可手动修改</li>
   <li><b>四档周期切换</b>：日内 · 日K · 周K · 月K，一键切换</li>
   <li>日内：折线/面积图，Y 轴显示相对昨收的涨跌幅（%），0% 处显示虚线"昨收"基准线</li>
-  <li>日K/周K/月K：真实蜡烛图，可选叠加 <b>MA5/MA10/MA20 均线</b>（黄/蓝/紫，设置中开启，默认关闭）；可见区间最高/最低价直接标注在对应蜡烛位置</li>
+  <li>日K/周K/月K：真实蜡烛图，可选叠加 <b>MA5/MA10/MA20 均线</b>（黄/蓝/紫，设置中开启，默认关闭）；可见区间最高/最低价直接标注在对应蜡烛位置；底部展示<b>成交量柱</b>（红绿配色，设置中开启，默认开启）</li>
   <li>A 股日K 使用腾讯前复权（qfq）接口，分页拉取全量上市历史，消除分红/拆分断层</li>
   <li>悬浮提示：蜡烛图显示开/高/低/收、涨跌幅%、均线数值；折线/面积图显示涨跌幅% 和净值/原始价格</li>
   <li>横坐标使用中文日期格式（年/月/日），悬浮时间标签同步中文化</li>
@@ -325,7 +325,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>通用</h3>
 <ul>
-  <li>列标题点击排序；↑↓ 按钮调整行位置并持久化</li>
+  <li>列标题点击三态排序（升序 → 降序 → 原始顺序）；↑↓ 按钮调整行位置并持久化</li>
   <li>列宽记忆：拖动列宽后自动保存，下次恢复</li>
   <li>面板隐藏时自动暂停刷新，切回时立即恢复，降低后台资源占用</li>
   <li>价格小数位自动适配（2/3/4 位），兼容 ETF 及低价股</li>
@@ -335,11 +335,26 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.11.1</h3>
-<h4>盈亏计算优化</h4>
+<h3>1.12.0</h3>
+<h4>图表功能</h4>
 <ul>
-  <li>优化交易记录盈亏走势与总持仓盈亏走势的计算口径，与主面板持仓盈亏保持一致</li>
-  <li>修复部分仅有持仓数量但无交易记录的场景下无法展示盈亏走势图的问题</li>
+  <li>新增 K 线图底部成交量柱显示（红绿配色，日内/日K/周K/月K 均支持，设置中可开关）</li>
+  <li>优化图表历史数据拉取范围与数量，减少无谓请求</li>
+  <li>修复期货日K线数据请求长度限制导致的历史数据缺失</li>
+</ul>
+<h4>表格交互</h4>
+<ul>
+  <li>表格表头排序改为三态循环（升序 → 降序 → 原始顺序），第三下点击还原默认排序</li>
+</ul>
+<h4>盈亏计算</h4>
+<ul>
+  <li>新增历史盈亏和累计买入成本字段</li>
+</ul>
+<h4>搜索与数据修复</h4>
+<ul>
+  <li>优化搜索框回车事件处理</li>
+  <li>修复按股票代码搜索时部分结果仅显示代码而非股票名称的问题，自动通过行情接口补全真实名称</li>
+  <li>修复港股行情中文名称乱码问题（腾讯 API 编码错误）</li>
 </ul>
     ]]></change-notes>
 
