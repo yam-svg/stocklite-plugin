@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.12.0</version>
+    <version>1.12.1</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -335,26 +335,10 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.12.0</h3>
-<h4>图表功能</h4>
-<ul>
-  <li>新增 K 线图底部成交量柱显示（红绿配色，日内/日K/周K/月K 均支持，设置中可开关）</li>
-  <li>优化图表历史数据拉取范围与数量，减少无谓请求</li>
-  <li>修复期货日K线数据请求长度限制导致的历史数据缺失</li>
-</ul>
-<h4>表格交互</h4>
-<ul>
-  <li>表格表头排序改为三态循环（升序 → 降序 → 原始顺序），第三下点击还原默认排序</li>
-</ul>
+<h3>1.12.1</h3>
 <h4>盈亏计算</h4>
 <ul>
-  <li>新增历史盈亏和累计买入成本字段</li>
-</ul>
-<h4>搜索与数据修复</h4>
-<ul>
-  <li>优化搜索框回车事件处理</li>
-  <li>修复按股票代码搜索时部分结果仅显示代码而非股票名称的问题，自动通过行情接口补全真实名称</li>
-  <li>修复港股行情中文名称乱码问题（腾讯 API 编码错误）</li>
+  <li>移除历史盈亏和累计买入成本字段（回滚 1.12.0 中该功能）</li>
 </ul>
     ]]></change-notes>
 
