@@ -213,9 +213,9 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val points = when (period) {
                 PERIOD_INTRADAY -> fetchIntraday?.invoke() ?: emptyList()
-                PERIOD_DAILY    -> ChartDataService.getHistoryKLine(sym, "daily",   100)
-                PERIOD_WEEKLY   -> ChartDataService.getHistoryKLine(sym, "weekly",  52)
-                PERIOD_MONTHLY  -> ChartDataService.getHistoryKLine(sym, "monthly", 36)
+                PERIOD_DAILY    -> ChartDataService.getHistoryKLine(sym, "daily",   2000)
+                PERIOD_WEEKLY   -> ChartDataService.getHistoryKLine(sym, "weekly",  1000)
+                PERIOD_MONTHLY  -> ChartDataService.getHistoryKLine(sym, "monthly", 300)
                 else            -> fetchIntraday?.invoke() ?: emptyList()
             }
             val usePrevClose = period == PERIOD_INTRADAY  // only intraday uses prevClose baseline

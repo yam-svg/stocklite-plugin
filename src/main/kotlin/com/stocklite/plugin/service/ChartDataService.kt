@@ -125,13 +125,8 @@ object ChartDataService {
             val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
             return fetchSinaKlineHistory(sinaSymbol, scale, count)
         }
-        // 全球指数 → Yahoo Finance
-        val yahooRange = when (period) {
-            "daily"   -> "3mo"
-            "weekly"  -> "1y"
-            "monthly" -> "5y"
-            else      -> "3mo"
-        }
+        // 全球指数 → Yahoo Finance（max 拉取全量历史）
+        val yahooRange = "max"
         val yahooInterval = when (period) {
             "daily"   -> "1d"
             "weekly"  -> "1wk"
