@@ -31,6 +31,16 @@ class StockData {
     var snapshotQty: Double = -1.0
     /** 今日首次修改前的成本价快照 */
     var snapshotCostPrice: Double = 0.0
+    /**
+     * 历史已实现盈亏：Σ (卖出价 - 卖出时成本价) × 卖出量。
+     * 随每笔卖出记录更新；删除记录后由 recalcStockFromRecords 重算。
+     */
+    var realizedPnl: Double = 0.0
+    /**
+     * 历史累计买入成本：Σ (买入价 × 买入量)，用于计算整体收益率。
+     * ADJUST 操作不影响此字段。
+     */
+    var totalBuyCost: Double = 0.0
 }
 
 class FundGroupData {
