@@ -136,13 +136,7 @@ class TradeHistoryDialog(
     private fun buildSummary(): String {
         val buyQty  = records.filter { it.tradeType == "BUY"  }.sumOf { it.quantity }
         val sellQty = records.filter { it.tradeType == "SELL" }.sumOf { it.quantity }
-        val base = buildString {
-            append("${L10n.tradeTypeBuy} ${Fmt.qty(buyQty)} 股 / ${L10n.tradeTypeSell} ${Fmt.qty(sellQty)} 股 / 共 ${records.size} 条记录")
-        }
-        return if (stock.realizedPnl != 0.0) {
-            val sign = if (stock.realizedPnl >= 0) "+" else ""
-            "$base   已实现盈亏 $sign${Fmt.value(stock.realizedPnl)}"
-        } else base
+        return "${L10n.tradeTypeBuy} ${Fmt.qty(buyQty)} 股 / ${L10n.tradeTypeSell} ${Fmt.qty(sellQty)} 股 / 共 ${records.size} 条记录"
     }
 
     private fun setupTable() {
