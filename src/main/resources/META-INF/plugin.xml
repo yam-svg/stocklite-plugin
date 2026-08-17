@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.12.1</version>
+    <version>1.12.2</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -335,10 +335,12 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.12.1</h3>
-<h4>盈亏计算</h4>
+<h3>1.12.2</h3>
+<h4>全球指数 K 线图修复</h4>
 <ul>
-  <li>移除历史盈亏和累计买入成本字段（回滚 1.12.0 中该功能）</li>
+  <li>修复日K数据不正确问题：纳斯达克、韩国综合指数等历史较长的指数，日K显示的是周级数据，与周K完全相同</li>
+  <li>修复周K数据不正确问题：标普500、道琼斯、日经225等指数的周K显示的是月级数据，横跨数月</li>
+  <li>修复月K数据不正确问题：标普500、道琼斯等历史极长的指数，月K每根K线横跨数月</li>
 </ul>
     ]]></change-notes>
 
