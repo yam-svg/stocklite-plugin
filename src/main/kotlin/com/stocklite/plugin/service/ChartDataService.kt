@@ -129,11 +129,12 @@ object ChartDataService {
             return fetchSinaKlineHistory(sinaSymbol, scale, count)
         }
         // 全球指数 → Yahoo Finance
-        // 日K 不能用 max：对历史超长的指数（NASDAQ/KOSPI 等）Yahoo 会静默降频返回周级数据
+        // 不能用 max：历史超长的指数超过 Yahoo 单次约 1000 条限制会静默降频
+        // 日K: 5y ≈ 1260条；周K: 10y ≈ 520条；月K: 10y ≈ 120条，均安全
         val yahooRange = when (period) {
             "daily"   -> "5y"
-            "weekly"  -> "max"
-            "monthly" -> "max"
+            "weekly"  -> "10y"
+            "monthly" -> "10y"
             else      -> "5y"
         }
         val yahooInterval = when (period) {
