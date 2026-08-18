@@ -41,6 +41,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private var currentIntervalMs = MIN_INTERVAL_MS
     private var refreshTimer: Timer? = null
     private var panelActive = true
+    private var windowVisible = true
 
     private var quotes: List<GlobalIndexQuote> = emptyList()
 
@@ -138,6 +139,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         startBreadthTimer()
         addHierarchyListener { _ ->
             val showing = isShowing
+            windowVisible = showing || (parent?.isShowing ?: false)
             if (showing != panelActive) {
                 panelActive = showing
                 if (showing) { fetchAsync(); fetchBreadthAsync() }
@@ -407,7 +409,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     }
 
     fun fetchAsync() {
-        if (!panelActive) return
+        if (!windowVisible) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = MarketDataService.getGlobalIndexQuotes()
             SwingUtilities.invokeLater {
@@ -483,7 +485,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     }
 
     private fun fetchBreadthAsync() {
-        if (!panelActive) return
+        if (!windowVisible) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val data  = MarketDataService.getMarketBreadth()
             val times = MarketDataService.getBreadthDataTimes()
