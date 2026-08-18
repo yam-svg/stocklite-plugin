@@ -211,7 +211,8 @@ class GlobalPanel : JPanel(BorderLayout()),
                     displaySymbol = q.symbol,
                     changePercent = q.changePercent,
                     prevClose     = prev,
-                    fetchData     = { ChartDataService.getGlobalIntraday(q.symbol) }
+                    fetchData     = { ChartDataService.getGlobalIntraday(q.symbol) },
+                    market        = q.market
                 )
             }
             override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showContextMenu(e) }

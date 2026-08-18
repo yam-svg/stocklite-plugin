@@ -28,6 +28,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
     // Current chart state for reload-on-period-change
     private var currentName      = ""
     private var currentSymbol    = ""
+    private var currentMarket    = ""
     private var currentChangePct = 0.0
     private var currentPrevClose = 0.0
     private var currentFetchIntraday: (() -> List<ChartDataService.ChartPoint>)? = null
@@ -102,13 +103,15 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         displaySymbol: String,
         changePercent: Double,
         prevClose: Double,
-        fetchData: (() -> List<ChartDataService.ChartPoint>)? = null
+        fetchData: (() -> List<ChartDataService.ChartPoint>)? = null,
+        market: String = ""
     ) {
         closeBtn.toolTipText = L10n.chartCloseTip
         updatePeriodButtonTexts()
 
         currentName          = displayName
         currentSymbol        = displaySymbol
+        currentMarket        = market
         currentChangePct     = changePercent
         currentPrevClose     = prevClose
         currentFetchIntraday = fetchData
@@ -205,6 +208,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         b.loadHTML(loadingHtml(), "http://stocklite.local/")
         val id = ++loadId
         val sym = currentSymbol
+        val market = currentMarket
         val period = currentPeriod
         val fetchIntraday = currentFetchIntraday
         val prevClose = currentPrevClose
@@ -223,7 +227,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
                 if (loadId != id) return@invokeLater
                 b.loadHTML(
                     if (points.isEmpty()) errorHtml()
-                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period),
+                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period, market = market),
                     "http://stocklite.local/"
                 )
             }
@@ -283,7 +287,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         prevClose: Double,
         changePercent: Double,
         isIntraday: Boolean,
-        period: String = PERIOD_INTRADAY
+        period: String = PERIOD_INTRADAY,
+        market: String = ""
     ): String {
         val scheme = StockliteState.getInstance().colorScheme
 
@@ -306,8 +311,10 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         // 且只有当绝大多数数据点都带真实开高低收时才画蜡烛图，否则保留折线/面积图（不伪造K线）
         val ohlcCount = points.count { it.hasOhlc }
         val hasOhlc = !isIntraday && points.isNotEmpty() && ohlcCount >= points.size * 0.8
-        // 成交量：设置开启且有任意有效数据时才绘制底部柱
-        val hasVol = StockliteState.getInstance().enableChartVolume && points.any { it.hasVolume }
+        // 成交量：CN/HK 用新浪/腾讯数据（可靠）；KR/TW/IN Yahoo 返回的是合约数或未知单位，屏蔽。
+        val isCnHk = market.isEmpty() || market == "CN" || market == "HK"
+        val suppressVol = market in setOf("KR", "TW", "IN")
+        val hasVol = StockliteState.getInstance().enableChartVolume && !suppressVol && points.any { it.hasVolume }
         fun num(d: Double) = if (d.isFinite()) "%.6f".format(d) else "null"
         val rawJs = points.joinToString(",") {
             """{"time":${it.time},"price":${it.value},"open":${num(it.open)},"high":${num(it.high)},"low":${num(it.low)},"vol":${num(it.volume)}}"""
@@ -346,6 +353,7 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
 (function(){
   var PREV=$prevJs, HAS=${if (hasPrev) "true" else "false"}, HAS_OHLC=${if (hasOhlc) "true" else "false"};
   var HAS_VOL=${if (hasVol) "true" else "false"};
+  var IS_CN=${if (isCnHk) "true" else "false"};
   var ISINTRADAY=${if (isIntraday) "true" else "false"};
   var UP='${pal.upL}', DN='${pal.dnL}';
   var raw=[$rawJs];
@@ -442,9 +450,15 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
   // ── 成交量柱（底部叠加层，红绿与主图涨跌色一致）──
   var volSeries=null;
   function fmtVol(v){
-    if(v==null||!isFinite(v)) return '';
-    if(v>=1e8) return (v/1e8).toFixed(2)+'亿';
-    if(v>=1e4) return (v/1e4).toFixed(2)+'万';
+    if(v==null||!isFinite(v)||v<=0) return '';
+    if(IS_CN){
+      if(v>=1e8) return (v/1e8).toFixed(2)+'亿';
+      if(v>=1e4) return (v/1e4).toFixed(2)+'万';
+      return Math.round(v).toString();
+    }
+    if(v>=1e9) return (v/1e9).toFixed(2)+'B';
+    if(v>=1e6) return (v/1e6).toFixed(2)+'M';
+    if(v>=1e3) return (v/1e3).toFixed(1)+'K';
     return Math.round(v).toString();
   }
   if(HAS_VOL){
