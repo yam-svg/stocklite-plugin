@@ -13,27 +13,55 @@ object PnlChartService {
     data class DailyPnl(val date: LocalDate, val pnl: Double)
 
     /**
-     * 计算单只股票的每日浮动盈亏。
-     * 计算方式与面板表格一致：(历史收盘价 - 当前成本价) × 当前持仓量。
-     * 仅展示第一笔买入记录日期之后的数据点。
+     * 计算单只股票的每日盈亏（已实现 + 未实现）。
+     * 按时间顺序回放交易记录，同步推进持仓状态，避免用当前成本价/数量反推历史。
+     * 每个 K 线日期的盈亏 = 截至当日累计已实现盈亏 + (当日收盘价 - 当时成本价) × 当时持仓量。
      */
     fun calcStockPnl(
-        stock: StockData,
+        @Suppress("UNUSED_PARAMETER") stock: StockData,
         records: List<TradeRecordData>,
         kline: List<ChartDataService.ChartPoint>
     ): List<DailyPnl> {
-        if (stock.quantity <= 0 || stock.costPrice <= 0 || kline.isEmpty()) return emptyList()
+        if (records.isEmpty() || kline.isEmpty()) return emptyList()
 
-        val firstTradeDate = records.minOfOrNull { it.tradeAt }
-            ?.let { Instant.ofEpochMilli(it).atZone(SH).toLocalDate() }
-            ?: return emptyList()
+        val sortedRecords = records.sortedBy { it.tradeAt }
+        val firstTradeDate = Instant.ofEpochMilli(sortedRecords.first().tradeAt).atZone(SH).toLocalDate()
 
-        return kline.sortedBy { it.time }.mapNotNull { pt ->
+        var tradeIdx = 0
+        var qty      = 0.0
+        var cost     = 0.0
+        var realized = 0.0
+        val result   = mutableListOf<DailyPnl>()
+
+        for (pt in kline.sortedBy { it.time }) {
             val date = Instant.ofEpochSecond(pt.time).atZone(SH).toLocalDate()
-            if (date < firstTradeDate) return@mapNotNull null
-            val pnl = (pt.value - stock.costPrice) * stock.quantity
-            DailyPnl(date, pnl)
+            if (date < firstTradeDate) continue
+
+            // 回放截至当日的所有交易
+            while (tradeIdx < sortedRecords.size) {
+                val r = sortedRecords[tradeIdx]
+                if (Instant.ofEpochMilli(r.tradeAt).atZone(SH).toLocalDate() > date) break
+                when (r.tradeType) {
+                    "BUY" -> {
+                        val newQty = qty + r.quantity
+                        cost = if (newQty > 0) (cost * qty + r.price * r.quantity) / newQty else r.price
+                        qty  = newQty
+                    }
+                    "SELL" -> {
+                        val actualSell = minOf(r.quantity, qty)
+                        if (actualSell > 0) realized += (r.price - cost) * actualSell
+                        qty = (qty - r.quantity).coerceAtLeast(0.0)
+                    }
+                    "ADJUST" -> cost = r.price
+                }
+                tradeIdx++
+            }
+
+            val unrealized = if (qty > 0 && cost > 0) (pt.value - cost) * qty else 0.0
+            result.add(DailyPnl(date, realized + unrealized))
         }
+
+        return result
     }
 
     /**
