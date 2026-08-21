@@ -118,11 +118,16 @@ class StockPanel : JPanel(BorderLayout()),
         },
         ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
         ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->
-            val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val p = q?.price ?: 0.0
+            val unrealized = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            MarketTimeUtil.calcRealizedPnl(state.getTradeRecordsForStock(s.id)) + unrealized
         },
         ColDef("pnlPercent",   L10n.colPnlPct,   QuoteColumnType.PCT)          { s, q  ->
             val p = q?.price ?: 0.0
-            if (p > 0 && s.costPrice > 0) (p - s.costPrice) / s.costPrice * 100.0 else 0.0
+            val unrealized = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val totalPnl = MarketTimeUtil.calcRealizedPnl(state.getTradeRecordsForStock(s.id)) + unrealized
+            val costBasis = s.costPrice * s.quantity
+            if (costBasis > 0) totalPnl / costBasis * 100.0 else 0.0
         },
     )
 
@@ -687,7 +692,9 @@ class StockPanel : JPanel(BorderLayout()),
     private fun updateSummary() {
         val totalValue = rows.sumOf { (s, q) -> (q?.price ?: 0.0) * s.quantity }
         val totalPnl   = rows.sumOf { (s, q) ->
-            val p = q?.price ?: 0.0; if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            val p = q?.price ?: 0.0
+            val unrealized = if (p > 0) (p - s.costPrice) * s.quantity else 0.0
+            MarketTimeUtil.calcRealizedPnl(state.getTradeRecordsForStock(s.id)) + unrealized
         }
         val todayPnl   = rows.sumOf { (s, q) ->
             MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
@@ -714,7 +721,8 @@ class StockPanel : JPanel(BorderLayout()),
                     name      = s.name,      symbol   = s.symbol,
                     qty       = s.quantity,  price    = price,    cost = s.costPrice,
                     changePct = q?.changePercent ?: 0.0,
-                    pnl       = if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
+                    pnl       = MarketTimeUtil.calcRealizedPnl(state.getTradeRecordsForStock(s.id)) +
+                                if (price > 0) (price - s.costPrice) * s.quantity else 0.0,
                     todayPnl  = MarketTimeUtil.calcTodayPnl(s, q, state.getTradeRecordsForStock(s.id))
                 )
             }

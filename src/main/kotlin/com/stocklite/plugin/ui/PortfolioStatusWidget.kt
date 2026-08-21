@@ -103,7 +103,7 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
                 when (col) {
                     0 -> r.name; 1 -> r.symbol
                     2 -> r.price; 3 -> r.changePct; 4 -> r.pnl
-                    5 -> if (r.cost > 0) (r.price - r.cost) / r.cost * 100.0 else 0.0
+                    5 -> if (r.cost > 0 && r.qty > 0) r.pnl / (r.cost * r.qty) * 100.0 else 0.0
                     6 -> r.todayPnl
                     else -> ""
                 }

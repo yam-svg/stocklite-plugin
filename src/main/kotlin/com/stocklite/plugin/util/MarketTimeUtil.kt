@@ -50,6 +50,33 @@ object MarketTimeUtil {
     fun refreshIntervalMs(): Long = if (isStockMarketOpen()) 5_000L else 60_000L
 
     /**
+     * 回放交易记录，计算该股票历史 SELL 操作累计的已实现盈亏。
+     * 每次 SELL 时的已实现盈亏 = (卖出价 - 当时加权成本价) × 卖出数量。
+     */
+    fun calcRealizedPnl(records: List<TradeRecordData>): Double {
+        val sorted = records.sortedBy { it.tradeAt }
+        var qty = 0.0
+        var cost = 0.0
+        var realized = 0.0
+        for (r in sorted) {
+            when (r.tradeType) {
+                "BUY" -> {
+                    val newQty = qty + r.quantity
+                    cost = if (newQty > 0) (cost * qty + r.price * r.quantity) / newQty else r.price
+                    qty = newQty
+                }
+                "SELL" -> {
+                    val actualSell = minOf(r.quantity, qty)
+                    if (actualSell > 0) realized += (r.price - cost) * actualSell
+                    qty = (qty - r.quantity).coerceAtLeast(0.0)
+                }
+                "ADJUST" -> cost = r.price
+            }
+        }
+        return realized
+    }
+
+    /**
      * 计算单行今日盈亏（全局共用，StockPanel 和 PortfolioWatcherService 统一调用）。
      *
      * 有交易记录时（精确模式）：
