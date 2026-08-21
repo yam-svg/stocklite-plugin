@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.12.2</version>
+    <version>1.12.3</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -71,6 +71,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>Trade History dialog</b> now has two tabs: <b>Trade Records</b> (existing table) + <b>P&amp;L Chart</b> — replays trade records against historical daily close prices to draw a cumulative floating P&amp;L curve for that single stock</li>
   <li><b>Portfolio P&amp;L History</b>: click the summary bar at the bottom of the Stock panel to open a chart showing the combined daily floating P&amp;L across all holdings</li>
   <li><b>P&amp;L calculation alignment</b>: P&amp;L charts now use the same cost-price and position rules as the main holdings table, including holdings that have quantity but no trade records</li>
+  <li><b>Realized P&amp;L included in portfolio P&amp;L</b>: after a partial sell, the panel P&amp;L and return% now include cumulative realized gains/losses — e.g. selling half a losing position correctly shows the full loss and a higher negative return% against the remaining cost basis</li>
+  <li><b>P&amp;L chart replays actual position history</b>: the P&amp;L trend chart now reconstructs the real holding quantity and cost price at each historical date by replaying trade records in order, instead of projecting backwards from the current state</li>
 </ul>
 
 <h3>Earnings Date</h3>
@@ -242,6 +244,8 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li><b>交易记录</b>对话框新增「盈亏走势」Tab：根据交易记录重放持仓，结合历史日线收盘价，绘制该股持有期间的逐日浮动盈亏曲线</li>
   <li><b>总持仓盈亏走势</b>：点击股票面板底部汇总栏文字，弹出合并所有持仓股的每日盈亏折线图</li>
   <li><b>盈亏计算口径统一</b>：盈亏走势图与主面板持仓盈亏使用同一套成本价与持仓数量规则，且仅有持仓数量时也可展示走势图</li>
+  <li><b>持仓盈亏含已实现盈亏</b>：部分卖出后，面板盈亏金额和收益率均包含历史卖出的已实现盈亏，不再只显示剩余仓位的浮亏——例如亏损时卖出一半，收益率能正确反映完整亏损幅度</li>
+  <li><b>盈亏走势图按历史仓位还原</b>：盈亏走势图不再用当前成本价/数量反推历史，而是逐笔回放交易记录，还原各历史日期的真实持仓状态后再计算盈亏曲线</li>
 </ul>
 
 <h3>财报日期标注</h3>
@@ -335,12 +339,15 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.12.2</h3>
-<h4>全球指数 K 线图修复</h4>
+<h3>1.12.3</h3>
+<h4>持仓盈亏优化</h4>
 <ul>
-  <li>修复日K数据不正确问题：纳斯达克、韩国综合指数等历史较长的指数，日K显示的是周级数据，与周K完全相同</li>
-  <li>修复周K数据不正确问题：标普500、道琼斯、日经225等指数的周K显示的是月级数据，横跨数月</li>
-  <li>修复月K数据不正确问题：标普500、道琼斯等历史极长的指数，月K每根K线横跨数月</li>
+  <li>持仓盈亏金额和收益率现在包含历史卖出的已实现盈亏，部分卖出后不再只显示剩余仓位的浮亏</li>
+  <li>修复部分卖出后收益率计算偏高的问题，收益率分子改为已实现盈亏 + 未实现盈亏之和</li>
+</ul>
+<h4>盈亏走势图修复</h4>
+<ul>
+  <li>盈亏走势图不再用当前成本价和数量反推历史，改为按时间顺序逐笔回放交易记录，还原各历史日期的真实仓位后计算盈亏</li>
 </ul>
     ]]></change-notes>
 
