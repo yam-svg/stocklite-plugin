@@ -1224,6 +1224,64 @@ object MarketDataService {
         return MarketForecast(score = score, factors = factors, generatedAt = time)
     }
 
+    private val FORECAST_DIRECTION_THRESHOLD = 0.3   // 沪深300 ≥ +0.3% 视为上涨方向成立
+    private val FORECAST_MAX_HISTORY = 60
+
+    /**
+     * 在收盘后窗口（15:00-16:30）记录今日盘后预测快照，并结算最近一条未结算记录。
+     * 同一交易日只记录一次；全程不抛异常，失败静默跳过。
+     * 结算依据：今日沪深300实际涨跌幅（breadth.largeCapPct），阈值 ±0.3% 判定方向。
+     */
+    fun trySnapshotForecast(forecast: MarketForecast, breadth: MarketBreadthData) {
+        try {
+            val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
+            val minutes = now.hour * 60 + now.minute
+            if (minutes < 15 * 60 || minutes >= 16 * 60 + 30) return
+            if (now.dayOfWeek.value >= 6) return
+
+            val state = StockliteState.getInstance()
+            val today = now.toLocalDate().toString()
+
+            // 结算：用今日沪深300实际涨跌幅结算最近一条未结算记录（该记录预测的就是今日方向）
+            val largeCapPct = breadth.largeCapPct
+            if (largeCapPct != null) {
+                state.forecastHistory.lastOrNull { !it.settled && it.date < today }?.let { r ->
+                    r.actualPct = largeCapPct
+                    r.settled = true
+                    r.correct = when (r.direction) {
+                        "BULL"    -> largeCapPct >= FORECAST_DIRECTION_THRESHOLD
+                        "BEAR"    -> largeCapPct <= -FORECAST_DIRECTION_THRESHOLD
+                        "NEUTRAL" -> kotlin.math.abs(largeCapPct) < FORECAST_DIRECTION_THRESHOLD
+                        else      -> false
+                    }
+                }
+            }
+
+            // 快照：今日已有则跳过
+            if (state.forecastHistory.any { it.date == today }) return
+            val direction = when {
+                forecast.score >= 20  -> "BULL"
+                forecast.score <= -20 -> "BEAR"
+                else                  -> "NEUTRAL"
+            }
+            val record = ForecastRecordData().apply {
+                date = today
+                score = forecast.score
+                this.direction = direction
+                generatedAt = forecast.generatedAt
+            }
+            state.forecastHistory.add(record)
+            while (state.forecastHistory.size > FORECAST_MAX_HISTORY) state.forecastHistory.removeAt(0)
+        } catch (_: Exception) {}
+    }
+
+    /** 返回 (正确次数 to 总结算次数)，取最近 20 条已结算记录统计 */
+    fun getForecastAccuracy(): Pair<Int, Int> {
+        val settled = StockliteState.getInstance().forecastHistory
+            .filter { it.settled }.takeLast(20)
+        return settled.count { it.correct } to settled.size
+    }
+
     private var aiForecastCache: String? = null
     private var aiForecastCacheTime = 0L
     private val AI_FORECAST_CACHE_TTL = 30 * 60_000L  // AI 分析 30 分钟内复用，避免后台高频烧 tokens

@@ -43,6 +43,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var breadthSnapshotJson: String = ""
     var breadthSnapshotTime: Long = 0L
 
+    // ── 盘后预测历史记录（用于展示方向准确率，最多60条）──
+    var forecastHistory: MutableList<ForecastRecordData> = ArrayList()
+
     // ── 功能开关 ──
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true

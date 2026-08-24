@@ -215,6 +215,17 @@ data class MarketForecast(
  */
 data class ForecastFactor(val name: String, val detail: String, val score: Double)
 
+/** 单次盘后预测快照（持久化），用于统计方向准确率 */
+class ForecastRecordData {
+    var date: String = ""                   // 预测日期 "2026-08-24"
+    var score: Double = 0.0                 // 预测得分
+    var direction: String = ""              // BULL / BEAR / NEUTRAL
+    var generatedAt: String = ""            // 生成时刻 "15:03"
+    var actualPct: Double = Double.NaN      // 次日沪深300实际涨跌幅%（结算后填入）
+    var settled: Boolean = false            // 是否已结算
+    var correct: Boolean = false            // 方向是否正确（settled=true 时有效）
+}
+
 data class SectorPct(val name: String, val pct: Double)
 
 /** 基金单只持股明细（来自东方财富季报数据） */

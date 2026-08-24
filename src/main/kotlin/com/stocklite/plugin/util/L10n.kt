@@ -101,6 +101,10 @@ object L10n {
     val forecastBullish       get() = s("偏多", "Bullish lean")
     val forecastBearish       get() = s("偏空", "Bearish lean")
     val forecastNeutral       get() = s("震荡", "Neutral")
+    fun forecastAccuracyTitle(n: Int, pct: Int, correct: Int) = s(
+        "近${n}次方向准确率 ${pct}% ($correct/$n)",
+        "Direction accuracy (last $n): ${pct}% ($correct/$n)"
+    )
     val forecastDisclaimer    get() = s(
         "启发式多空信号加权汇总，仅供参考，不构成投资建议",
         "Heuristic weighted signal aggregation — for reference only, not investment advice"

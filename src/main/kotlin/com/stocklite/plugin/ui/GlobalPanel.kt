@@ -501,6 +501,7 @@ class GlobalPanel : JPanel(BorderLayout()),
             // AI 二次分析：单独起线程（首次调用需数秒到数十秒），不阻塞大盘数据的展示；
             // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为纯启发式展示。
             if (!pending && forecast != null) {
+                MarketDataService.trySnapshotForecast(forecast, data)
                 val apiKey = StockliteState.getInstance().deepseekApiKey.trim()
                 if (apiKey.isNotEmpty()) {
                     ApplicationManager.getApplication().executeOnPooledThread {
@@ -536,8 +537,28 @@ class GlobalPanel : JPanel(BorderLayout()),
             else           -> L10n.forecastNeutral to "#888aaa"
         }
         val aiTag = if (lastAiAnalysis != null) " <span style='color:#888aaa'>·AI</span>" else ""
+        val (accCorrect, accTotal) = MarketDataService.getForecastAccuracy()
+        val accTag = if (accTotal >= 5) " <span style='color:#888aaa'>· ${accCorrect * 100 / accTotal}%</span>" else ""
         chipForecast.text = "<html>${L10n.lblForecast}(${f.generatedAt}) " +
-            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b>$aiTag</html>"
+            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b>$aiTag$accTag</html>"
+        val accuracySection = run {
+            val settled = StockliteState.getInstance().forecastHistory.filter { it.settled }
+            if (settled.size < 3) ""
+            else {
+                val recent = settled.takeLast(20)
+                val correct = recent.count { it.correct }
+                val total = recent.size
+                val pct = correct * 100 / total
+                val last5 = recent.takeLast(5).reversed()
+                val rows = last5.joinToString("<br/>") { r ->
+                    val c = when (r.direction) { "BULL" -> up; "BEAR" -> dn; else -> "#888aaa" }
+                    val dir = when (r.direction) { "BULL" -> L10n.forecastBullish; "BEAR" -> L10n.forecastBearish; else -> L10n.forecastNeutral }
+                    val act = if (r.actualPct.isNaN()) "--" else "%+.1f%%".format(r.actualPct)
+                    "· ${r.date.substring(5)} <b style='color:$c'>$dir${"%+.0f".format(r.score)}</b> → $act ${if (r.correct) "✅" else "❌"}"
+                }
+                "<br/><b>${L10n.forecastAccuracyTitle(total, pct, correct)}</b><br/>$rows"
+            }
+        }
         val aiSection = lastAiAnalysis?.let { ai ->
             val safe = ai.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
             "<br/><b>${L10n.lblAiAnalysis}</b>：<div style='width:360px'>$safe</div>"
@@ -550,6 +571,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                     "· ${factor.name}：${factor.detail}　<b style='color:$c'>${"%+.1f".format(factor.score)}</b>"
                 }
             } +
+            accuracySection +
             aiSection +
             "<br/><span style='color:#888aaa'>${L10n.forecastDisclaimer}</span></html>"
     }
