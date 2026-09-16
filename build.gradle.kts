@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.stocklite"
-version = "1.12.3"
+version = "1.13.0"
 
 repositories {
     mavenCentral()

@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.12.3</version>
+    <version>1.13.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -10,10 +10,11 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>Stocks (A-shares / HK / US)</h3>
 <ul>
-  <li>Real-time quotes: Shanghai &amp; Shenzhen A-shares via Sina API; HK stocks via Tencent API; US stocks via Yahoo Finance</li>
+  <li>Real-time quotes: Shanghai, Shenzhen &amp; Beijing (BSE) A-shares via Sina API; HK stocks via Tencent API; US stocks via Yahoo Finance</li>
   <li>Portfolio tracking: cost price, quantity, market value, floating P&amp;L, P&amp;L%, <b>total return %</b></li>
   <li>Custom groups + virtual groups (All / My Holdings)</li>
-  <li>Search &amp; add by name or ticker (supports A-share, HK 5-digit code, US ticker)</li>
+  <li>Search &amp; add by name or ticker (supports A-share incl. Beijing Stock Exchange, HK 5-digit code, US ticker)</li>
+  <li><b>Beijing Stock Exchange (BSE) fully supported</b>: search by name or 6-digit code, real-time quotes, intraday &amp; daily/weekly/monthly K-line charts, earnings-date hints, and EastMoney open-in-browser link all work for BSE stocks</li>
   <li>Configurable visible columns; defaults to Name / Price / Change%</li>
   <li>Right-click any row: Edit · Delete · Set Price Alert · Copy Symbol · Copy Name · Open in Browser · <b>Rename</b> (custom display alias, does not affect underlying data)</li>
   <li>Quick filter bar: type to instantly narrow rows by name or symbol</li>
@@ -57,6 +58,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Every sub-metric caches independently with a graceful "keep last known value" fallback (in-memory + disk-persisted snapshot) so numbers don't blank to "--" right after close or after an IDE/plugin restart; each has a sane multi-day expiry before it hides</li>
   <li>Post-close outlook score (heuristic, not a real prediction): combines A50/Nasdaq futures, index-futures positioning (context-aware: directional IF/IH weighted fully, hedging-prone IC/IM down-weighted), main capital flow, and market breadth into a -100..100 score with a per-factor tooltip explaining the reasoning</li>
   <li>Outlook only generates after CN market close (15:00 Asia/Shanghai) — shows "pending close" beforehand; only uses index-futures data confirmed to be from today, otherwise that factor is excluded rather than treated as current</li>
+  <li>Prediction snapshot &amp; accuracy tracking: each day's outlook is auto-recorded after close and settled against the day's actual CSI 300 move; the signal chip shows the historical hit-rate, with recent call/settlement details in its tooltip</li>
   <li>Optional AI second opinion: when a DeepSeek API key is configured, an additional AI-generated read on the same data is shown alongside the heuristic score, explicitly distinguishing hedging vs. directional short-adding</li>
 </ul>
 
@@ -184,10 +186,11 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>股票（A 股 / 港股 / 美股）</h3>
 <ul>
-  <li>实时行情：沪深 A 股（新浪 API）、港股（腾讯 API）、美股（Yahoo Finance）</li>
+  <li>实时行情：沪深及北交所 A 股（新浪 API）、港股（腾讯 API）、美股（Yahoo Finance）</li>
   <li>持仓管理：填写成本价和持股数量，自动计算总市值、浮动盈亏、盈亏百分比、<b>累计收益率</b></li>
   <li>自定义分组 + 虚拟分组"全部"和"我的持仓"</li>
-  <li>搜索添加：支持 A 股名称/代码、港股五位数代码、美股 Ticker</li>
+  <li>搜索添加：支持 A 股名称/代码（含北交所）、港股五位数代码、美股 Ticker</li>
+  <li><b>支持北交所股票</b>：按名称或 6 位代码搜索添加，实时行情刷新、日内与日K/周K/月K 走势图、财报日期悬浮提示、右键跳转东方财富行情页均可用</li>
   <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启更多列</li>
   <li>右键菜单：编辑 · 删除 · 设置到价提醒 · 复制代码 · 复制名称 · 在浏览器中打开 · <b>修改名称</b>（自定义显示别名，不影响底层数据）</li>
   <li>工具栏快速筛选：实时按名称或代码过滤表格行</li>
@@ -231,6 +234,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>各子项独立缓存 + 优雅降级：接口临时失败时沿用上次成功值（内存缓存 + 磁盘持久化快照），收盘后或插件重启后也不会立即变成"--"，超过合理有效期仍无新数据才隐藏</li>
   <li>盘后多空信号汇总（启发式评分，非真实预测）：综合 A50/纳指期货、股指期货多空操作（区分方向性对冲：IF/IH 权重更高，量化对冲为主的 IC/IM 权重下调）、主力资金流向、大盘宽度，给出 -100~100 分的倾向评分，悬浮查看每项因子的具体依据</li>
   <li>预测仅在 A 股收盘（15:00）后生成，收盘前显示"待收盘"；且仅采用确认为当日出炉的股指期货数据，若最新仍是上一交易日的数据则该项不计入评分，避免用旧数据误判</li>
+  <li>预测快照与准确率统计：每日收盘后自动记录当日多空预测，并按当日沪深300实际涨跌结算方向对错；多空信号标签直接显示历史准确率百分比，悬浮可查看近期预测与结算结果明细</li>
   <li>可选 AI 二次分析：在设置中配置 DeepSeek API Key 后，会额外展示 AI 结合同一批数据给出的解读，明确区分"对冲加仓"与"方向性加空"两种情形</li>
 </ul>
 
@@ -339,15 +343,18 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.12.3</h3>
-<h4>持仓盈亏优化</h4>
+<h3>1.13.0</h3>
+<h4>北交所股票支持</h4>
 <ul>
-  <li>持仓盈亏金额和收益率现在包含历史卖出的已实现盈亏，部分卖出后不再只显示剩余仓位的浮亏</li>
-  <li>修复部分卖出后收益率计算偏高的问题，收益率分子改为已实现盈亏 + 未实现盈亏之和</li>
+  <li>支持添加北交所股票：按名称或代码搜索，输入 6 位代码可自动识别北交所标的</li>
+  <li>北交所股票实时行情自动刷新，与沪深 A 股行为一致</li>
+  <li>北交所股票走势图正常显示：日内分时与日K/周K/月K 均可查看</li>
+  <li>财报日期悬浮提示、右键"在浏览器中打开"（东方财富行情页）同样覆盖北交所股票</li>
 </ul>
-<h4>盈亏走势图修复</h4>
+<h4>盘后多空信号准确率统计</h4>
 <ul>
-  <li>盈亏走势图不再用当前成本价和数量反推历史，改为按时间顺序逐笔回放交易记录，还原各历史日期的真实仓位后计算盈亏</li>
+  <li>每日收盘后自动记录当日多空预测，并按当日沪深300实际涨跌结算方向对错</li>
+  <li>多空信号标签直接显示历史准确率百分比，悬浮可查看近期预测与结算结果明细</li>
 </ul>
     ]]></change-notes>
 
