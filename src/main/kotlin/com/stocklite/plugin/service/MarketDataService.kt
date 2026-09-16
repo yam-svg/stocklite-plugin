@@ -173,7 +173,7 @@ object MarketDataService {
                     val prev = arr.getOrElse(3) { "" }.toDoubleOrNull() ?: 0.0
                     if (price.isFinite() && prev > 0) changePct = (price - prev) / prev * 100
                 }
-                sinaSymbol.startsWith("sh") || sinaSymbol.startsWith("sz") -> {
+                sinaSymbol.startsWith("sh") || sinaSymbol.startsWith("sz") || sinaSymbol.startsWith("bj") -> {
                     val prev = arr.getOrElse(2) { "" }.toDoubleOrNull() ?: 0.0
                     price = arr.getOrElse(3) { "" }.toDoubleOrNull() ?: Double.NaN
                     if (price.isFinite() && prev > 0) changePct = (price - prev) / prev * 100
@@ -193,9 +193,10 @@ object MarketDataService {
         val result = mutableMapOf<String, StockQuote>()
 
         // Separate by market
-        val aShares  = symbols.filter { it.startsWith("sh") || it.startsWith("sz") }
+        // 北交所 bj 前缀与沪深同走新浪 A 股协议，字段布局一致
+        val aShares  = symbols.filter { it.startsWith("sh") || it.startsWith("sz") || it.startsWith("bj") }
         val hkShares = symbols.filter { it.startsWith("hk") }
-        val usShares = symbols.filter { !it.startsWith("sh") && !it.startsWith("sz") && !it.startsWith("hk") }
+        val usShares = symbols.filter { !it.startsWith("sh") && !it.startsWith("sz") && !it.startsWith("bj") && !it.startsWith("hk") }
 
         // A-shares via Sina
         if (aShares.isNotEmpty()) {
@@ -1512,8 +1513,8 @@ object MarketDataService {
     private fun isNameBad(name: String, symbol: String): Boolean {
         val n = name.trim()
         if (n.isEmpty() || n == symbol) return true
-        // 纯代码格式：sh/sz/hk + 数字
-        if (n.matches(Regex("^(sh|sz|hk)\\d{5,6}$"))) return true
+        // 纯代码格式：sh/sz/bj/hk + 数字
+        if (n.matches(Regex("^(sh|sz|bj|hk)\\d{5,6}$"))) return true
         // 纯数字代码
         if (n.matches(Regex("^\\d{5,6}$"))) return true
         // 包含乱码字符（U+FFFD 替换符、控制字符、或全是问号/特殊符号）
@@ -1541,10 +1542,17 @@ object MarketDataService {
                 val name   = parts.getOrElse(0) { "" }.trim()
                 if (symbol.isEmpty() || name.isEmpty()) return@forEach
                 when {
-                    symbol.startsWith("sh") || symbol.startsWith("sz") ->
+                    symbol.startsWith("sh") || symbol.startsWith("sz") || symbol.startsWith("bj") ->
                         results.add(StockSearchResult(symbol, name))
                     symbol.matches(Regex("\\d{6}")) -> {
-                        val full = if (symbol.startsWith("6") || symbol.startsWith("5")) "sh$symbol" else "sz$symbol"
+                        // 北交所代码段：43/83/87/88（原新三板平移）与 92（新代码）
+                        val full = when {
+                            symbol.startsWith("6") || symbol.startsWith("5") -> "sh$symbol"
+                            symbol.startsWith("43") || symbol.startsWith("83") ||
+                                symbol.startsWith("87") || symbol.startsWith("88") ||
+                                symbol.startsWith("92") -> "bj$symbol"
+                            else -> "sz$symbol"
+                        }
                         results.add(StockSearchResult(full, name))
                     }
                     symbol.matches(Regex("\\d{5}")) ->

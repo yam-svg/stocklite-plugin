@@ -496,15 +496,19 @@ class StockPanel : JPanel(BorderLayout()),
                upperName.contains("指数") || upperName.contains("增强")
     }
 
-    /** 从 sh600519 / sz000858 格式提取纯6位基金代码 */
+    /** 从 sh600519 / sz000858 / bj920001 格式提取纯6位代码 */
     private fun toPureCode(symbol: String): String =
-        symbol.removePrefix("sh").removePrefix("sz").removePrefix("hk")
+        symbol.removePrefix("sh").removePrefix("sz").removePrefix("bj").removePrefix("hk")
 
     private fun buildStockUrl(symbol: String): String {
         return when {
             symbol.startsWith("sh") || symbol.startsWith("sz") -> {
                 // 东方财富：SH600519 / SZ000858
                 "https://quote.eastmoney.com/${symbol.uppercase()}.html"
+            }
+            symbol.startsWith("bj") -> {
+                // 北交所：东财页面路径为小写 bj/920001（大写会 404）
+                "https://quote.eastmoney.com/bj/${symbol.removePrefix("bj")}.html"
             }
             symbol.startsWith("hk") -> {
                 // 港股：东方财富 HK00700
@@ -758,10 +762,10 @@ class StockPanel : JPanel(BorderLayout()),
         val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()
         if (earningsCacheDate != today) { earningsCache.clear(); earningsCacheDate = today }
 
-        // 只处理 A 股（sh/sz 前缀），且不在缓存中的
+        // 只处理 A 股（sh/sz/bj 前缀），且不在缓存中的
         val pending = rows.map { it.first }
             .filter { s ->
-                (s.symbol.startsWith("sh") || s.symbol.startsWith("sz")) &&
+                (s.symbol.startsWith("sh") || s.symbol.startsWith("sz") || s.symbol.startsWith("bj")) &&
                 !earningsCache.containsKey(s.symbol.drop(2))
             }
             .map { it.symbol.drop(2) }
@@ -784,7 +788,7 @@ class StockPanel : JPanel(BorderLayout()),
 
         rows.forEachIndexed { modelRow, (s, _) ->
             val pureCode = when {
-                s.symbol.startsWith("sh") || s.symbol.startsWith("sz") -> s.symbol.drop(2)
+                s.symbol.startsWith("sh") || s.symbol.startsWith("sz") || s.symbol.startsWith("bj") -> s.symbol.drop(2)
                 else -> return@forEachIndexed   // 港股/美股暂不支持
             }
             val (last, next) = earningsCache[pureCode] ?: return@forEachIndexed

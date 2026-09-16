@@ -113,8 +113,8 @@ object ChartDataService {
             val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
             return fetchSinaKlineHistory(prefixed, scale, count)
         }
-        // A 股 / 国内指数 → 腾讯 qfq（前复权，避免分红拆分断层），fallback 新浪
-        if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
+        // A 股（含北交所 bj）/ 国内指数 → 腾讯 qfq（前复权，避免分红拆分断层），fallback 新浪
+        if (symbol.startsWith("sh") || symbol.startsWith("sz") || symbol.startsWith("bj")) {
             val pts = fetchTencentAShareHistory(symbol, period, count)
             if (pts.isNotEmpty()) return pts
             val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
