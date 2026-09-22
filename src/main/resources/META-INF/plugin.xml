@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.13.0</version>
+    <version>1.14.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -14,6 +14,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>Portfolio tracking: cost price, quantity, market value, floating P&amp;L, P&amp;L%, <b>total return %</b></li>
   <li>Custom groups + virtual groups (All / My Holdings)</li>
   <li>Search &amp; add by name or ticker (supports A-share incl. Beijing Stock Exchange, HK 5-digit code, US ticker)</li>
+  <li><b>Batch import</b>: paste a large block of stock names/codes in any mix of formats (bare 6-digit codes, sh/sz/bj/hk prefixes, .SZ/.SS suffixes, HK 5-digit, US tickers) — auto-split, validated and shown as a checklist with a per-row group selector; invalid rows sink to the bottom with a reason, duplicates are merged; adding keeps the dialog open so you can import more batches into other groups</li>
   <li><b>Beijing Stock Exchange (BSE) fully supported</b>: search by name or 6-digit code, real-time quotes, intraday &amp; daily/weekly/monthly K-line charts, earnings-date hints, and EastMoney open-in-browser link all work for BSE stocks</li>
   <li>Configurable visible columns; defaults to Name / Price / Change%</li>
   <li>Right-click any row: Edit · Delete · Set Price Alert · Copy Symbol · Copy Name · Open in Browser · <b>Rename</b> (custom display alias, does not affect underlying data)</li>
@@ -43,7 +44,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>Global Indices</h3>
 <ul>
-  <li>18 built-in indices across 10 markets: CSI 300, SSE, SZSE, ChiNext, STAR 50 (CN); HSI, HSTECH (HK); S&amp;P 500, Dow Jones, NASDAQ, VIX (US); FTSE 100 (UK); DAX (DE); CAC 40 (FR); Nikkei 225 (JP); KOSPI (KR); TAIEX (TW); SENSEX (IN)</li>
+  <li>19 built-in indices across 10 markets: CSI 300, SSE, SZSE, ChiNext, STAR 50 (CN); HSI, HSTECH (HK); S&amp;P 500, Dow Jones, NASDAQ, NASDAQ 100, VIX (US); FTSE 100 (UK); DAX (DE); CAC 40 (FR); Nikkei 225 (JP); KOSPI (KR); TAIEX (TW); SENSEX (IN)</li>
   <li>Holiday-aware open/closed status derived from Yahoo Finance's own trading-period data — correctly detects exchange holidays, cached per market for 30 min</li>
   <li>Data freshness notice: CN &amp; HK indices are real-time; the rest (including US) carry a ~15 min delay from the free Yahoo/Sina overseas feeds — shown in a banner above the table and in the AI analysis context</li>
   <li>Quick market filter tabs: All / CN / HK / US / Other</li>
@@ -54,6 +55,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <h3>A-Share Market Breadth &amp; Post-Close Outlook</h3>
 <ul>
   <li>Bottom of the Global panel: advance/decline counts (incl. Beijing Stock Exchange), limit-up/down counts, total market turnover (CSI All-Share turnover as proxy), large/mid/small-cap proxy indices (CSI 300/500/1000), top-6 leading/lagging sectors, and main capital net inflow</li>
+  <li>Turnover chip hover comparison: today's cumulative turnover vs the previous trading day at the same clock time, showing the absolute delta and percentage as volume expansion (放量) or shrinkage (缩量)</li>
   <li>Index-futures long/short positioning digest: aggregates <b>all contract months across all 4 CFFEX index-futures varieties</b> (IH/IF/IC/IM) for CITIC Futures (agency) and the top-20 member firms, shown as the day's net operation (e.g. "+3551 lots"); hover for the long/short breakdown per variety</li>
   <li>Every sub-metric caches independently with a graceful "keep last known value" fallback (in-memory + disk-persisted snapshot) so numbers don't blank to "--" right after close or after an IDE/plugin restart; each has a sane multi-day expiry before it hides</li>
   <li>Post-close outlook score (heuristic, not a real prediction): combines A50/Nasdaq futures, index-futures positioning (context-aware: directional IF/IH weighted fully, hedging-prone IC/IM down-weighted), main capital flow, and market breadth into a -100..100 score with a per-factor tooltip explaining the reasoning</li>
@@ -190,6 +192,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
   <li>持仓管理：填写成本价和持股数量，自动计算总市值、浮动盈亏、盈亏百分比、<b>累计收益率</b></li>
   <li>自定义分组 + 虚拟分组"全部"和"我的持仓"</li>
   <li>搜索添加：支持 A 股名称/代码（含北交所）、港股五位数代码、美股 Ticker</li>
+  <li><b>批量导入</b>：粘贴一大段股票名称/代码混合文本（支持 6 位代码、sh/sz/bj/hk 前缀、.SZ/.SS 后缀、港股五位数、美股代码等常见写法），自动拆分、校验并生成带勾选框的列表，每行可单独选择目标分组；无效行沉底标注原因、重复股票自动合并；添加后对话框不关闭，可继续把剩余股票分批添加到其他分组</li>
   <li><b>支持北交所股票</b>：按名称或 6 位代码搜索添加，实时行情刷新、日内与日K/周K/月K 走势图、财报日期悬浮提示、右键跳转东方财富行情页均可用</li>
   <li>列显示自定义：默认仅显示名称、现价、涨跌幅，可按需开启更多列</li>
   <li>右键菜单：编辑 · 删除 · 设置到价提醒 · 复制代码 · 复制名称 · 在浏览器中打开 · <b>修改名称</b>（自定义显示别名，不影响底层数据）</li>
@@ -219,7 +222,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 
 <h3>全球指数</h3>
 <ul>
-  <li>内置 18 个指数，覆盖 10 个市场：沪深300、上证、深证、创业板、科创50（A股）；恒生、恒生科技（港股）；标普500、道琼斯、纳斯达克、VIX恐慌指数（美股）；英国富时100；德国DAX；法国CAC40；日经225；韩国综合指数；台湾加权指数；印度SENSEX</li>
+  <li>内置 19 个指数，覆盖 10 个市场：沪深300、上证、深证、创业板、科创50（A股）；恒生、恒生科技（港股）；标普500、道琼斯、纳斯达克、纳指100、VIX恐慌指数（美股）；英国富时100；德国DAX；法国CAC40；日经225；韩国综合指数；台湾加权指数；印度SENSEX</li>
   <li>开盘/休市状态基于 Yahoo Finance 自身的交易时段数据判断，能正确识别各市场节假日，按市场缓存 30 分钟</li>
   <li>数据实时性提示：沪深、港股为实时行情，其余指数（含美股）约有 15 分钟延迟（Yahoo/新浪海外行情免费接口限制），说明见表格上方提示条及 AI 分析上下文</li>
   <li>市场快捷筛选标签：全部 / CN / HK / US / 其他</li>
@@ -230,6 +233,7 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
 <h3>A股大盘概览与盘后多空信号</h3>
 <ul>
   <li>全球面板底部新增大盘概览：涨跌家数（含北交所）、涨停/跌停家数、两市成交额（中证全指成交额代理）、大/中/小盘代理指数（沪深300/中证500/中证1000）、领涨/领跌板块 TOP6、主力资金净流入</li>
+  <li>两市成交额悬浮同期对比：与上一交易日同一时刻的成交额比较，悬浮显示放量/缩量的增量金额与百分比</li>
   <li>股指期货多空持仓摘要：汇总中信期货（代客）及前20名主力机构在<b>四大股指期货品种（IH/IF/IC/IM）全部合约月份</b>的净持仓变化，展示为当日净操作手数（如"+3551手"），悬浮查看各品种明细</li>
   <li>各子项独立缓存 + 优雅降级：接口临时失败时沿用上次成功值（内存缓存 + 磁盘持久化快照），收盘后或插件重启后也不会立即变成"--"，超过合理有效期仍无新数据才隐藏</li>
   <li>盘后多空信号汇总（启发式评分，非真实预测）：综合 A50/纳指期货、股指期货多空操作（区分方向性对冲：IF/IH 权重更高，量化对冲为主的 IC/IM 权重下调）、主力资金流向、大盘宽度，给出 -100~100 分的倾向评分，悬浮查看每项因子的具体依据</li>
@@ -343,18 +347,19 @@ Monitor A-shares, HK/US stocks, funds, futures, and global indices without ever 
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.13.0</h3>
-<h4>北交所股票支持</h4>
+<h3>1.14.0</h3>
+<h4>股票批量导入</h4>
 <ul>
-  <li>支持添加北交所股票：按名称或代码搜索，输入 6 位代码可自动识别北交所标的</li>
-  <li>北交所股票实时行情自动刷新，与沪深 A 股行为一致</li>
-  <li>北交所股票走势图正常显示：日内分时与日K/周K/月K 均可查看</li>
-  <li>财报日期悬浮提示、右键"在浏览器中打开"（东方财富行情页）同样覆盖北交所股票</li>
+  <li>新增"批量导入"：粘贴一大段股票名称/代码混合文本，自动拆分解析并校验，生成可勾选的列表</li>
+  <li>列表中每行可单独选择目标分组，勾选后批量添加；添加完成后对话框不关闭，可继续分批添加到其他分组</li>
+  <li>支持 A 股（含北交所）、港股、美股，自动识别 6 位代码、sh/sz/bj/hk 前缀、.SZ/.SS 后缀、美股代码等常见写法</li>
+  <li>重复股票自动合并，未找到或无效的行自动置于列表底部并标注原因</li>
+  <li>成本价自动预填当前价格，数量默认为 0，与单个添加逻辑一致</li>
 </ul>
-<h4>盘后多空信号准确率统计</h4>
+<h4>全球板块增强</h4>
 <ul>
-  <li>每日收盘后自动记录当日多空预测，并按当日沪深300实际涨跌结算方向对错</li>
-  <li>多空信号标签直接显示历史准确率百分比，悬浮可查看近期预测与结算结果明细</li>
+  <li>新增纳指100（NASDAQ 100）指数，展示在纳斯达克指数之后</li>
+  <li>两市成交额支持悬浮同期对比：与上一交易日同一时刻比较，显示放量/缩量的增量金额与百分比</li>
 </ul>
     ]]></change-notes>
 
