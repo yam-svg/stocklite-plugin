@@ -1,16 +1,11 @@
-<idea-plugin>
-    <id>com.stocklite.plugin</id>
-    <name>StockLite</name>
-    <version>1.14.0</version>
-    <vendor email="1436393509@qq.com">超大只番薯</vendor>
-
-    <description><![CDATA[
-<p><b>StockLite</b> — stock, fund &amp; futures quotes with portfolio tracking, charts and AI analysis, right inside your JetBrains IDE. Native &amp; free. 2024.1+.</p>
-<p>完整功能介绍见下方中文 · Details in Chinese below</p>
-
-<hr/>
-<h3>中文介绍</h3>
-
+<!--
+  StockLite 中文本地化描述（提交 JetBrains 本地化渠道用）
+  用途：按 JetBrains 官方文档（create-plugin-distribution-package.html）说明，
+  面向非英语用户的插件可把本地化描述发送到 support@jetbrains.com 申请，
+  通过后中文界面用户将在 Marketplace 插件页自动看到本描述。
+  邮件建议：主题 "Localized description request for StockLite (plugin id 32115)"，
+  正文附本 HTML 内容，并附插件页链接 https://plugins.jetbrains.com/plugin/32115
+-->
 <p><b>StockLite</b> — 把股票行情和持仓账本装进 JetBrains IDE：写代码的同时看行情、记账、画K线、问 AI，全程不用离开编辑器。</p>
 <p>A 股（含北交所）· 港股 · 美股 · 基金 · 国内/国际期货 · 全球 19 大指数，一块原生面板全部搞定。纯 Kotlin/Swing 实现——没有 Electron、没有额外进程；免费、无广告、无需注册账号。</p>
 
@@ -62,55 +57,3 @@
   <li>行情来自新浪 / 腾讯 / 东方财富 / 天天基金 / Yahoo Finance 等公开接口；A 股与港股为实时，美股等海外行情约有 15 分钟延迟（面板内已标注）。</li>
   <li>所有数据仅供个人参考，本插件不构成任何投资建议。</li>
 </ul>
-    ]]></description>
-
-    <change-notes><![CDATA[
-<h3>1.14.0</h3>
-<h4>股票批量导入</h4>
-<ul>
-  <li>新增"批量导入"：粘贴一大段股票名称/代码混合文本，自动拆分解析并校验，生成可勾选的列表</li>
-  <li>列表中每行可单独选择目标分组，勾选后批量添加；添加完成后对话框不关闭，可继续分批添加到其他分组</li>
-  <li>支持 A 股（含北交所）、港股、美股，自动识别 6 位代码、sh/sz/bj/hk 前缀、.SZ/.SS 后缀、美股代码等常见写法</li>
-  <li>重复股票自动合并，未找到或无效的行自动置于列表底部并标注原因</li>
-  <li>成本价自动预填当前价格，数量默认为 0，与单个添加逻辑一致</li>
-</ul>
-<h4>全球板块增强</h4>
-<ul>
-  <li>新增纳指100（NASDAQ 100）指数，展示在纳斯达克指数之后</li>
-  <li>两市成交额支持悬浮同期对比：与上一交易日同一时刻比较，显示放量/缩量的增量金额与百分比</li>
-</ul>
-    ]]></change-notes>
-
-    <depends>com.intellij.modules.platform</depends>
-
-    <extensions defaultExtensionNs="com.intellij">
-        <toolWindow
-                id="StockLite"
-                anchor="right"
-                secondary="false"
-                factoryClass="com.stocklite.plugin.StockliteToolWindowFactory"
-                icon="/icons/stocklite.svg"/>
-        <applicationService
-                serviceImplementation="com.stocklite.plugin.state.StockliteState"/>
-        <applicationService
-                serviceImplementation="com.stocklite.plugin.service.FundNavWatcherService"/>
-        <applicationService
-                serviceImplementation="com.stocklite.plugin.service.StockAlertWatcherService"/>
-        <applicationService
-                serviceImplementation="com.stocklite.plugin.service.PortfolioWatcherService"/>
-        <applicationService
-                serviceImplementation="com.stocklite.plugin.service.BreadthWatcherService"/>
-        <applicationConfigurable
-                parentId="tools"
-                instance="com.stocklite.plugin.settings.StockliteConfigurable"
-                id="com.stocklite.plugin.settings"
-                displayName="StockLite"/>
-        <notificationGroup id="StockLite Alerts"
-                           displayType="BALLOON"
-                           isLogByDefault="true"/>
-        <postStartupActivity implementation="com.stocklite.plugin.StockliteStartupActivity"/>
-        <statusBarWidgetFactory implementation="com.stocklite.plugin.ui.PortfolioStatusWidgetFactory"
-                                id="StockLite.Portfolio"
-                                order="first"/>
-    </extensions>
-</idea-plugin>

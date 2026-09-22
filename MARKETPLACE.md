@@ -106,7 +106,7 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 | 问题            | 对策                       |
 |---------------|--------------------------|
 | 插件未签名         | 按第二节完成签名                 |
-| 描述只有中文        | `plugin.xml` 已加入英文说明 ✅   |
+| 描述只有中文        | 官方要求名称与描述必须提供英文（"Plugin name and description must be provided in English"）；`plugin.xml` 已采用简短英文开场 + 中文详细介绍 ✅。纯中文本地化描述可发邮件到 support@jetbrains.com 申请（内容见 `docs/description-zh.html`），通过后中文界面用户自动看到中文描述 ✅   |
 | `vendor` 邮箱无效 | 已填 `1436393509@qq.com` ✅ |
 | 截图为空          | 按第四节准备截图                 |
 | API 访问违规      | 本插件仅请求公开行情 API，无风险 ✅     |
