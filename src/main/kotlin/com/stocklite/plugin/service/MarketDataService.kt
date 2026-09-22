@@ -830,6 +830,48 @@ object MarketDataService {
         return if (count == 0) null else sum
     }
 
+    /**
+     * 上一交易日"同期"两市成交额：取上证/深证成指在东财的分分钟走势（ndays=2 返回最近两个交易日），
+     * 上一交易日取返回数据中的较早日期，天然跳过周末与节假日；
+     * 盘中截至当前分钟累计，休市/盘前则取整日合计（此时实时成交额本身就是上一交易日收盘值，对比依然成立）。
+     * 数据源说明：新浪分钟线的 amount 在深证成指上少计约一半（全天合计仅为真实成交额的一半），
+     * 而东财 trends2 的分钟成交额与其日线完全一致，故以其为准。
+     * 返回 Pair(同期累计成交额(元), 上一交易日日期)；任一指数数据缺失时返回 null（不做对比）。
+     */
+    private fun fetchPrevDaySameTimeTurnover(): Pair<Double, String>? {
+        val shZone = ZoneId.of("Asia/Shanghai")
+        val now    = ZonedDateTime.now(shZone)
+        val today  = now.toLocalDate().toString()
+        var total = 0.0
+        var prevDayStr: String? = null
+        for (secid in listOf("1.000001", "0.399001")) {   // 上证指数 / 深证成指
+            val raw = HttpUtil.get(
+                "https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=$secid&fields1=f1&fields2=f51,f57&ndays=2&iscr=0",
+                referer = "https://quote.eastmoney.com/", label = "成交额同期对比-东财分钟走势") ?: return null
+            val trends = try { JSONObject(raw).optJSONObject("data")?.optJSONArray("trends") } catch (_: Exception) { null }
+            if (trends == null || trends.length() == 0) return null
+            // 行格式 "2026-09-21 09:30,成交额(元)"
+            val dates = (0 until trends.length())
+                .mapNotNull { i -> trends.optString(i, "").takeIf { it.length >= 10 }?.substring(0, 10) }
+                .distinct()
+            val lastDataDay = dates.maxOrNull() ?: return null
+            val prevDay     = dates.filter { it < lastDataDay }.maxOrNull() ?: return null
+            // 走势含当日数据 = 今日是交易日，截至当前分钟；否则休市/盘前，取整日
+            val cutoff = if (lastDataDay == today) "%02d:%02d".format(now.hour, now.minute) else "23:59"
+            var sum = 0.0
+            for (i in 0 until trends.length()) {
+                val row = trends.optString(i, "")
+                if (row.length < 20 || !row.startsWith(prevDay)) continue
+                if (row.substring(11, 16) > cutoff) continue
+                sum += row.substringAfter(",").toDoubleOrNull() ?: continue
+            }
+            if (sum <= 0) return null
+            total += sum
+            prevDayStr = prevDay
+        }
+        return if (total > 0) total to (prevDayStr ?: return null) else null
+    }
+
     /** 大/中/小盘代理：沪深300 / 中证500 / 中证1000 涨跌幅% */
     private fun fetchCapTierPct(): Triple<Double, Double, Double>? {
         val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000300,sh000905,sh000852",
@@ -1021,6 +1063,8 @@ object MarketDataService {
     private val advDecCache   = StaleCache<Triple<Int, Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val limitsCache   = StaleCache<Pair<Int, Int>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val turnoverCache = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    // 同期成交额是随钟点增长的累计值，取不到就宁可不显示对比，沿用窗口只给 10 分钟
+    private val prevTurnoverCache = StaleCache<Pair<Double, String>>(BREADTH_FRESH_TTL, 10 * 60_000L)
     private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val flowCache     = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val sectorCache   = StaleCache<Pair<List<SectorInfo>, List<SectorInfo>>>(2 * 60_000L, 5 * 60_000L)
@@ -1055,6 +1099,7 @@ object MarketDataService {
         val breadth = advDecCache.getOrFetch { fetchAdvanceDecline() }
         val limits  = limitsCache.getOrFetch { fetchLimitCounts() }
         val turnover = turnoverCache.getOrFetch { fetchTotalTurnover() }
+        val prevTurn = prevTurnoverCache.getOrFetch { fetchPrevDaySameTimeTurnover() }
         val capTier = capTierCache.getOrFetch { fetchCapTierPct() }
         val sectors = sectorCache.getOrFetch { fetchSectorLeaders() }
         val flow    = flowCache.getOrFetch { fetchMainCapitalFlow() }
@@ -1070,6 +1115,8 @@ object MarketDataService {
             limitUpCount = limits?.first ?: persisted?.limitUpCount,
             limitDownCount = limits?.second ?: persisted?.limitDownCount,
             totalTurnover = turnover ?: persisted?.totalTurnover,
+            prevTurnoverSameTime = prevTurn?.first,   // 不随快照持久化：累计口径与钟点相关，旧值只会误导
+            prevTurnoverDate = prevTurn?.second,
             largeCapPct = capTier?.first ?: persisted?.largeCapPct,
             midCapPct = capTier?.second ?: persisted?.midCapPct,
             smallCapPct = capTier?.third ?: persisted?.smallCapPct,

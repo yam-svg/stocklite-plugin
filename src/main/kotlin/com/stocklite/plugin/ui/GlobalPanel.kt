@@ -610,8 +610,16 @@ class GlobalPanel : JPanel(BorderLayout()),
         if (d.totalTurnover != null) {
             val todayTxt = fmtYuanBig(d.totalTurnover)
             chipTurnover.text = "${L10n.lblTotalTurnover} $todayTxt"
+            // 与上一交易日截至同一时刻对比：增量=放量，缩量=缩量
+            val prevLine = d.prevTurnoverSameTime?.takeIf { it > 0 }?.let { prev ->
+                val delta = d.totalTurnover - prev
+                val pct   = delta / prev * 100
+                val label = if (delta >= 0) L10n.ttVolUp else L10n.ttVolDown
+                "<br/>${L10n.ttPrevSameTime.replace("{0}", d.prevTurnoverDate ?: "")} ${fmtYuanBig(prev)}" +
+                "<br/>$label ${flowSpan(delta, up, dn)} ${pctSpan(pct, up, dn)}"
+            } ?: ""
             chipTurnover.toolTipText =
-                "<html>今日累计 $todayTxt<br/><span style='color:#888aaa'>${dataTimeTooltip(times.turnover)}</span></html>"
+                "<html>${L10n.ttTodayCum} $todayTxt$prevLine<br/><span style='color:#888aaa'>${dataTimeTooltip(times.turnover)}</span></html>"
         } else {
             chipTurnover.text        = "${L10n.lblTotalTurnover} --"
             chipTurnover.toolTipText = null
@@ -696,7 +704,14 @@ class GlobalPanel : JPanel(BorderLayout()),
                 sb.append("涨${d.upCount}/跌${d.downCount}/平${d.flatCount}家 ")
             if (d.limitUpCount != null && d.limitDownCount != null)
                 sb.append("涨停${d.limitUpCount}/跌停${d.limitDownCount}家 ")
-            if (d.totalTurnover != null) sb.append("两市成交额${fmtYuanBig(d.totalTurnover)} ")
+            if (d.totalTurnover != null) {
+                sb.append("两市成交额${fmtYuanBig(d.totalTurnover)}")
+                d.prevTurnoverSameTime?.takeIf { it > 0 }?.let { prev ->
+                    val delta = d.totalTurnover!! - prev
+                    sb.append("(上一交易日同期${fmtYuanBig(prev)}，${if (delta >= 0) "放量" else "缩量"}${fmtYuanBig(kotlin.math.abs(delta))})")
+                }
+                sb.append(" ")
+            }
             if (d.largeCapPct != null && d.midCapPct != null && d.smallCapPct != null)
                 sb.append("大盘${"%.2f".format(d.largeCapPct)}%/中盘${"%.2f".format(d.midCapPct)}%/小盘${"%.2f".format(d.smallCapPct)}% ")
             if (d.topSectors.isNotEmpty())

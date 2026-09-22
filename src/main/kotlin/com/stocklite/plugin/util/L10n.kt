@@ -299,6 +299,12 @@ object L10n {
     fun validationAlertTargetPositive() = s("目标价格必须大于 0", "Target price must be > 0")
 
     // ── 批量导入股票 ──
+    // 两市成交额悬浮对比
+    val ttTodayCum         get() = s("今日累计", "Today")
+    val ttPrevSameTime     get() = s("上一交易日{0}同期", "Prev trading day {0} same time")
+    val ttVolUp            get() = s("放量", "Heavier volume")
+    val ttVolDown          get() = s("缩量", "Lighter volume")
+
     val btnBatchImport     get() = s("批量导入", "Batch Import")
     val dlgBatchImport     get() = s("批量导入股票", "Batch Import Stocks")
     val biPasteHint        get() = s("粘贴股票文本（代码 / 名称 / 名称+代码，支持换行、逗号、顿号、分号、空格分隔；全大写视为美股代码）：",

@@ -151,6 +151,10 @@ data class MarketBreadthData(
     val limitDownCount: Int? = null,
     /** 两市成交额代理指标（中证流通指数成交额，覆盖沪深京全市场），单位：元 */
     val totalTurnover: Double? = null,
+    /** 上一交易日截至同一时刻的两市成交额累计（元），用于增/缩量同期比较 */
+    val prevTurnoverSameTime: Double? = null,
+    /** 上一交易日日期（yyyy-MM-dd），来自分钟线实际日期，自动跳过周末/节假日 */
+    val prevTurnoverDate: String? = null,
     /** 大盘股代理：沪深300涨跌幅% */
     val largeCapPct: Double? = null,
     /** 中盘股代理：中证500涨跌幅% */
