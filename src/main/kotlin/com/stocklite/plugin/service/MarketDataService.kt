@@ -28,6 +28,7 @@ object MarketDataService {
         GlobalIndexConfig("^GSPC",    "SPX",    "S&P 500",         "标普500",    "US", "America/New_York"),
         GlobalIndexConfig("^DJI",     "DJI",    "Dow Jones",       "道琼斯",     "US", "America/New_York"),
         GlobalIndexConfig("^IXIC",    "IXIC",   "NASDAQ",          "纳斯达克",   "US", "America/New_York"),
+        GlobalIndexConfig("^NDX",     "NDX",    "NASDAQ 100",      "纳指100",    "US", "America/New_York"),
         GlobalIndexConfig("^VIX",     "VIX",    "CBOE VIX",        "VIX恐慌指数", "US", "America/New_York"),
         GlobalIndexConfig("^FTSE",    "FTSE",   "FTSE 100",        "英国富时100","UK", "Europe/London"),
         GlobalIndexConfig("^GDAXI",   "DAX",    "DAX",             "德国DAX",    "DE", "Europe/Berlin"),
@@ -48,6 +49,7 @@ object MarketDataService {
     private val SINA_SYMBOL_MAP = mapOf(
         "^DJI"      to "gb_dji",
         "^IXIC"     to "gb_ixic",
+        "^NDX"      to "gb_\$ndx",
         "^GSPC"     to "gb_\$inx",
         "^N225"     to "gb_nky",
         "^HSI"      to "rt_hkHSI",
