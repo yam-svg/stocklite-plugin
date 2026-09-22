@@ -12,6 +12,31 @@ import javax.swing.table.TableRowSorter
  */
 class TriStateRowSorter(model: TableModel) : TableRowSorter<TableModel>(model) {
 
+    companion object {
+        /** 把 "--"、千分位逗号、"+"、"%" 等展示格式解析回数值；不可解析返回 null */
+        fun parseNum(v: Any?): Double? = when (v) {
+            is Number -> v.toDouble()
+            is String -> v.trim().removePrefix("+").removeSuffix("%").replace(",", "").toDoubleOrNull()
+            else -> null
+        }
+
+        /**
+         * 数值列通用比较器：String 存储的数值列（如 "55.28"、"18,500"）若走默认字典序，
+         * 会出现 "150" < "55" < "6" 这类不严格升降序，统一改用数值比较；
+         * "--" 等无法解析的缺失值按最小值处理（升序置顶、降序沉底）。
+         */
+        val numericComparator = Comparator<Any?> { a, b ->
+            val da = parseNum(a)
+            val db = parseNum(b)
+            when {
+                da != null && db != null -> da.compareTo(db)
+                da != null -> 1
+                db != null -> -1
+                else -> (a?.toString() ?: "").compareTo(b?.toString() ?: "")
+            }
+        }
+    }
+
     override fun toggleSortOrder(column: Int) {
         val keys = sortKeys
         val primary = keys.firstOrNull()

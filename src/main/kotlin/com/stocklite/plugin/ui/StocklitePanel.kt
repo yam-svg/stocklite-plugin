@@ -15,12 +15,14 @@ class StocklitePanel : JPanel(BorderLayout()),
     val fundPanel     = FundPanel()
     val futurePanel   = FuturePanel()
     val globalPanel   = GlobalPanel()
+    val ipoPanel      = IpoPanel()
     val usMarketPanel = UsMarketPanel()
     val apiLogPanel   = ApiLogPanel()
 
     private val tabs = JBTabbedPane()
     private val state = StockliteState.getInstance()
 
+    private val ipoTabIndex        get() = tabs.indexOfComponent(ipoPanel)
     private val usMarketTabIndex get() = tabs.indexOfComponent(usMarketPanel)
     private val apiLogTabIndex   get() = tabs.indexOfComponent(apiLogPanel)
 
@@ -30,6 +32,7 @@ class StocklitePanel : JPanel(BorderLayout()),
         tabs.addTab(L10n.tabFuture, futurePanel)
         tabs.addTab(L10n.tabGlobal, globalPanel)
 
+        if (state.enableIpoPanel)      tabs.addTab(L10n.tabIpo, ipoPanel)
         if (state.enableUsMarketPanel) tabs.addTab(L10n.tabUsMarket, usMarketPanel)
         if (state.enableApiLogPanel)   tabs.addTab(L10n.tabApiLog,   apiLogPanel)
 
@@ -39,6 +42,7 @@ class StocklitePanel : JPanel(BorderLayout()),
                 fundPanel     -> fundPanel.fetchQuotesAsync()
                 futurePanel   -> futurePanel.fetchQuotesAsync()
                 globalPanel   -> globalPanel.fetchAsync()
+                ipoPanel      -> ipoPanel.fetchAsync()
                 usMarketPanel -> usMarketPanel.fetchAsync()
             }
         }
@@ -60,6 +64,7 @@ class StocklitePanel : JPanel(BorderLayout()),
     }
 
     override fun onFeatureToggleChanged() {
+        applyTabVisibility(ipoPanel,      state.enableIpoPanel,      L10n.tabIpo)
         applyTabVisibility(usMarketPanel, state.enableUsMarketPanel, L10n.tabUsMarket)
         applyTabVisibility(apiLogPanel,   state.enableApiLogPanel,   L10n.tabApiLog)
     }
@@ -69,8 +74,10 @@ class StocklitePanel : JPanel(BorderLayout()),
         tabs.setTitleAt(1, L10n.tabFund)
         tabs.setTitleAt(2, L10n.tabFuture)
         tabs.setTitleAt(3, L10n.tabGlobal)
+        val ipoIdx = ipoTabIndex
         val usIdx  = usMarketTabIndex
         val logIdx = apiLogTabIndex
+        if (ipoIdx >= 0) tabs.setTitleAt(ipoIdx, L10n.tabIpo)
         if (usIdx  >= 0) tabs.setTitleAt(usIdx,  L10n.tabUsMarket)
         if (logIdx >= 0) tabs.setTitleAt(logIdx, L10n.tabApiLog)
     }

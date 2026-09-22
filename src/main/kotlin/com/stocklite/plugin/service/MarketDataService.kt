@@ -1558,6 +1558,105 @@ object MarketDataService {
         return pureCodes.associateWith { code -> getEarningsDate(code) }
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // 新股日历（东方财富 RPTA_APP_IPOAPPLY，与期货持仓/财报同一 datacenter 通道）
+    // 一次返回两类行：申购日历（未上市、申购日在近7天及未来）与新股/次新股表现（上市90天内）
+    // ══════════════════════════════════════════════════════════════
+
+    /** 新股信息行（新股面板上方申购表与下方表现表共用） */
+    data class IpoInfo(
+        val pureCode: String,          // 纯6位代码
+        val sinaSymbol: String,        // sh/sz/bj 前缀，可直接走 getStockQuotes / 走势图
+        val name: String,
+        val applyCode: String,         // 申购代码（多数与代码相同，科创板等可能不同）
+        val applyDate: String,         // 申购日 yyyy-MM-dd，空串=未公告
+        val listingDate: String?,      // 上市日，null=尚未公告
+        val issuePrice: Double?,
+        val issuePe: Double?,          // 发行市盈率（已公布用实际，未公布用预测）
+        val industryPe: Double?,
+        val maxApplyQty: Int?,         // 顶格申购上限（股）
+        val raiseFunds: Double?,       // 募资额（亿元）
+        val firstDayChangePct: Double?,// 上市首日收盘涨幅 %
+        val listed: Boolean,
+        val isBeijing: Boolean
+    )
+
+    private val ipoListCache = StaleCache<List<IpoInfo>>(10 * 60_000L, 2 * 60 * 60_000L)
+
+    private fun optJsonDouble(o: JSONObject, key: String): Double? {
+        if (o.isNull(key)) return null
+        val v = o.optDouble(key, Double.NaN)
+        return if (v.isNaN()) null else v
+    }
+
+    /** SECUCODE 后缀（688287.SH）→ 新浪 symbol；无后缀时按代码首位推断 */
+    private fun ipoSinaSymbol(secuCode: String, pure: String): String {
+        when (secuCode.substringAfterLast('.', "").uppercase()) {
+            "SH" -> return "sh$pure"
+            "SZ" -> return "sz$pure"
+            "BJ" -> return "bj$pure"
+        }
+        return when {
+            pure.startsWith("6") || pure.startsWith("5") -> "sh$pure"
+            pure.startsWith("43") || pure.startsWith("83") ||
+                pure.startsWith("87") || pure.startsWith("88") ||
+                pure.startsWith("92") -> "bj$pure"
+            else -> "sz$pure"
+        }
+    }
+
+    /** 新股日历；返回 null 表示接口不可用（stale 缓存也过期/无数据），调用方保留旧数据并提示 */
+    fun getIpoList(): List<IpoInfo>? = ipoListCache.getOrFetch { fetchIpoList() }
+
+    private fun fetchIpoList(): List<IpoInfo>? {
+        return try {
+            val enc = URLEncoder.encode("(IS_VALID=\"1\")", "UTF-8")
+            val url = "https://datacenter-web.eastmoney.com/api/data/v1/get" +
+                "?reportName=RPTA_APP_IPOAPPLY&columns=" +
+                "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,APPLY_CODE,APPLY_DATE,LISTING_DATE," +
+                "ISSUE_PRICE,PREDICT_ISSUE_PRICE,AFTER_ISSUE_PE,PREDICT_ISSUE_PE,PREDICT_PE," +
+                "INDUSTRY_PE,ONLINE_APPLY_UPPER,DEC_SUMFINA,PREDICT_RAISE_FUNDS,LD_CLOSE_CHANGE,IS_BEIJING" +
+                "&filter=$enc&sortColumns=APPLY_DATE&sortTypes=-1&pageNumber=1&pageSize=100&source=WEB&client=WEB"
+            val raw = HttpUtil.get(url) ?: return null
+            val items = JSONObject(raw).optJSONObject("result")?.optJSONArray("data") ?: return null
+            val today = java.time.LocalDate.now(ZoneId.of("Asia/Shanghai"))
+            val recentFrom = today.minusDays(90).toString()   // 次新股窗口
+            val applyFrom  = today.minusDays(7).toString()    // 申购日历回看窗口
+            val list = ArrayList<IpoInfo>()
+            for (i in 0 until items.length()) {
+                val o = items.optJSONObject(i) ?: continue
+                val pure = o.optString("SECURITY_CODE", "")
+                if (pure.length != 6) continue
+                val applyDate = o.optString("APPLY_DATE", "").take(10)
+                val listing = o.optString("LISTING_DATE", "").take(10).ifEmpty { null }
+                val keep = (listing != null && listing >= recentFrom) ||
+                           (listing == null && applyDate.isNotEmpty() && applyDate >= applyFrom)
+                if (!keep) continue
+                val predictPrice = optJsonDouble(o, "PREDICT_ISSUE_PRICE")?.takeIf { it > 0 }
+                list.add(IpoInfo(
+                    pureCode = pure,
+                    sinaSymbol = ipoSinaSymbol(o.optString("SECUCODE", ""), pure),
+                    name = o.optString("SECURITY_NAME_ABBR", pure),
+                    applyCode = o.optString("APPLY_CODE", pure).ifEmpty { pure },
+                    applyDate = applyDate,
+                    listingDate = listing,
+                    issuePrice = optJsonDouble(o, "ISSUE_PRICE") ?: predictPrice,
+                    issuePe = optJsonDouble(o, "AFTER_ISSUE_PE")
+                        ?: optJsonDouble(o, "PREDICT_ISSUE_PE")?.takeIf { it > 0 }
+                        ?: optJsonDouble(o, "PREDICT_PE")?.takeIf { it > 0 },
+                    industryPe = optJsonDouble(o, "INDUSTRY_PE"),
+                    maxApplyQty = optJsonDouble(o, "ONLINE_APPLY_UPPER")?.toInt()?.takeIf { it > 0 },
+                    raiseFunds = optJsonDouble(o, "DEC_SUMFINA")?.takeIf { it > 0 }
+                        ?: optJsonDouble(o, "PREDICT_RAISE_FUNDS")?.takeIf { it > 0 },
+                    firstDayChangePct = optJsonDouble(o, "LD_CLOSE_CHANGE"),
+                    listed = listing != null,
+                    isBeijing = o.optInt("IS_BEIJING", 0) == 1
+                ))
+            }
+            list.sortedBy { it.applyDate }
+        } catch (_: Exception) { null }
+    }
+
     /** 判断搜索结果中的名称是否"看起来有问题"（代码/乱码/空），需要用行情接口纠正 */
     private fun isNameBad(name: String, symbol: String): Boolean {
         val n = name.trim()

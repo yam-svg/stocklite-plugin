@@ -30,6 +30,21 @@ object AlertManager {
     }
 
     /**
+     * 今日新股申购提醒。由 IpoPanel 在拉取新股日历后调用，
+     * 去重由调用方通过 state.ipoNotifiedDates 完成（同一代码一天只弹一次）。
+     */
+    fun notifyIpoApplyToday(name: String, applyCode: String, issuePrice: Double?) {
+        if (!StockliteState.getInstance().enableIpoPanel) return
+        try {
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("StockLite Alerts")
+                .createNotification(L10n.ipoAlertTitle, L10n.ipoAlertMsg(name, applyCode, issuePrice),
+                    NotificationType.INFORMATION)
+                .notify(null)
+        } catch (_: Exception) {}
+    }
+
+    /**
      * @param quotes  Map<symbol, price>，本次刷新到的行情
      */
     fun checkAlerts(quotes: Map<String, Double>) {

@@ -35,6 +35,7 @@ class StockliteConfigurable : Configurable {
     private val globalIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
+    private val ipoPanelCheckBox        = JBCheckBox(L10n.settingsIpoPanel)
     private val usMarketPanelCheckBox   = JBCheckBox(L10n.settingsUsMarketPanel)
     private val apiLogPanelCheckBox     = JBCheckBox(L10n.settingsApiLogPanel)
     private val alertsCheckBox          = JBCheckBox(L10n.settingsPriceAlerts)
@@ -162,6 +163,7 @@ class StockliteConfigurable : Configurable {
 
         // ── 功能开关 ──
         sep(L10n.settingsFeatures, row); row += 2
+        gbc.gridy = row++; panel.add(ipoPanelCheckBox,     gbc)
         gbc.gridy = row++; panel.add(usMarketPanelCheckBox, gbc)
         gbc.gridy = row++; panel.add(apiLogPanelCheckBox,  gbc)
         gbc.gridy = row++; panel.add(alertsCheckBox,        gbc)
@@ -278,6 +280,7 @@ class StockliteConfigurable : Configurable {
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
+               ipoPanelCheckBox.isSelected     != state.enableIpoPanel   ||
                usMarketPanelCheckBox.isSelected != state.enableUsMarketPanel ||
                apiLogPanelCheckBox.isSelected  != state.enableApiLogPanel   ||
                alertsCheckBox.isSelected       != state.enablePriceAlerts ||
@@ -304,6 +307,7 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalStock  = stockIntervalSpinner.value  as Int
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
+        state.enableIpoPanel      = ipoPanelCheckBox.isSelected
         state.enableUsMarketPanel = usMarketPanelCheckBox.isSelected
         state.enableApiLogPanel   = apiLogPanelCheckBox.isSelected
         state.enablePriceAlerts        = alertsCheckBox.isSelected
@@ -337,6 +341,7 @@ class StockliteConfigurable : Configurable {
         stockIntervalSpinner.value  = state.refreshIntervalStock
         fundIntervalSpinner.value   = state.refreshIntervalFund
         globalIntervalSpinner.value = state.refreshIntervalGlobal
+        ipoPanelCheckBox.isSelected      = state.enableIpoPanel
         usMarketPanelCheckBox.isSelected = state.enableUsMarketPanel
         apiLogPanelCheckBox.isSelected   = state.enableApiLogPanel
         alertsCheckBox.isSelected       = state.enablePriceAlerts

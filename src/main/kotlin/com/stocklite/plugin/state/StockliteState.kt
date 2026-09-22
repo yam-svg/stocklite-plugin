@@ -52,6 +52,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enablePortfolioStatusBar: Boolean = true
     var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
     var enableApiLogPanel: Boolean = false   // 默认关闭，调试用途
+    var enableIpoPanel: Boolean = true       // 新股标签页（申购日历+次新股表现），默认开启
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
     var enableChartVolume: Boolean = true    // K线图底部成交量（红绿柱），默认开启
 
@@ -81,6 +82,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     // ── 价格提醒 ──
     var priceAlerts: MutableList<PriceAlertData> = ArrayList()
+
+    // ── 新股功能状态 ──
+    var ipoAppliedCodes: MutableList<String> = ArrayList()       // 已申购标记（纯6位代码）
+    var ipoNotifiedDates: MutableMap<String, String> = HashMap() // 代码 -> 最近提醒日 yyyy-MM-dd，同日不重复弹
 
     override fun getState(): StockliteState = this
 

@@ -298,6 +298,43 @@ object L10n {
     fun validationQtyNotNegative() = s("持仓数量不能为负数", "Quantity cannot be negative")
     fun validationAlertTargetPositive() = s("目标价格必须大于 0", "Target price must be > 0")
 
+    // ── 新股标签页 ──
+    val tabIpo get() = s("新股", "New IPOs")
+    val settingsIpoPanel get() = s("显示新股标签页（新股申购日历与新股/次新股表现，默认开启）",
+                                   "Show New IPOs tab (subscription calendar & recent listings, enabled by default)")
+    val colApplyDate   get() = s("申购日",    "Apply")
+    val colApplyCode   get() = s("申购代码",  "Apply Code")
+    val colIssuePrice  get() = s("发行价",    "Issue")
+    val colIssuePe     get() = s("发行市盈率", "Issue PE")
+    val colRaiseFunds  get() = s("募资(亿)",  "Funds(100M)")
+    val colMaxApply    get() = s("顶格上限",  "Max Apply")
+    val colListingDate get() = s("上市日",    "Listing")
+    val colVsIssue     get() = s("较发行价",  "vs Issue")
+    val colFirstDay    get() = s("首日涨幅",  "1st-Day")
+    val ipoFilterToday   get() = s("今日申购", "Today")
+    val ipoFilterWeek    get() = s("本周申购", "This Week")
+    val ipoFilterPending get() = s("待上市",   "Pending List")
+    val ipoStatusToday     get() = s("今日申购", "Today")
+    fun ipoStatusInDays(n: Int) = s("${n}天后申购", "in $n d")
+    val ipoStatusWaitListing get() = s("待上市", "To List")
+    val lblRecentNew get() = s("新股/次新股表现（近90天）", "Recent Listings (last 90 days)")
+    val lblIpoCalendar get() = s("新股申购日历", "IPO Calendar")
+    val ipoLoadFailed  get() = s("新股数据获取失败", "Failed to load IPO data")
+    val lblNoIpo       get() = s("暂无新股安排", "No upcoming IPOs")
+    val btnMarkApplied   get() = s("标记已申购",     "Mark Applied")
+    val btnUnmarkApplied get() = s("取消已申购标记",  "Unmark Applied")
+    val ipoDefaultGroup  get() = s("自选新股", "IPO Watch")
+    val ipoTooltipIndustryPe get() = s("行业市盈率: ", "Industry PE: ")
+    val ipoPeAbove get() = s("（高于行业）", " (above industry)")
+    val ipoPeBelow get() = s("（低于行业）", " (below industry)")
+    fun ipoAlertMsg(name: String, applyCode: String, price: Double?) = s(
+        "$name（申购代码 $applyCode）今日申购" +
+            (if (price != null && price > 0) "，发行价 ${"%.2f".format(price)} 元" else ""),
+        "$name (apply $applyCode) opens for subscription today" +
+            (if (price != null && price > 0) ", issue price ${"%.2f".format(price)}" else "")
+    )
+    val ipoAlertTitle get() = s("今日新股申购", "IPO Subscription Today")
+
     // ── 批量导入股票 ──
     // 两市成交额悬浮对比
     val ttTodayCum         get() = s("今日累计", "Today")
