@@ -1608,6 +1608,114 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
+    // 批量导入校验（配合 StockTextParser / BatchImportStockDialog）
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * 批量校验导入候选：
+     * - 带代码的条目：走 getStockQuotes 批量确认存在性并取规范名称/现价；
+     * - 仅名称的条目：小并发（3 线程）逐个 searchStocks，取完全同名结果；多个不同代码命中 → AMBIGUOUS；
+     * - 已在自选（existingSymbols）→ EXISTS；文本内解析后仍重复的 symbol → 只保留第一条，其余标 EXISTS；
+     * - 最后统一为已确认条目回填现价（默认成本用）。
+     * progress 回调在完成计数变化时触发（已完成数, 总数），由调用方转成 UI 进度。
+     */
+    fun resolveImportCandidates(
+        tokens: List<com.stocklite.plugin.util.ParsedStockToken>,
+        existingSymbols: Set<String>,
+        progress: ((Int, Int) -> Unit)? = null
+    ): List<ImportCandidate> {
+        if (tokens.isEmpty()) return emptyList()
+        val results = arrayOfNulls<ImportCandidate>(tokens.size)
+        val doneCounter = java.util.concurrent.atomic.AtomicInteger(0)
+        fun bump() { progress?.invoke(doneCounter.incrementAndGet(), tokens.size) }
+
+        // ── 1. 带代码条目：批量行情确认 ──
+        val codeTokens = tokens.withIndex().filter { it.value.code != null }
+        if (codeTokens.isNotEmpty()) {
+            val quotes = getStockQuotes(codeTokens.map { it.value.code!! }.distinct())
+            for ((idx, tok) in codeTokens) {
+                val sym = tok.code!!
+                val q = quotes[sym]
+                results[idx] = when {
+                    q == null -> ImportCandidate(tok.raw, "", tok.name ?: sym, ImportStatus.NOT_FOUND)
+                    existingSymbols.contains(sym) ->
+                        ImportCandidate(tok.raw, sym, q.name, ImportStatus.EXISTS, price = q.price)
+                    else -> ImportCandidate(
+                        tok.raw, sym, q.name, ImportStatus.OK, price = q.price,
+                        nameCorrected = !tok.name.isNullOrBlank() && tok.name.trim() != q.name
+                    )
+                }
+                bump()
+            }
+        }
+
+        // ── 2. 仅名称条目：3 并发搜索完全同名结果 ──
+        val nameTokens = tokens.withIndex().filter { it.value.code == null && !it.value.name.isNullOrBlank() }
+        if (nameTokens.isNotEmpty()) {
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
+            try {
+                val futures = nameTokens.map { (_, tok) ->
+                    pool.submit<ImportCandidate> {
+                        val cand = resolveImportByName(tok, existingSymbols)
+                        bump()
+                        cand
+                    }
+                }
+                futures.forEachIndexed { i, f ->
+                    results[nameTokens[i].index] = try { f.get() } catch (_: Exception) {
+                        ImportCandidate(nameTokens[i].value.raw, "", nameTokens[i].value.name ?: "", ImportStatus.NOT_FOUND)
+                    }
+                }
+            } finally { pool.shutdown() }
+        }
+
+        // ── 3. 解析后 symbol 仍重复的条目：保留第一条，其余标 EXISTS ──
+        val seenSymbols = mutableSetOf<String>()
+        for (i in results.indices) {
+            val c = results[i] ?: continue
+            if (c.status == ImportStatus.OK || c.status == ImportStatus.AMBIGUOUS) {
+                if (!seenSymbols.add(c.symbol)) {
+                    results[i] = c.copy(status = ImportStatus.EXISTS)
+                }
+            }
+        }
+
+        // ── 4. 已确认但缺现价的条目（名称搜索路径）统一补价 ──
+        val needPrice = results.filterNotNull().filter {
+            (it.status == ImportStatus.OK || it.status == ImportStatus.AMBIGUOUS) && it.price <= 0
+        }
+        if (needPrice.isNotEmpty()) {
+            val quotes = getStockQuotes(needPrice.map { it.symbol }.distinct())
+            for (i in results.indices) {
+                val c = results[i] ?: continue
+                val p = quotes[c.symbol]?.price
+                if (p != null && p > 0) results[i] = c.copy(price = p)
+            }
+        }
+
+        return results.mapNotNull { it }
+    }
+
+    /** 仅名称条目 → 搜索结果中完全同名的第一条；多个不同代码同名 → AMBIGUOUS */
+    private fun resolveImportByName(
+        tok: com.stocklite.plugin.util.ParsedStockToken,
+        existingSymbols: Set<String>
+    ): ImportCandidate {
+        val name = tok.name!!.trim()
+        val results = try { searchStocks(name) } catch (_: Exception) { emptyList() }
+        val exact = results.filter { it.name.trim() == name }
+        val pick = exact.firstOrNull()
+            ?: return ImportCandidate(tok.raw, "", name, ImportStatus.NOT_FOUND)
+        val distinctSymbols = exact.map { it.symbol }.distinct()
+        val status = when {
+            existingSymbols.contains(pick.symbol) -> ImportStatus.EXISTS
+            distinctSymbols.size > 1 -> ImportStatus.AMBIGUOUS
+            else -> ImportStatus.OK
+        }
+        return ImportCandidate(tok.raw, pick.symbol, pick.name, status, alternates = distinctSymbols.drop(1))
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // 基金搜索（移植自 registerFundSearchHandler）
     // ══════════════════════════════════════════════════════════════
 

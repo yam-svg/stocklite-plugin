@@ -12,6 +12,7 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.dialogs.AddStockDialog
 import com.stocklite.plugin.ui.dialogs.AddTradeRecordDialog
+import com.stocklite.plugin.ui.dialogs.BatchImportStockDialog
 import com.stocklite.plugin.ui.dialogs.ClosePositionDialog
 import com.stocklite.plugin.ui.dialogs.FundHoldingsDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
@@ -177,6 +178,7 @@ class StockPanel : JPanel(BorderLayout()),
     private lateinit var groupLbl:   JLabel
     private lateinit var manageBtn:  JButton
     private lateinit var addBtn:     JButton
+    private lateinit var batchBtn:   JButton
     private lateinit var upBtn:      JButton
     private lateinit var downBtn:    JButton
     private lateinit var refreshBtn: JButton
@@ -217,6 +219,7 @@ class StockPanel : JPanel(BorderLayout()),
         groupLbl.text   = L10n.lblGroup
         manageBtn.text  = L10n.btnManageGroups
         addBtn.text     = L10n.btnAddStock
+        batchBtn.text   = L10n.btnBatchImport
         refreshBtn.text = L10n.btnRefresh
         updateSummary()
         revalidate(); repaint()
@@ -525,6 +528,7 @@ class StockPanel : JPanel(BorderLayout()),
         groupLbl     = JLabel(L10n.lblGroup)
         manageBtn    = JButton(L10n.btnManageGroups)
         addBtn       = JButton(L10n.btnAddStock)
+        batchBtn     = JButton(L10n.btnBatchImport)
         upBtn        = JButton("↑")
         downBtn      = JButton("↓")
         refreshBtn   = JButton(L10n.btnRefresh)
@@ -535,7 +539,7 @@ class StockPanel : JPanel(BorderLayout()),
 
         toolbar.add(groupLbl);  toolbar.add(groupCombo)
         toolbar.add(refreshBtn)
-        toolbar.add(manageBtn); toolbar.add(addBtn)
+        toolbar.add(manageBtn); toolbar.add(addBtn); toolbar.add(batchBtn)
         toolbar.add(upBtn);     toolbar.add(downBtn)
         toolbar.add(JLabel(L10n.lblFilter)); toolbar.add(filterField)
 
@@ -588,6 +592,19 @@ class StockPanel : JPanel(BorderLayout()),
                 if (cost < 0) { JOptionPane.showMessageDialog(this, L10n.validationCostPositive()); return@AddStockDialog }
                 if (qty < 0) { JOptionPane.showMessageDialog(this, L10n.validationQtyNotNegative()); return@AddStockDialog }
                 state.createStock(symbol, name, groupId, cost, qty)
+                loadRows(); fetchQuotesAsync()
+            }.show()
+        }
+
+        batchBtn.addActionListener {
+            val defaultGid = currentGroupId.takeIf { !isSystemGroup(it) }
+                ?: state.stockGroups.firstOrNull()?.id ?: ""
+            BatchImportStockDialog(
+                groups          = state.stockGroups,
+                defaultGroupId  = defaultGid,
+                existingSymbols = state.stocks.map { it.symbol }.toSet()
+            ) { items ->
+                items.forEach { state.createStock(it.symbol, it.name, it.groupId, it.cost, it.qty) }
                 loadRows(); fetchQuotesAsync()
             }.show()
         }

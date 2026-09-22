@@ -274,6 +274,25 @@ data class StockSearchResult(val symbol: String, val name: String)
 data class FundSearchResult(val code: String, val name: String)
 data class FutureSearchResult(val symbol: String, val name: String)
 
+/** 批量导入条目的校验状态 */
+enum class ImportStatus {
+    OK,         // 代码/名称有效，可添加
+    NOT_FOUND,  // 未找到对应股票
+    EXISTS,     // 已在自选列表中
+    AMBIGUOUS   // 名称命中多只股票，默认取第一条
+}
+
+/** 批量导入：一条文本经网络校验后的结果 */
+data class ImportCandidate(
+    val raw: String,
+    val symbol: String,              // 完整代码（NOT_FOUND 时为空）
+    val name: String,                // 行情接口返回的规范名称（未找到时为解析出的名称或代码）
+    val status: ImportStatus,
+    val price: Double = 0.0,         // 现价，用于默认成本回填
+    val alternates: List<String> = emptyList(),  // AMBIGUOUS 时的其他候选代码
+    val nameCorrected: Boolean = false           // 解析出的名称与行情规范名不一致，已按行情修正
+)
+
 // ── 系统分组常量 ──
 
 object SystemGroups {
