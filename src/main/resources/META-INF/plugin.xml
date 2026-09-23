@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.15.0</version>
+    <version>1.16.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -68,6 +68,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
+<h3>1.16.0</h3>
+<h4>加密货币标签页</h4>
+<ul>
+  <li>新增"加密"标签页（位于期货之后）：BTC / ETH 等 2000+ USDT 计价交易对实时行情，7×24 小时交易，展示最新价、24 小时滚动涨跌、24h 最高 / 最低；点击涨跌幅列展开日内 / K 线走势图</li>
+  <li>行情源三链路自动降级：Bitget（主）→ Gate.io（备）→ data-api.binance.vision（兜底），均为免费公开接口、无需注册</li>
+  <li>网络连通状态独立一行常驻展示（绿 / 橙 / 红）：接口全部不可达时明确提示，并给出 IDE HTTP 代理配置指引；其它标签页不受影响</li>
+  <li>首次使用自动内置主流币分组（BTC / ETH / SOL / BNB / XRP / DOGE），安装后即可见；删除后不会重复出现</li>
+  <li>添加币种搜索覆盖 Gate.io 全部交易对（USDT / USDC / BTC 等计价），按币种代码前缀匹配，USDT 与高成交量优先；搜索框含可搜范围提示</li>
+  <li>设置 → 刷新间隔新增"加密行情"独立配置；标签页可在 设置 → 功能 中开关，默认开启</li>
+</ul>
 <h3>1.15.0</h3>
 <h4>新股标签页</h4>
 <ul>
