@@ -3,6 +3,8 @@
     <name>StockLite</name>
     <version>1.16.0</version>
     <vendor email="1436393509@qq.com">超大只番薯</vendor>
+    <url>https://github.com/yam-svg/stocklite-plugin</url>
+    <vcs>https://github.com/yam-svg/stocklite-plugin.git</vcs>
 
     <description><![CDATA[
 <p><b>StockLite</b> — stock, crypto, fund &amp; futures quotes with portfolio tracking, charts and AI analysis, right inside your JetBrains IDE. Native &amp; free. 2024.1+.</p>

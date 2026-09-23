@@ -262,3 +262,7 @@ signPlugin {
 - Windows: `%APPDATA%\JetBrains\<IDE>\options\stocklite.xml`
 - macOS: `~/Library/Application Support/JetBrains/<IDE>/options/stocklite.xml`
 - Linux: `~/.config/JetBrains/<IDE>/options/stocklite.xml`
+
+## 开源协议
+
+本项目基于 [MIT License](LICENSE) 开源。
