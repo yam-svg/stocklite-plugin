@@ -53,5 +53,7 @@ tasks {
     }
     publishPlugin {
         token.set(System.getenv("PUBLISH_TOKEN") ?: "")
+        // Marketplace 的 License 标注在插件后台网页设置（Publishing 页面），构建脚本无对应属性。
+        // 源码链接由 plugin.xml 的 <url>/<vcs> 提供，发布后自动出现在插件页。
     }
 }
