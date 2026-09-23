@@ -58,7 +58,7 @@ $env:PRIVATE_KEY_PASSWORD = ""   # 如果私钥没有密码则留空
 | Plugin Name | `StockLite`                         |
 | Category    | `Tools Integration`                 |
 | License     | `MIT`（或你选择的协议）                      |
-| Tags        | `stock, finance, market, 股票, 行情`    |
+| Tags        | `stock, finance, market, crypto, 股票, 行情, 加密货币`    |
 
 4. 点 **Submit** → 等待人工审核（1–3 个工作日）
 
