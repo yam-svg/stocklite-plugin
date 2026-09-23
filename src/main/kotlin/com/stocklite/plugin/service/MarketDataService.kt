@@ -1983,4 +1983,171 @@ object MarketDataService {
         (direct + remote + fallback).forEach { if (!dedup.containsKey(it.symbol)) dedup[it.symbol] = it }
         return dedup.values.take(80)
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // 加密货币行情（免费公开 REST 接口，无需 key）
+    // 主源 Bitget → 备源 Gate.io → 兜底 Binance 公开数据镜像（data-api.binance.vision）。
+    // 三源实测在港线网络可直连，但可达性因用户网络环境而异：全部失败时返回 OFFLINE，
+    // 由界面明确提示"当前网络无法连接加密行情接口"，不得静默显示空数据。
+    // ══════════════════════════════════════════════════════════════
+
+    enum class CryptoNetStatus { CONNECTED, DEGRADED, OFFLINE }
+
+    /**
+     * 一轮批量拉取的结果。
+     * @param status CONNECTED=全部走主源；DEGRADED=至少一个币降级到备源拉取；OFFLINE=三源全部不可达
+     * @param workingSource 最后一次成功响应的源名（OFFLINE 时为 null）
+     */
+    data class CryptoQuoteBatch(
+        val quotes: Map<String, CryptoQuote>,
+        val status: CryptoNetStatus,
+        val workingSource: String?
+    )
+
+    /** 用户输入 → Gate 风格交易对："btc/usdt"/"BTCUSDT"/"btc" → "BTC_USDT" */
+    fun normCryptoSymbol(raw: String): String {
+        val s = raw.trim().uppercase().replace("/", "_").replace("-", "_")
+        if (s.isEmpty()) return ""
+        if (s.contains("_")) return s
+        val quotes = listOf("USDT", "USDC", "FDUSD", "TUSD", "USD", "BTC", "ETH")
+        for (q in quotes) if (s.length > q.length && s.endsWith(q)) return "${s.dropLast(q.length)}_$q"
+        return "${s}_USDT"
+    }
+
+    private fun cryptoNum(o: JSONObject, key: String): Double =
+        o.optString(key).toDoubleOrNull() ?: Double.NaN
+
+    private fun fetchCryptoBitget(pair: String): CryptoQuote? {
+        val sym = pair.replace("_", "")
+        val raw = HttpUtil.get("https://api.bitget.com/api/v2/spot/market/tickers?symbol=$sym",
+            label = "加密/Bitget") ?: return null
+        return try {
+            val arr = JSONObject(raw).optJSONArray("data") ?: return null
+            if (arr.length() == 0) return null
+            val o = arr.getJSONObject(0)
+            val price = cryptoNum(o, "lastPr"); val open = cryptoNum(o, "open")
+            if (!price.isFinite() || price <= 0) return null
+            val pct = if (open.isFinite() && open > 0) (price / open - 1) * 100 else 0.0
+            CryptoQuote(pair, price, pct, cryptoNum(o, "high24h"), cryptoNum(o, "low24h"),
+                cryptoNum(o, "quoteVolume"))
+        } catch (_: Exception) { null }
+    }
+
+    private fun fetchCryptoGate(pair: String): CryptoQuote? {
+        val raw = HttpUtil.get("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=$pair",
+            label = "加密/Gate.io") ?: return null
+        return try {
+            val arr = JSONArray(raw)
+            if (arr.length() == 0) return null
+            val o = arr.getJSONObject(0)
+            val price = cryptoNum(o, "last")
+            if (!price.isFinite() || price <= 0) return null
+            CryptoQuote(pair, price, cryptoNum(o, "change_percentage"), cryptoNum(o, "high_24h"),
+                cryptoNum(o, "low_24h"), cryptoNum(o, "quote_volume"))
+        } catch (_: Exception) { null }
+    }
+
+    private fun fetchCryptoBinance(pair: String): CryptoQuote? {
+        val sym = pair.replace("_", "")
+        val raw = HttpUtil.get("https://data-api.binance.vision/api/v3/ticker/24hr?symbol=$sym",
+            label = "加密/Binance镜像") ?: return null
+        return try {
+            val o = JSONObject(raw)
+            val price = cryptoNum(o, "lastPrice")
+            if (!price.isFinite() || price <= 0) return null
+            CryptoQuote(pair, price, cryptoNum(o, "priceChangePercent"), cryptoNum(o, "highPrice"),
+                cryptoNum(o, "lowPrice"), cryptoNum(o, "quoteVolume"))
+        } catch (_: Exception) { null }
+    }
+
+    /** 逐币拉取：主源失败自动降级，单币三源全失败仅该行缺数据；全缺 → OFFLINE */
+    fun getCryptoQuotes(symbols: List<String>): CryptoQuoteBatch {
+        val quotes = LinkedHashMap<String, CryptoQuote>()
+        var usedFallback = false
+        var lastWorkingSource: String? = null
+        for (raw in symbols) {
+            val pair = normCryptoSymbol(raw); if (pair.isEmpty()) continue
+            val b = fetchCryptoBitget(pair)
+            if (b != null) { quotes[pair] = b; lastWorkingSource = "Bitget"; continue }
+            val g = fetchCryptoGate(pair)
+            if (g != null) { quotes[pair] = g; usedFallback = true; lastWorkingSource = "Gate.io"; continue }
+            val v = fetchCryptoBinance(pair)
+            if (v != null) { quotes[pair] = v; usedFallback = true; lastWorkingSource = "Binance镜像" }
+        }
+        val status = when {
+            quotes.isEmpty() -> CryptoNetStatus.OFFLINE
+            usedFallback     -> CryptoNetStatus.DEGRADED
+            else             -> CryptoNetStatus.CONNECTED
+        }
+        return CryptoQuoteBatch(quotes, status, lastWorkingSource)
+    }
+
+    /** 空自选时的连通性探测（也用作首次进入面板的即时反馈） */
+    fun probeCryptoNetwork(): CryptoQuoteBatch = getCryptoQuotes(listOf("BTC_USDT"))
+
+    // ── 币种搜索：Gate.io 全量交易对表（2200+ 对）本地缓存 24h，避免每次搜索打网络 ──
+
+    private data class CryptoPairInfo(val symbol: String, val base: String, val quote: String, val quoteVolume: Double)
+
+    @Volatile private var cryptoPairCache: List<CryptoPairInfo>? = null
+    @Volatile private var cryptoPairCacheAt = 0L
+    private val CRYPTO_PAIR_TTL = 24 * 60 * 60_000L
+
+    private fun loadCryptoPairs(): List<CryptoPairInfo>? {
+        cryptoPairCache?.let {
+            if (System.currentTimeMillis() - cryptoPairCacheAt < CRYPTO_PAIR_TTL) return it
+        }
+        val raw = HttpUtil.get("https://api.gateio.ws/api/v4/spot/currency_pairs", label = "加密/交易对表")
+            ?: return null
+        return try {
+            val arr = JSONArray(raw)
+            val list = ArrayList<CryptoPairInfo>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                if (o.optString("disable") == "true") continue
+                val id = o.optString("id")
+                if (!id.contains("_")) continue
+                list.add(CryptoPairInfo(id,
+                    o.optString("base").uppercase(), o.optString("quote").uppercase(),
+                    o.optString("quote_volume").toDoubleOrNull() ?: 0.0))
+            }
+            if (list.isEmpty()) null
+            else { cryptoPairCache = list; cryptoPairCacheAt = System.currentTimeMillis(); list }
+        } catch (_: Exception) { null }
+    }
+
+    /** 搜索网络全部不可达时的常见币兜底表（仅 USDT 交易对）：代码 → 英文名 */
+    private val CRYPTO_FALLBACK = listOf(
+        "BTC" to "Bitcoin", "ETH" to "Ethereum", "SOL" to "Solana", "BNB" to "BNB", "XRP" to "XRP",
+        "DOGE" to "Dogecoin", "ADA" to "Cardano", "TON" to "Toncoin", "TRX" to "TRON", "AVAX" to "Avalanche",
+        "DOT" to "Polkadot", "LINK" to "Chainlink", "MATIC" to "Polygon", "SHIB" to "Shiba Inu",
+        "LTC" to "Litecoin", "BCH" to "Bitcoin Cash", "UNI" to "Uniswap", "NEAR" to "NEAR",
+        "APT" to "Aptos", "ETC" to "Ethereum Classic", "XLM" to "Stellar", "SUI" to "Sui",
+        "PEPE" to "Pepe", "ATOM" to "Cosmos", "FIL" to "Filecoin", "ARB" to "Arbitrum",
+        "OP" to "Optimism", "INJ" to "Injective", "AAVE" to "Aave", "DOGS" to "Dogs"
+    )
+
+    /**
+     * 按币代码/交易对搜索。命中顺序：交易对精确 → 基础币 → 前缀；
+     * 同币多交易对时 USDT 计价优先、再按 24h 成交额降序。
+     * 交易对表拉不到时退到本地兜底表（返回空列表也可能意味着网络不可达，由调用方提示）。
+     */
+    fun searchCryptos(keyword: String): List<CryptoSearchResult> {
+        val kw = keyword.trim().uppercase().replace("/", "_").replace("-", "_")
+        if (kw.isEmpty()) return emptyList()
+        val baseKw = kw.substringBefore("_")
+        loadCryptoPairs()?.let { pairs ->
+            val hits = pairs.filter { it.symbol == kw || it.base == baseKw || it.symbol.startsWith("${baseKw}_") }
+            return hits.sortedWith(
+                compareByDescending<CryptoPairInfo> { it.symbol == kw }
+                    .thenByDescending { it.quote == "USDT" }
+                    .thenByDescending { it.quoteVolume }
+            ).distinctBy { it.symbol }.take(20)
+                .map { CryptoSearchResult(it.symbol, "${it.base}/${it.quote}") }
+        }
+        return CRYPTO_FALLBACK
+            .filter { it.first == baseKw || it.first.startsWith(baseKw) }
+            .map { CryptoSearchResult("${it.first}_USDT", "${it.first}/USDT · ${it.second}") }
+            .take(20)
+    }
 }

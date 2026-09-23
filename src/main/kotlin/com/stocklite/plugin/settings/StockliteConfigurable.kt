@@ -33,8 +33,10 @@ class StockliteConfigurable : Configurable {
     private val stockIntervalSpinner  = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
     private val fundIntervalSpinner   = JSpinner(SpinnerNumberModel(30, 10, 120, 5))
     private val globalIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
+    private val cryptoIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
+    private val cryptoPanelCheckBox     = JBCheckBox(L10n.settingsCryptoPanel)
     private val ipoPanelCheckBox        = JBCheckBox(L10n.settingsIpoPanel)
     private val usMarketPanelCheckBox   = JBCheckBox(L10n.settingsUsMarketPanel)
     private val apiLogPanelCheckBox     = JBCheckBox(L10n.settingsApiLogPanel)
@@ -160,9 +162,11 @@ class StockliteConfigurable : Configurable {
         intervalRow(L10n.settingsStockInterval,  stockIntervalSpinner,  row++)
         intervalRow(L10n.settingsFundInterval,   fundIntervalSpinner,   row++)
         intervalRow(L10n.settingsGlobalInterval, globalIntervalSpinner, row++)
+        intervalRow(L10n.settingsCryptoInterval, cryptoIntervalSpinner, row++)
 
         // ── 功能开关 ──
         sep(L10n.settingsFeatures, row); row += 2
+        gbc.gridy = row++; panel.add(cryptoPanelCheckBox,  gbc)
         gbc.gridy = row++; panel.add(ipoPanelCheckBox,     gbc)
         gbc.gridy = row++; panel.add(usMarketPanelCheckBox, gbc)
         gbc.gridy = row++; panel.add(apiLogPanelCheckBox,  gbc)
@@ -280,6 +284,8 @@ class StockliteConfigurable : Configurable {
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
+               (cryptoIntervalSpinner.value as Int) != state.refreshIntervalCrypto ||
+               cryptoPanelCheckBox.isSelected  != state.enableCryptoPanel ||
                ipoPanelCheckBox.isSelected     != state.enableIpoPanel   ||
                usMarketPanelCheckBox.isSelected != state.enableUsMarketPanel ||
                apiLogPanelCheckBox.isSelected  != state.enableApiLogPanel   ||
@@ -307,6 +313,8 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalStock  = stockIntervalSpinner.value  as Int
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
+        state.refreshIntervalCrypto = cryptoIntervalSpinner.value as Int
+        state.enableCryptoPanel   = cryptoPanelCheckBox.isSelected
         state.enableIpoPanel      = ipoPanelCheckBox.isSelected
         state.enableUsMarketPanel = usMarketPanelCheckBox.isSelected
         state.enableApiLogPanel   = apiLogPanelCheckBox.isSelected
@@ -341,6 +349,8 @@ class StockliteConfigurable : Configurable {
         stockIntervalSpinner.value  = state.refreshIntervalStock
         fundIntervalSpinner.value   = state.refreshIntervalFund
         globalIntervalSpinner.value = state.refreshIntervalGlobal
+        cryptoIntervalSpinner.value = state.refreshIntervalCrypto
+        cryptoPanelCheckBox.isSelected   = state.enableCryptoPanel
         ipoPanelCheckBox.isSelected      = state.enableIpoPanel
         usMarketPanelCheckBox.isSelected = state.enableUsMarketPanel
         apiLogPanelCheckBox.isSelected   = state.enableApiLogPanel

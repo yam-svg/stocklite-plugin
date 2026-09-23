@@ -20,6 +20,8 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var funds: MutableList<FundData> = ArrayList()
     var futureGroups: MutableList<FutureGroupData> = ArrayList()
     var futures: MutableList<FutureData> = ArrayList()
+    var cryptoGroups: MutableList<CryptoGroupData> = ArrayList()
+    var cryptos: MutableList<CryptoData> = ArrayList()
 
     // ── 列显示设置 ──
     var stockVisibleColumns: MutableList<String> = ArrayList()
@@ -38,6 +40,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var refreshIntervalStock: Int = 5
     var refreshIntervalFund: Int = 30
     var refreshIntervalGlobal: Int = 5
+    var refreshIntervalCrypto: Int = 5
 
     // ── A股大盘概览快照持久化（跨IDE重启保留最后一次成功获取的数据，收盘/重启后不至于变成"--"）──
     var breadthSnapshotJson: String = ""
@@ -53,6 +56,8 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
     var enableApiLogPanel: Boolean = false   // 默认关闭，调试用途
     var enableIpoPanel: Boolean = true       // 新股标签页（申购日历+次新股表现），默认开启
+    var enableCryptoPanel: Boolean = true    // 加密货币标签页，默认开启（依赖网络可直连交易所公开接口）
+    var cryptoDefaultsSeeded: Boolean = false // 首次使用时内置一组常见币种；置位后不再重复播种（用户删除不会复活）
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
     var enableChartVolume: Boolean = true    // K线图底部成交量（红绿柱），默认开启
 
@@ -375,6 +380,62 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun getFuturesForGroup(groupId: String): List<FutureData> = when (groupId) {
         SystemGroups.ALL_FUTURE_ID -> futures.sortedBy { it.sortOrder }
         else -> futures.filter { it.groupId == groupId }.sortedBy { it.sortOrder }
+    }
+
+    // ── 加密分组 CRUD ──
+
+    fun createCryptoGroup(name: String): CryptoGroupData {
+        val g = CryptoGroupData().apply {
+            id = UUID.randomUUID().toString()
+            this.name = name
+            createdAt = System.currentTimeMillis()
+        }
+        cryptoGroups.add(g)
+        notifyDataChanged()
+        return g
+    }
+
+    fun updateCryptoGroup(id: String, name: String) {
+        cryptoGroups.find { it.id == id }?.name = name
+        notifyDataChanged()
+    }
+
+    fun deleteCryptoGroup(id: String) {
+        cryptoGroups.removeIf { it.id == id }
+        val fallback = cryptoGroups.firstOrNull()?.id ?: return
+        cryptos.filter { it.groupId == id }.forEach { it.groupId = fallback }
+        notifyDataChanged()
+    }
+
+    // ── 加密 CRUD ──
+
+    fun createCrypto(symbol: String, name: String, groupId: String): CryptoData {
+        val c = CryptoData().apply {
+            id = UUID.randomUUID().toString()
+            this.symbol = symbol
+            this.name = name
+            this.groupId = groupId
+            sortOrder = cryptos.size
+            createdAt = System.currentTimeMillis()
+        }
+        cryptos.add(c)
+        notifyDataChanged()
+        return c
+    }
+
+    fun updateCrypto(id: String, groupId: String) {
+        cryptos.find { it.id == id }?.groupId = groupId
+        notifyDataChanged()
+    }
+
+    fun deleteCrypto(id: String) {
+        cryptos.removeIf { it.id == id }
+        notifyDataChanged()
+    }
+
+    fun getCryptosForGroup(groupId: String): List<CryptoData> = when (groupId) {
+        SystemGroups.ALL_CRYPTO_ID -> cryptos.sortedBy { it.sortOrder }
+        else -> cryptos.filter { it.groupId == groupId }.sortedBy { it.sortOrder }
     }
 
     // ── 交易记录 CRUD ──

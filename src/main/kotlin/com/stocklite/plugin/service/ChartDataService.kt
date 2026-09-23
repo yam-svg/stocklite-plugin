@@ -77,6 +77,14 @@ object ChartDataService {
         }
     }
 
+    /** 加密日内分时：Bitget 1 分钟 K → 备源 Gate.io，返回当日 UTC 分钟点 */
+    fun getCryptoIntraday(symbol: String): List<ChartPoint> {
+        val pair = MarketDataService.normCryptoSymbol(symbol)
+        val pts = fetchCryptoCandlesBitget(pair, "1min", 1000)
+        if (pts.isNotEmpty()) return pts
+        return fetchCryptoCandlesGate(pair, "1m", 1000)
+    }
+
     /**
      * 历史 K 线（日/周/月），供图表面板切换周期使用。
      * @param symbol  A 股 "sh600519"，全球指数 "^GSPC"，期货 "nf_IF0"/"hf_NQ"，基金 "fund_161725"（暂不支持）
@@ -91,6 +99,14 @@ object ChartDataService {
                 fetchDomesticFutureDailyHistory(normalized.removePrefix("nf_"))
             else
                 fetchGlobalFutureDailyHistory(normalized.removePrefix("hf_"))
+            return resampleDaily(daily, period, count)
+        }
+        // 加密交易对（"BTC_USDT" 带下划线）→ Bitget 日K，备源 Gate.io；周/月本地重采样。
+        // 注意：加密日K按 UTC 日切，与图表上海时区显示存在固定 8h 偏移，属币种本身属性
+        if (symbol.contains("_")) {
+            val pair = MarketDataService.normCryptoSymbol(symbol)
+            val daily = fetchCryptoCandlesBitget(pair, "1day", 1000)
+                .ifEmpty { fetchCryptoCandlesGate(pair, "1d", 1000) }
             return resampleDaily(daily, period, count)
         }
         // 港股：hk07709 → 腾讯 newfqkline 接口，fallback Yahoo Finance
@@ -336,6 +352,55 @@ object ChartDataService {
     }
 
     /** 期货日K → 周/月本地重采样（新浪期货接口无原生周/月K线） */
+    // ── 加密 K 线（Bitget / Gate.io 公开接口）─────────────────────────
+
+    /** Bitget candles 行格式：[ts(ms), open, high, low, close, baseVol, quoteVol, …]，返回升序 */
+    private fun fetchCryptoCandlesBitget(pair: String, granularity: String, limit: Int): List<ChartPoint> {
+        val sym = pair.replace("_", "")
+        val raw = HttpUtil.get(
+            "https://api.bitget.com/api/v2/spot/market/candles?symbol=$sym&granularity=$granularity&limit=$limit",
+            label = "加密K线/Bitget") ?: return emptyList()
+        return try {
+            val arr = JSONObject(raw).optJSONArray("data") ?: return emptyList()
+            val list = ArrayList<ChartPoint>(arr.length())
+            for (i in 0 until arr.length()) {
+                val r = arr.getJSONArray(i)
+                val t = r.optString(0).toLongOrNull() ?: continue
+                val c = r.optString(4).toDoubleOrNull() ?: continue
+                if (c <= 0) continue
+                list.add(ChartPoint(t / 1000, c,
+                    r.optString(1).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(2).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(3).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(5).toDoubleOrNull() ?: Double.NaN))
+            }
+            list.sortedBy { it.time }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** Gate.io candlesticks 行格式：[ts(s), quoteVol, close, high, low, open, baseVol, finished]，返回升序 */
+    private fun fetchCryptoCandlesGate(pair: String, interval: String, limit: Int): List<ChartPoint> {
+        val raw = HttpUtil.get(
+            "https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=$pair&interval=$interval&limit=$limit",
+            label = "加密K线/Gate.io") ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            val list = ArrayList<ChartPoint>(arr.length())
+            for (i in 0 until arr.length()) {
+                val r = arr.getJSONArray(i)
+                val t = r.optString(0).toLongOrNull() ?: continue
+                val c = r.optString(2).toDoubleOrNull() ?: continue
+                if (c <= 0) continue
+                list.add(ChartPoint(t, c,
+                    r.optString(5).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(3).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(4).toDoubleOrNull() ?: Double.NaN,
+                    r.optString(6).toDoubleOrNull() ?: Double.NaN))
+            }
+            list.sortedBy { it.time }
+        } catch (_: Exception) { emptyList() }
+    }
+
     private fun resampleDaily(daily: List<ChartPoint>, period: String, count: Int): List<ChartPoint> {
         if (period != "weekly" && period != "monthly") return daily.takeLast(count)
         val zone = ZoneId.of("Asia/Shanghai")

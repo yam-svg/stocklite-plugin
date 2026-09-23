@@ -218,6 +218,7 @@ object L10n {
     val settingsStockInterval    get() = s("股票（秒）:",     "Stocks (sec):")
     val settingsFundInterval     get() = s("基金（秒）:",     "Funds (sec):")
     val settingsGlobalInterval   get() = s("全球指数（秒）:", "Global (sec):")
+    val settingsCryptoInterval   get() = s("加密行情（秒）:", "Crypto (sec):")
     val settingsFeatures    get() = s("功能开关",         "Features")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
@@ -334,6 +335,39 @@ object L10n {
             (if (price != null && price > 0) ", issue price ${"%.2f".format(price)}" else "")
     )
     val ipoAlertTitle get() = s("今日新股申购", "IPO Subscription Today")
+
+    // ── 加密标签页 ──
+    val tabCrypto get() = s("加密", "Crypto")
+    val settingsCryptoPanel get() = s("显示加密标签页（Bitget/Gate.io 等公开行情，需当前网络可直连加密交易所接口，默认开启）",
+                                      "Show Crypto tab (public quotes from Bitget/Gate.io; requires network access to exchange APIs; enabled by default)")
+    val colHigh24h get() = s("24h最高", "24h High")
+    val colLow24h  get() = s("24h最低", "24h Low")
+    val btnAddCrypto   get() = s("添加币种", "Add Crypto")
+    val groupAllCryptos get() = s("全部加密", "All Crypto")
+    val dlgAddCrypto    get() = s("添加币种（USDT 等计价）", "Add Crypto Pair")
+    val dlgNoCryptoFound get() = s("未找到相关币种；若为首次搜索，也可能是当前网络无法连接加密行情接口",
+                                   "No crypto pairs found; on first search this may also mean the network cannot reach the crypto quote APIs")
+    val cryptoUnitNote  get() = s("价格单位 USDT · 24小时交易", "Prices in USDT · 24/7 market")
+    val cryptoDefaultGroup get() = s("主流币", "Majors")
+    val cryptoSearchHint  get() = s("币种代码，如 BTC / ETH / PEPE", "Coin code, e.g. BTC / ETH / PEPE")
+    val cryptoSearchScope get() = s(
+        "可搜索 Gate.io 全部在售交易对（2000+，含 USDT / USDC / BTC 等计价），按币种代码前缀匹配；网络不可达时仅可搜索内置常见币种",
+        "Searches all Gate.io listed trading pairs (2000+, USDT / USDC / BTC quoted), by coin-code prefix; when offline only built-in common coins can be searched"
+    )
+    // 网络连通状态（加密行情三源均依赖网络可直连，用户环境差异大，必须显式展示）
+    val cryptoNetUnknown  get() = s("● 加密行情检测中…", "● Checking crypto feed…")
+    fun cryptoNetOk(source: String)       = s("● 加密行情已连接 · $source", "● Crypto feed OK · $source")
+    fun cryptoNetDegraded(source: String) = s("● 主源不可达，已切换至 $source", "● Primary feed down, switched to $source")
+    fun cryptoNetPartial(n: Int)          = s("（${n} 个币种拉取失败）", " ($n symbol(s) failed)")
+    val cryptoNetOffline get() = s("● 加密行情无法连接", "● Crypto feed unreachable")
+    val cryptoNetOfflineDetail get() = s(
+        "加密行情接口全部无法连接：当前网络可能无法直连 Bitget / Gate.io / Binance 镜像。请在 Settings → Appearance & Behavior → System Settings → HTTP Proxy 配置代理或更换网络后重试；其它标签页不受影响。",
+        "All crypto quote APIs are unreachable from this network (Bitget / Gate.io / Binance mirror). Configure a proxy in Settings → Appearance & Behavior → System Settings → HTTP Proxy or switch networks; other tabs are unaffected."
+    )
+    val cryptoNetTooltip get() = s(
+        "行情源链路：Bitget（主）→ Gate.io（备）→ data-api.binance.vision（兜底）。\n均为免费公开接口、无需注册；若全部不可达，通常是当前网络无法直连加密交易所，可配置 IDE HTTP 代理。",
+        "Feed chain: Bitget (primary) → Gate.io (backup) → data-api.binance.vision (fallback).\nAll free public APIs, no sign-up. If all are unreachable, this network likely blocks exchange APIs; an IDE HTTP proxy may help."
+    )
 
     // ── 批量导入股票 ──
     // 两市成交额悬浮对比

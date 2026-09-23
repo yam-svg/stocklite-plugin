@@ -69,6 +69,24 @@ class FutureData {
     var createdAt: Long = 0L
 }
 
+class CryptoGroupData {
+    var id: String = ""
+    var name: String = ""
+    var createdAt: Long = 0L
+}
+
+class CryptoData {
+    var id: String = ""
+    /** Gate 风格交易对，如 "BTC_USDT"（价格以报价币计价） */
+    var symbol: String = ""
+    var name: String = ""
+    /** 自定义显示名称（别名），为空时显示 name */
+    var alias: String = ""
+    var groupId: String = ""
+    var sortOrder: Int = 0
+    var createdAt: Long = 0L
+}
+
 // ── 价格提醒（持久化）──
 class PriceAlertData {
     var id: String = ""
@@ -126,6 +144,21 @@ data class FutureQuote(
     val prevClose: Double,
     val change: Double,
     val changePercent: Double
+)
+
+/**
+ * 加密货币行情（运行时，不持久化）。
+ * 加密市场 7×24 无休市，涨跌幅口径为滚动 24 小时（非"昨收"概念）。
+ */
+data class CryptoQuote(
+    val symbol: String,
+    val price: Double,
+    /** 滚动 24h 涨跌幅 % */
+    val changePercent: Double,
+    val high24h: Double,
+    val low24h: Double,
+    /** 24h 成交额（报价币，通常 USDT） */
+    val quoteVolume: Double
 )
 
 data class GlobalIndexQuote(
@@ -277,6 +310,7 @@ class TradeRecordData {
 data class StockSearchResult(val symbol: String, val name: String)
 data class FundSearchResult(val code: String, val name: String)
 data class FutureSearchResult(val symbol: String, val name: String)
+data class CryptoSearchResult(val symbol: String, val name: String)
 
 /** 批量导入条目的校验状态 */
 enum class ImportStatus {
@@ -312,4 +346,7 @@ object SystemGroups {
 
     const val ALL_FUTURE_ID = "__all_futures__"
     const val ALL_FUTURE_NAME = "全部期货"
+
+    const val ALL_CRYPTO_ID = "__all_cryptos__"
+    const val ALL_CRYPTO_NAME = "全部加密"
 }
