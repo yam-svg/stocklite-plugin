@@ -70,7 +70,7 @@ class AddCryptoDialog(
         searchBar.add(JLabel(L10n.dlgSearch))
         searchBar.add(searchField)
         searchBar.add(searchBtn)
-        val scopeHint = JLabel("<html><font color='gray' size='2'>${L10n.cryptoSearchScope}</font></html>")
+        val scopeHint = JLabel("<html><font color='gray' size='3'>${L10n.cryptoSearchScope}</font></html>")
 
         resultList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         resultList.cellRenderer = ListCellRenderer { _, value, _, isSelected, _ ->
