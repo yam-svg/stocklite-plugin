@@ -81,6 +81,7 @@ class FuturePanel : JPanel(BorderLayout()),
     private lateinit var filterField: SearchTextField
 
     init {
+        seedDefaults()
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
         state.addDataChangeListener(this)
@@ -116,6 +117,20 @@ class FuturePanel : JPanel(BorderLayout()),
     override fun onRefreshIntervalChanged() {
         refreshTimer?.stop()
         scheduleRefresh()
+    }
+
+    /**
+     * 首次使用时内置一组常见期货（新浪外盘代码），安装后标签页即有数据可看。
+     * futuresDefaultsSeeded 置位后不再播种，用户删除的内置合约不会复活。
+     * 在注册数据监听之前调用，避免播种过程中的 notify 打到未完成的 UI。
+     */
+    private fun seedDefaults() {
+        if (state.futuresDefaultsSeeded) return
+        state.futuresDefaultsSeeded = true
+        if (state.futures.isNotEmpty() || state.futureGroups.isNotEmpty()) return
+        val group = state.createFutureGroup(L10n.futureDefaultGroup)
+        state.createFuture("hf_NQ",  "纳斯达克100", group.id)
+        state.createFuture("hf_OIL", "布伦特原油",  group.id)
     }
 
     private fun applyRenderers() {

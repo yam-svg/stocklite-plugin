@@ -141,6 +141,7 @@ object L10n {
     val groupAllFunds      get() = s("全部基金", "All Funds")
     val groupHoldingFunds  get() = s("我的持有", "My Holdings")
     val groupAllFutures    get() = s("全部期货", "All Futures")
+    val futureDefaultGroup get() = s("常用外盘", "Popular")
     val dlgAddStock      get() = s("添加股票",     "Add Stock")
     val dlgEditStock     get() = s("编辑股票",     "Edit Stock")
     val dlgAddFund       get() = s("添加基金",     "Add Fund")
