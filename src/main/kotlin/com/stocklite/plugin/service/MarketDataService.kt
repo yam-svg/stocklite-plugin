@@ -975,6 +975,84 @@ object MarketDataService {
         return if (top != null && bottom != null && top.isNotEmpty() && bottom.isNotEmpty()) top to bottom else null
     }
 
+    // ── A股板块行情（行业/概念/地域全量列表，东财 clist 同一接口族） ──
+
+    /** A股板块行情条目。fsT 对应东财板块分类：1=地域 2=行业 3=概念 */
+    data class AStockSector(
+        val code: String,           // 板块代码，如 BK0475
+        val name: String,
+        val price: Double,          // 板块指数点位，缺失为 NaN
+        val changePct: Double,      // 涨跌幅%
+        val turnoverRate: Double,   // 换手率%
+        val mainInflow: Double,     // 主力净流入（元），负数为净流出
+        val upCount: Int,           // 板块内上涨家数
+        val downCount: Int,         // 板块内下跌家数
+        val leaderName: String,     // 领涨股名称
+        val leaderPct: Double       // 领涨股涨幅%
+    )
+
+    // 60秒新鲜度与大盘概览同节奏；该接口偶发限流断连，沿用 StaleCache 的失败兜底窗口
+    // 覆盖休市时段（收盘后东财仍返回收盘数据，真正取不到时靠旧值撑住界面）
+    private val sectorListTtl = 60_000L to 3 * 24 * 60 * 60_000L
+    private val sectorListCaches = mapOf(
+        1 to StaleCache<List<AStockSector>>(sectorListTtl.first, sectorListTtl.second),
+        2 to StaleCache<List<AStockSector>>(sectorListTtl.first, sectorListTtl.second),
+        3 to StaleCache<List<AStockSector>>(sectorListTtl.first, sectorListTtl.second)
+    )
+
+    /** 板块全量行情（t: 1地域/2行业/3概念）。缓存新鲜时不发请求；失败时兜底期内沿用旧值 */
+    fun getSectorQuotes(fsT: Int): List<AStockSector>? =
+        sectorListCaches[fsT]?.getOrFetch { fetchSectorList(fsT) }
+
+    /**
+     * 抓取一个分类的板块列表。实测该接口对直连请求随机断连（HTTP 层握手失败，约七成请求
+     * 被拒，数字镜像域名同样如此），且大分页（pz>=500）易触发连坐封禁；因此：
+     * 单页固定 100 条按 pn 翻页（概念板块 500+ 条）、上限 12 页防死循环；
+     * 每页失败间隔 1.2 秒重试一次（背靠背重试无意义），页间留 400ms 缓和。
+     * 中途断连时返回已取到的部分——接口按涨跌幅降序返回，已取部分即板块榜头部，
+     * 状态栏"共 N 个"如实反映条数，面板 60 秒轮询下一轮自动补全。
+     */
+    private fun fetchSectorList(fsT: Int): List<AStockSector>? {
+        val fields = "f2,f3,f8,f12,f14,f62,f104,f105,f128,f136"
+        val result = ArrayList<AStockSector>()
+        var total = Int.MAX_VALUE
+        var page = 1
+        while (result.size < total && page <= 12) {
+            if (page > 1) runCatching { Thread.sleep(400) }
+            val url = "https://push2.eastmoney.com/api/qt/clist/get" +
+                "?pn=$page&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:$fsT&fields=$fields"
+            var raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/", label = "板块行情")
+            if (raw == null) {
+                if (runCatching { Thread.sleep(1200) }.isFailure) break   // 线程中断（插件卸载）时收尾返回已取部分
+                raw = HttpUtil.get(url, referer = "https://data.eastmoney.com/", label = "板块行情")
+            }
+            val data = try { raw?.let { JSONObject(it).optJSONObject("data") } } catch (_: Exception) { null }
+            val diff = data?.optJSONArray("diff")
+            if (diff == null || diff.length() == 0)
+                return if (page == 1 || result.isEmpty()) null else result
+            if (page == 1) total = data.optInt("total", 0)
+            for (i in 0 until diff.length()) {
+                val o = diff.optJSONObject(i) ?: continue
+                val code = o.optString("f12", "")
+                val name = o.optString("f14", "")
+                if (code.isEmpty() || name.isEmpty()) continue
+                result.add(AStockSector(
+                    code = code, name = name,
+                    price = o.optDouble("f2", Double.NaN),
+                    changePct = o.optDouble("f3", Double.NaN),
+                    turnoverRate = o.optDouble("f8", Double.NaN),
+                    mainInflow = o.optDouble("f62", 0.0).takeIf { it.isFinite() } ?: 0.0,
+                    upCount = o.optInt("f104", 0),
+                    downCount = o.optInt("f105", 0),
+                    leaderName = o.optString("f128", ""),
+                    leaderPct = o.optDouble("f136", Double.NaN)
+                ))
+            }
+            page++
+        }
+        return result.takeIf { it.isNotEmpty() }
+    }
+
     /** 主力资金净流入（沪深两市合计），单位元，负数为净流出 */
     private fun fetchMainCapitalFlow(): Double? {
         val raw = HttpUtil.get(

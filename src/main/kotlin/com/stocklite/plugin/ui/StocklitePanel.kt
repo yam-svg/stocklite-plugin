@@ -15,6 +15,7 @@ class StocklitePanel : JPanel(BorderLayout()),
     val fundPanel     = FundPanel()
     val futurePanel   = FuturePanel()
     val globalPanel   = GlobalPanel()
+    val sectorPanel   = SectorPanel()
     val cryptoPanel   = CryptoPanel()
     val ipoPanel      = IpoPanel()
     val usMarketPanel = UsMarketPanel()
@@ -23,17 +24,13 @@ class StocklitePanel : JPanel(BorderLayout()),
     private val tabs = JBTabbedPane()
     private val state = StockliteState.getInstance()
 
-    private val cryptoTabIndex get() = tabs.indexOfComponent(cryptoPanel)
-    private val ipoTabIndex        get() = tabs.indexOfComponent(ipoPanel)
-    private val usMarketTabIndex get() = tabs.indexOfComponent(usMarketPanel)
-    private val apiLogTabIndex   get() = tabs.indexOfComponent(apiLogPanel)
-
     init {
         tabs.addTab(L10n.tabStock,  stockPanel)
         tabs.addTab(L10n.tabFund,   fundPanel)
         tabs.addTab(L10n.tabFuture, futurePanel)
         if (state.enableCryptoPanel) tabs.addTab(L10n.tabCrypto, cryptoPanel)
         tabs.addTab(L10n.tabGlobal, globalPanel)
+        tabs.addTab(L10n.tabSector, sectorPanel)
 
         if (state.enableIpoPanel)      tabs.addTab(L10n.tabIpo, ipoPanel)
         if (state.enableUsMarketPanel) tabs.addTab(L10n.tabUsMarket, usMarketPanel)
@@ -45,6 +42,7 @@ class StocklitePanel : JPanel(BorderLayout()),
                 fundPanel     -> fundPanel.fetchQuotesAsync()
                 futurePanel   -> futurePanel.fetchQuotesAsync()
                 globalPanel   -> globalPanel.fetchAsync()
+                sectorPanel   -> sectorPanel.fetchAsync()
                 cryptoPanel   -> cryptoPanel.fetchQuotesAsync()
                 ipoPanel      -> ipoPanel.fetchAsync()
                 usMarketPanel -> usMarketPanel.fetchAsync()
@@ -90,17 +88,21 @@ class StocklitePanel : JPanel(BorderLayout()),
     }
 
     override fun onLanguageChanged() {
-        tabs.setTitleAt(0, L10n.tabStock)
-        tabs.setTitleAt(1, L10n.tabFund)
-        tabs.setTitleAt(2, L10n.tabFuture)
-        tabs.setTitleAt(3, L10n.tabGlobal)
-        val cryptoIdx = cryptoTabIndex
-        val ipoIdx = ipoTabIndex
-        val usIdx  = usMarketTabIndex
-        val logIdx = apiLogTabIndex
-        if (cryptoIdx >= 0) tabs.setTitleAt(cryptoIdx, L10n.tabCrypto)
-        if (ipoIdx >= 0) tabs.setTitleAt(ipoIdx, L10n.tabIpo)
-        if (usIdx  >= 0) tabs.setTitleAt(usIdx,  L10n.tabUsMarket)
-        if (logIdx >= 0) tabs.setTitleAt(logIdx, L10n.tabApiLog)
+        // 统一按组件反查下标设置标题：标签页有可开关项，顺序会变，硬编码下标在加密页开/关时会错位
+        val titles = listOf(
+            stockPanel    to L10n.tabStock,
+            fundPanel     to L10n.tabFund,
+            futurePanel   to L10n.tabFuture,
+            cryptoPanel   to L10n.tabCrypto,
+            globalPanel   to L10n.tabGlobal,
+            sectorPanel   to L10n.tabSector,
+            ipoPanel      to L10n.tabIpo,
+            usMarketPanel to L10n.tabUsMarket,
+            apiLogPanel   to L10n.tabApiLog,
+        )
+        titles.forEach { (comp, title) ->
+            val idx = tabs.indexOfComponent(comp)
+            if (idx >= 0) tabs.setTitleAt(idx, title)
+        }
     }
 }
