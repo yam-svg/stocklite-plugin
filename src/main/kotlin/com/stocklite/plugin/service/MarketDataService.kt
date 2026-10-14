@@ -988,6 +988,8 @@ object MarketDataService {
         val upCount: Int,           // 板块内上涨家数
         val downCount: Int,         // 板块内下跌家数
         val leaderName: String,     // 领涨股名称
+        val leaderCode: String,     // 领涨股代码（f140），用于点击弹走势图
+        val leaderMarket: Int,      // 领涨股市场（f141）：1=沪 0=深，北交所按代码前缀判断
         val leaderPct: Double       // 领涨股涨幅%
     )
 
@@ -1013,7 +1015,7 @@ object MarketDataService {
      * 状态栏"共 N 个"如实反映条数，面板 60 秒轮询下一轮自动补全。
      */
     private fun fetchSectorList(fsT: Int): List<AStockSector>? {
-        val fields = "f2,f3,f8,f12,f14,f62,f104,f105,f128,f136"
+        val fields = "f2,f3,f8,f12,f14,f62,f104,f105,f128,f136,f140,f141"
         val result = ArrayList<AStockSector>()
         var total = Int.MAX_VALUE
         var page = 1
@@ -1045,6 +1047,8 @@ object MarketDataService {
                     upCount = o.optInt("f104", 0),
                     downCount = o.optInt("f105", 0),
                     leaderName = o.optString("f128", ""),
+                    leaderCode = o.optString("f140", ""),
+                    leaderMarket = o.optInt("f141", 0),
                     leaderPct = o.optDouble("f136", Double.NaN)
                 ))
             }

@@ -318,6 +318,8 @@ object L10n {
 
     // ── 新股标签页 ──
     val tabIpo get() = s("新股", "New IPOs")
+    val settingsSectorPanel get() = s("显示板块标签页（A股行业/概念/地域板块涨跌幅全览，默认开启）",
+                                      "Show Sectors tab (A-share industry/concept/region board overview, on by default)")
     val settingsIpoPanel get() = s("显示新股标签页（新股申购日历与新股/次新股表现，默认开启）",
                                    "Show New IPOs tab (subscription calendar & recent listings, enabled by default)")
     val colApplyDate   get() = s("申购日",    "Apply")

@@ -4,6 +4,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.service.MarketDataService.AStockSector
 import com.stocklite.plugin.state.StockliteState
@@ -15,12 +16,14 @@ import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.event.MouseMotionAdapter
 import java.time.LocalTime
 import java.time.ZoneId
 import javax.swing.BorderFactory
@@ -45,7 +48,9 @@ import javax.swing.table.AbstractTableModel
  * 列：名称、涨跌幅、上涨/下跌家数、主力净流入、换手率、领涨股及其涨幅。
  * 支持分类切换、名称筛选、点表头排序（默认涨跌幅降序）、右键跳转东财板块页。
  */
-class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
+class SectorPanel : JPanel(BorderLayout()),
+    StockliteState.LanguageListener,
+    StockliteState.FeatureToggleListener {
 
     private val state get() = StockliteState.getInstance()
     private val shZone get() = ZoneId.of("Asia/Shanghai")
@@ -68,6 +73,9 @@ class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     private val searchField = JTextField(12)
     private lateinit var refreshBtn: JButton
     private lateinit var filterLabel: JLabel
+
+    /** 点领涨股列弹出的分时/日K图，与股票、新股标签页同款 */
+    private val chartPanel = InlineChartPanel()
 
     // ══════════════════ 列定义 ══════════════════
 
@@ -152,6 +160,7 @@ class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
 
     init {
         state.addLanguageListener(this)
+        state.addFeatureToggleListener(this)
 
         refreshBtn = JButton(L10n.btnRefresh).apply { addActionListener { fetchAsync() } }
         filterLabel = JLabel(L10n.sectorFilterHint).apply { font = font.deriveFont(11f) }
@@ -176,10 +185,11 @@ class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         setupTable()
         add(toolbar, BorderLayout.NORTH)
         add(JBScrollPane(table).apply { border = BorderFactory.createEmptyBorder() }, BorderLayout.CENTER)
+        add(chartPanel, BorderLayout.SOUTH)
 
         rebuildCategoryCombo()
         updateTexts()
-        refreshTimer = Timer(60_000) { fetchAsync() }.also { it.isRepeats = true; it.start() }
+        if (state.enableSectorPanel) scheduleRefresh()
 
         addHierarchyListener {
             val showing = isShowing
@@ -205,9 +215,43 @@ class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
         centerTableHeader(table)
         table.rowSorter = newSorter()
         table.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (SwingUtilities.isRightMouseButton(e)) return
+                val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
+                val viewCol = table.columnAtPoint(e.point).takeIf { it >= 0 } ?: return
+                val key = cols[viewCol].key
+                if (key != "leader" && key != "leaderPct") return
+                val modelRow = try { table.convertRowIndexToModel(viewRow) } catch (_: Exception) { -1 }
+                if (modelRow < 0 || modelRow >= rows.size) return
+                val sec = rows[modelRow]
+                val symbol = leaderSymbol(sec)
+                if (symbol.isEmpty() || sec.leaderName.isEmpty()) return
+                chartPanel.showChart(
+                    displayName   = sec.leaderName,
+                    displaySymbol = symbol,
+                    changePercent = if (sec.leaderPct.isFinite()) sec.leaderPct else 0.0,
+                    prevClose     = 0.0,
+                    fetchData     = { ChartDataService.getStockIntraday(symbol) }
+                )
+            }
             override fun mousePressed(e: MouseEvent)  { if (SwingUtilities.isRightMouseButton(e)) showRowMenu(e) }
             override fun mouseReleased(e: MouseEvent) { if (SwingUtilities.isRightMouseButton(e)) showRowMenu(e) }
         })
+        table.addMouseMotionListener(object : MouseMotionAdapter() {
+            override fun mouseMoved(e: MouseEvent) {
+                val col = table.columnAtPoint(e.point)
+                table.cursor = if (col >= 0 && (cols[col].key == "leader" || cols[col].key == "leaderPct"))
+                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) else Cursor.getDefaultCursor()
+            }
+        })
+    }
+
+    /** 领涨股 6 位代码 → 新浪格式 symbol；北交所（4/8 开头）优先按代码前缀，其余按 f141 市场位（1=沪） */
+    private fun leaderSymbol(sec: AStockSector): String = when {
+        sec.leaderCode.length != 6 -> ""
+        sec.leaderCode.startsWith("4") || sec.leaderCode.startsWith("8") -> "bj" + sec.leaderCode
+        sec.leaderMarket == 1      -> "sh" + sec.leaderCode
+        else                       -> "sz" + sec.leaderCode
     }
 
     // ══════════════════ 数据 ══════════════════
@@ -308,4 +352,18 @@ class SectorPanel : JPanel(BorderLayout()), StockliteState.LanguageListener {
     }
 
     override fun onLanguageChanged() = updateTexts()
+
+    override fun onFeatureToggleChanged() {
+        if (state.enableSectorPanel) {
+            if (refreshTimer == null) scheduleRefresh()
+            fetchAsync()
+        } else {
+            refreshTimer?.stop()
+            refreshTimer = null
+        }
+    }
+
+    private fun scheduleRefresh() {
+        refreshTimer = Timer(60_000) { fetchAsync() }.also { it.isRepeats = true; it.start() }
+    }
 }
