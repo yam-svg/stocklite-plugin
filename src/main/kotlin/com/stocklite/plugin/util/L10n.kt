@@ -29,6 +29,8 @@ object L10n {
     val sectorSummary get() = s("共 {0} 个板块，上涨 {1} 下跌 {2}", "{0} boards, {1} up / {2} down")
     val sectorLoadFailed get() = s("板块数据加载失败，稍后自动重试", "Sector data failed, retrying automatically")
     val sectorEmpty get() = s("暂无板块数据", "No sector data")
+    val sectorLoading  get() = s("板块数据加载中…", "Loading sectors…")
+    val sectorNoMatch  get() = s("无匹配板块", "No matching sectors")
     val sectorColTipFlow get() = s("主力资金当日净流入（万元/亿元自动换算）", "Main capital net inflow today (auto-scaled units)")
     val colName        get() = s("名称",   "Name")
     val colSymbol      get() = s("代码",   "Symbol")

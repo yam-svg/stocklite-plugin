@@ -62,6 +62,7 @@ class SectorPanel : JPanel(BorderLayout()),
     private var rows: List<AStockSector> = emptyList()
     private var fetching = false
     private var pendingFetch = false
+    private var lastLoadFailed = false
     private var panelActive = true
     private var refreshTimer: Timer? = null
 
@@ -189,6 +190,7 @@ class SectorPanel : JPanel(BorderLayout()),
 
         rebuildCategoryCombo()
         updateTexts()
+        refreshEmptyText()   // 启动即接管空态文案，避免闪现 JBTable 内置的 "Nothing to show"
         if (state.enableSectorPanel) scheduleRefresh()
 
         addHierarchyListener {
@@ -264,12 +266,14 @@ class SectorPanel : JPanel(BorderLayout()),
     fun fetchAsync() {
         if (!panelActive || fetching) return
         fetching = true
+        refreshEmptyText()
         val t = categoryTs[categoryIdx]
         ApplicationManager.getApplication().executeOnPooledThread {
             val list = MarketDataService.getSectorQuotes(t)
             fetching = false
             SwingUtilities.invokeLater {
                 val now = LocalTime.now(shZone)
+                lastLoadFailed = list == null
                 if (list == null) {
                     // 接口失败：保留上次数据，仅状态栏标红
                     statusLabel.text = L10n.sectorLoadFailed
@@ -286,6 +290,7 @@ class SectorPanel : JPanel(BorderLayout()),
                     statusLabel.text = "$summary · ${L10n.lblLastUpdate} %02d:%02d".format(now.hour, now.minute)
                     statusLabel.foreground = Color(0x888aaa)
                 }
+                refreshEmptyText()
                 if (pendingFetch) { pendingFetch = false; fetchAsync() }
             }
         }
@@ -295,8 +300,18 @@ class SectorPanel : JPanel(BorderLayout()),
         val q = searchField.text.trim()
         rows = if (q.isEmpty()) allSectors else allSectors.filter { it.name.contains(q, ignoreCase = true) }
         model.fireTableDataChanged()
-        if (rows.isEmpty() && allSectors.isNotEmpty())
-            statusLabel.text = L10n.sectorEmpty
+        refreshEmptyText()
+    }
+
+    /** 空表覆盖文案：加载中 / 加载失败 / 筛选无匹配 / 无数据，替掉 JBTable 默认的 "Nothing to show" */
+    private fun refreshEmptyText() {
+        if (rows.isNotEmpty()) return
+        table.emptyText.text = when {
+            fetching              -> L10n.sectorLoading
+            lastLoadFailed        -> L10n.sectorLoadFailed
+            allSectors.isNotEmpty() -> L10n.sectorNoMatch
+            else                  -> L10n.sectorEmpty
+        }
     }
 
     // ══════════════════ 右键菜单 ══════════════════
@@ -348,6 +363,7 @@ class SectorPanel : JPanel(BorderLayout()),
             }
         }
         model.fireTableDataChanged()
+        refreshEmptyText()
         revalidate(); repaint()
     }
 
