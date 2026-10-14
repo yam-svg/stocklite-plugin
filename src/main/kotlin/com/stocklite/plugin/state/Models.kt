@@ -123,7 +123,9 @@ data class StockQuote(
     /** 盘前/盘后相对昨收的涨跌幅% */
     val extendedChangePercent: Double? = null,
     /** 当前处于盘前还是盘后 */
-    val extendedSession: ExtendedSession? = null
+    val extendedSession: ExtendedSession? = null,
+    /** true 表示价格/涨跌来自 A 股早盘集合竞价撮合（9:15–9:30 窗口内，腾讯源） */
+    val isAuction: Boolean = false
 )
 
 data class FundQuote(

@@ -5,8 +5,10 @@ import com.stocklite.plugin.util.HttpUtil
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * 行情 + 搜索服务。
@@ -187,6 +189,57 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
+    // A股早盘集合竞价
+    // 新浪免费接口在竞价期间现价为 0；腾讯 qt.gtimg.cn 在 9:15–9:25 约 3 秒/笔返回
+    // 虚拟撮合价，9:25 定格后即开盘价、9:25–9:30 持续展示竞价结果，故窗口内 A 股切换腾讯源。
+    // ══════════════════════════════════════════════════════════════
+
+    private val CN_ZONE = ZoneId.of("Asia/Shanghai")
+
+    /** 当前是否处于 A 股早盘集合竞价展示窗口（上海时区交易日 9:15–9:30） */
+    fun isInAStockAuction(now: Long = System.currentTimeMillis()): Boolean {
+        val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), CN_ZONE)
+        if (zdt.dayOfWeek.value == 6 || zdt.dayOfWeek.value == 7) return false
+        val minutes = zdt.hour * 60 + zdt.minute
+        if (minutes < 9 * 60 + 15 || minutes >= 9 * 60 + 30) return false
+        return isTodayTradingDay("CN", "Asia/Shanghai", now)
+    }
+
+    /**
+     * 竞价行情（腾讯批量，50 只/请求）。
+     * 只收录行情时间戳落在当天 9:15 之后的标的：北交所等品种竞价期间时间戳仍冻结在
+     * 9:15 前、无竞价数据，不收录，由调用方回退新浪的默认表现。
+     */
+    private fun getAStockAuctionQuotes(symbols: List<String>, now: Long = System.currentTimeMillis()): Map<String, StockQuote> {
+        if (symbols.isEmpty()) return emptyMap()
+        val today = ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), CN_ZONE)
+            .format(DateTimeFormatter.BASIC_ISO_DATE)
+        val result = mutableMapOf<String, StockQuote>()
+        for (chunk in symbols.chunked(50)) {
+            val raw = HttpUtil.getGbk("https://qt.gtimg.cn/q=${chunk.joinToString(",")}",
+                referer = "https://gu.qq.com", label = "A股集合竞价行情") ?: continue
+            // 腾讯 A 股字段（0 基）：1=名称 3=现价 4=昨收 30=时间戳yyyyMMddHHmmss 31=涨跌 32=涨跌幅%
+            for (m in Regex("""v_(\w+)="([^"]*)"""").findAll(raw)) {
+                val symbol    = m.groupValues[1]
+                val f         = m.groupValues[2].split("~")
+                val price     = f.getOrElse(3) { "" }.toDoubleOrNull() ?: continue
+                val prevClose = f.getOrElse(4) { "" }.toDoubleOrNull() ?: continue
+                if (price <= 0 || prevClose <= 0) continue
+                val ts = f.getOrElse(30) { "" }
+                if (ts.length != 14 || !ts.startsWith(today)) continue
+                val hhmmss = ts.substring(8).toIntOrNull() ?: continue
+                if (hhmmss < 91500) continue
+                val change    = f.getOrElse(31) { "" }.toDoubleOrNull() ?: (price - prevClose)
+                val changePct = f.getOrElse(32) { "" }.toDoubleOrNull()
+                    ?: if (prevClose > 0) (price - prevClose) / prevClose * 100 else 0.0
+                val name = f.getOrElse(1) { symbol }.ifEmpty { symbol }
+                result[symbol] = StockQuote(symbol, name, price, prevClose, change, changePct, isAuction = true)
+            }
+        }
+        return result
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // 股票行情（移植自 registerStockQuoteHandlers，扩展支持港股/美股）
     // ══════════════════════════════════════════════════════════════
 
@@ -200,9 +253,16 @@ object MarketDataService {
         val hkShares = symbols.filter { it.startsWith("hk") }
         val usShares = symbols.filter { !it.startsWith("sh") && !it.startsWith("sz") && !it.startsWith("bj") && !it.startsWith("hk") }
 
+        // A股集合竞价窗口（9:15–9:30）内优先腾讯竞价源，取不到的回退新浪
+        val aSharesViaSina = if (aShares.isNotEmpty() && isInAStockAuction()) {
+            val auction = getAStockAuctionQuotes(aShares)
+            result.putAll(auction)
+            aShares - auction.keys
+        } else aShares
+
         // A-shares via Sina
-        if (aShares.isNotEmpty()) {
-            val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${aShares.joinToString(",")}",
+        if (aSharesViaSina.isNotEmpty()) {
+            val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${aSharesViaSina.joinToString(",")}",
                 "http://finance.sina.com.cn", label = "A股行情") ?: ""
             val re = Regex("""var hq_str_([^=]+)="([^"]+)"""")
             for (m in re.findAll(raw)) {

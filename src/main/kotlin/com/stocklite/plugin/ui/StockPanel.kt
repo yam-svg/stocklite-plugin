@@ -45,14 +45,15 @@ class StockPanel : JPanel(BorderLayout()),
     private val chartPanel = InlineChartPanel()
     private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForStock)
 
-    /** changePercent 列的值包装：主涨跌幅 + 可选的盘前/盘后信息 */
+    /** changePercent 列的值包装：主涨跌幅 + 可选的盘前/盘后信息 + 可选的 A 股集合竞价标记 */
     private data class ChangePctValue(
         val changePct: Double,
         val extPct: Double?,
-        val session: ExtendedSession?
+        val session: ExtendedSession?,
+        val auction: Boolean = false
     )
 
-    /** 能正确渲染 ChangePctValue 的 renderer（主行着色 + 盘前/盘后小字行） */
+    /** 能正确渲染 ChangePctValue 的 renderer（主行着色 + 盘前/盘后、集合竞价小字行） */
     private inner class ChangePctRenderer : QuoteRenderer(QuoteColumnType.PCT) {
         override fun getTableCellRendererComponent(
             table: JTable, value: Any?,
@@ -64,19 +65,26 @@ class StockPanel : JPanel(BorderLayout()),
             val comp = super.getTableCellRendererComponent(table, mainPct, isSelected, hasFocus, row, column)
                     as javax.swing.JLabel
 
-            if (wrapped?.extPct != null && wrapped.session != null) {
-                val sessionLabel = when (wrapped.session) {
-                    ExtendedSession.PRE_MARKET  -> L10n.lblPreMarket
-                    ExtendedSession.POST_MARKET -> L10n.lblPostMarket
+            val subText = when {
+                wrapped == null -> null
+                wrapped.auction -> L10n.lblAuction
+                wrapped.extPct != null && wrapped.session != null -> {
+                    val sessionLabel = when (wrapped.session) {
+                        ExtendedSession.PRE_MARKET  -> L10n.lblPreMarket
+                        ExtendedSession.POST_MARKET -> L10n.lblPostMarket
+                    }
+                    val sign = if (wrapped.extPct >= 0) "+" else ""
+                    "$sessionLabel $sign${"%.2f".format(wrapped.extPct)}%"
                 }
-                val sign   = if (wrapped.extPct >= 0) "+" else ""
-                val extStr = "$sign${"%.2f".format(wrapped.extPct)}%"
+                else -> null
+            }
+            if (subText != null) {
                 val mainColor = comp.foreground
                 val hex = "#%02x%02x%02x".format(mainColor.red, mainColor.green, mainColor.blue)
                 val mainStr = Fmt.pct(mainPct)
                 comp.text = "<html><center>" +
                     "<span style='color:$hex'>$mainStr</span><br>" +
-                    "<span style='font-size:85%;color:gray'>$sessionLabel $extStr</span>" +
+                    "<span style='font-size:85%;color:gray'>$subText</span>" +
                     "</center></html>"
             }
             return comp
@@ -113,7 +121,9 @@ class StockPanel : JPanel(BorderLayout()),
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE, true)  { _, q  -> q?.price ?: 0.0 },
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  ->
             val pct = q?.changePercent ?: 0.0
-            if (q?.extendedSession != null)
+            if (q?.isAuction == true)
+                ChangePctValue(pct, null, null, auction = true)
+            else if (q?.extendedSession != null)
                 ChangePctValue(pct, q.extendedChangePercent, q.extendedSession)
             else pct
         },
