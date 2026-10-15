@@ -212,8 +212,9 @@ object MarketDataService {
      */
     private fun getAStockAuctionQuotes(symbols: List<String>, now: Long = System.currentTimeMillis()): Map<String, StockQuote> {
         if (symbols.isEmpty()) return emptyMap()
+        // 注意不能用 BASIC_ISO_DATE：格式化 ZonedDateTime 会带上 "+0800" 偏移后缀，导致与 14 位行情时间戳前缀比对永远失败
         val today = ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), CN_ZONE)
-            .format(DateTimeFormatter.BASIC_ISO_DATE)
+            .format(DateTimeFormatter.ofPattern("yyyyMMdd"))
         val result = mutableMapOf<String, StockQuote>()
         for (chunk in symbols.chunked(50)) {
             val raw = HttpUtil.getGbk("https://qt.gtimg.cn/q=${chunk.joinToString(",")}",

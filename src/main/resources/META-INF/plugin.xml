@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.17.1</version>
+    <version>1.17.2</version>
     <vendor email="1436393509@qq.com" url="https://github.com/yam-svg/stocklite-plugin">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -69,10 +69,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.17.1</h3>
-<h4>界面调整</h4>
+<h3>1.17.2</h3>
+<h4>问题修复</h4>
 <ul>
-  <li>标签页顺序固定：移除标签栏拖拽排序功能，顺序恢复并保持默认排列</li>
+  <li>修复 A 股早盘集合竞价行情不显示的问题：日期比对逻辑缺陷导致竞价数据自 1.17.0 起实际从未生效。本版起交易日 9:15–9:30 可正常看到竞价撮合价与「集合竞价」标注</li>
 </ul>
     ]]></change-notes>
 
