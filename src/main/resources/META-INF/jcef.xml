@@ -1,0 +1,3 @@
+<!-- JCEF 可选依赖的 overlay 描述文件：模块存在时仅获得类加载可见性，无需注册额外扩展。 -->
+<idea-plugin>
+</idea-plugin>

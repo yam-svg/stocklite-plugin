@@ -2,9 +2,8 @@ package com.stocklite.plugin.ui.dialogs
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.ui.jcef.JBCefApp
-import com.intellij.ui.jcef.JBCefBrowser
 import com.stocklite.plugin.service.ChartDataService
+import com.stocklite.plugin.ui.common.CefChartBrowser
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.L10n
 import java.awt.Dimension
@@ -13,7 +12,7 @@ import javax.swing.*
 /**
  * 日内走势图弹窗
  *
- * 使用 JBCefBrowser（JCEF）渲染 lightweight-charts 分时折线图。
+ * 使用内嵌浏览器（JCEF，经 CefChartBrowser 包装）渲染 lightweight-charts 分时折线图。
  * 若当前 IDE 不支持 JCEF，则显示友好提示。
  *
  * @param displayName    标题显示名称，如 "贵州茅台"
@@ -30,7 +29,7 @@ class ChartDialog(
     private val fetchData: () -> List<ChartDataService.ChartPoint>
 ) : DialogWrapper(null, true) {
 
-    private var browser: JBCefBrowser? = null
+    private var chartBrowser: CefChartBrowser? = null
 
     init {
         title = "$displayName  ($displaySymbol)  —  日内走势"
@@ -40,23 +39,23 @@ class ChartDialog(
     override fun getPreferredSize(): Dimension = Dimension(960, 580)
 
     override fun createCenterPanel(): JComponent {
-        if (!JBCefApp.isSupported()) {
+        val b = if (CefChartBrowser.isSupported()) CefChartBrowser.create() else null
+        if (b == null) {
             return JLabel(
-                "<html><center>当前 IDE 不支持内嵌浏览器（JCEF），无法显示图表。<br/>" +
+                "<html><center>${L10n.chartUnsupported}<br/>" +
                     "请确认 JetBrains IDE 版本 ≥ 2023.3，且未以无头模式启动。</center></html>",
                 SwingConstants.CENTER
             ).also { it.preferredSize = Dimension(760, 480) }
         }
-
-        val b = JBCefBrowser().also { browser = it }
-        b.loadHTML(loadingHtml(), "http://stocklite.local/")
+        chartBrowser = b
+        b.loadHtml(loadingHtml(), "http://stocklite.local/")
 
         // 在后台线程获取数据，回到 EDT 更新图表
         ApplicationManager.getApplication().executeOnPooledThread {
             val points = fetchData()
             SwingUtilities.invokeLater {
-                if (points.isEmpty()) b.loadHTML(errorHtml(), "http://stocklite.local/")
-                else b.loadHTML(buildChartHtml(points), "http://stocklite.local/")
+                if (points.isEmpty()) b.loadHtml(errorHtml(), "http://stocklite.local/")
+                else b.loadHtml(buildChartHtml(points), "http://stocklite.local/")
             }
         }
 
@@ -67,7 +66,8 @@ class ChartDialog(
     override fun createActions(): Array<Action> = arrayOf(okAction)
 
     override fun dispose() {
-        browser?.dispose()
+        chartBrowser?.dispose()
+        chartBrowser = null
         super.dispose()
     }
 

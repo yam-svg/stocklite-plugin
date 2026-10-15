@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.stocklite.plugin</id>
     <name>StockLite</name>
-    <version>1.17.2</version>
+    <version>1.17.3</version>
     <vendor email="1436393509@qq.com" url="https://github.com/yam-svg/stocklite-plugin">超大只番薯</vendor>
 
     <description><![CDATA[
@@ -69,14 +69,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.17.2</h3>
+<h3>1.17.3</h3>
 <h4>问题修复</h4>
 <ul>
-  <li>修复 A 股早盘集合竞价行情不显示的问题：日期比对逻辑缺陷导致竞价数据自 1.17.0 起实际从未生效。本版起交易日 9:15–9:30 可正常看到竞价撮合价与「集合竞价」标注</li>
+  <li>修复在 2026.2 及更新版本 IDE 中打开 StockLite 工具窗口报错崩溃的问题：新版 IDE 将内嵌浏览器（JCEF）拆分为独立模块，本版补充依赖声明并加固图表组件加载，工具窗口在任何 IDE 版本下均可正常打开；JCEF 确实不可用时优雅降级为文字提示</li>
 </ul>
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
+    <!-- 2026.2 起 JCEF 从平台核心拆分为独立插件 com.intellij.modules.jcef，
+         不声明依赖则图表组件类不可见；optional 保证旧版 IDE（类仍在核心里、无此模块）不受影响。 -->
+    <depends optional="true" config-file="jcef.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow

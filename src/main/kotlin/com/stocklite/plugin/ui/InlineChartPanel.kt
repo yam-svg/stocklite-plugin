@@ -1,10 +1,9 @@
 package com.stocklite.plugin.ui
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.ui.jcef.JBCefApp
-import com.intellij.ui.jcef.JBCefBrowser
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.ui.common.CefChartBrowser
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.util.L10n
 import java.awt.*
@@ -22,7 +21,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         const val PERIOD_MONTHLY  = "MONTHLY"
     }
 
-    private var browser: JBCefBrowser? = null
+    private var chartBrowser: CefChartBrowser? = null
     private var loadId = 0
 
     // Current chart state for reload-on-period-change
@@ -171,12 +170,11 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         revalidate(); repaint()
         (parent as? JComponent)?.revalidate()
 
-        if (!JBCefApp.isSupported()) { showFallback(L10n.chartUnsupported); return }
-        val b = ensureBrowser()
+        val b = ensureChartBrowser() ?: return
         val id = ++loadId
         SwingUtilities.invokeLater {
             if (loadId != id) return@invokeLater
-            b.loadHTML(
+            b.loadHtml(
                 if (points.isEmpty()) errorHtml()
                 else buildChartHtml(points, 0.0, 0.0, isIntraday = false, period = PERIOD_DAILY),
                 "http://stocklite.local/"
@@ -192,7 +190,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         (parent as? JComponent)?.revalidate()
     }
 
-    fun disposeResources() { browser?.dispose(); browser = null }
+    fun disposeResources() { chartBrowser?.dispose(); chartBrowser = null }
 
     private fun selectPeriod(period: String) {
         if (currentSymbol.isEmpty()) return
@@ -203,9 +201,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
     }
 
     private fun loadCurrentPeriod() {
-        if (!JBCefApp.isSupported()) { showFallback(L10n.chartUnsupported); return }
-        val b = ensureBrowser()
-        b.loadHTML(loadingHtml(), "http://stocklite.local/")
+        val b = ensureChartBrowser() ?: return
+        b.loadHtml(loadingHtml(), "http://stocklite.local/")
         val id = ++loadId
         val sym = currentSymbol
         val market = currentMarket
@@ -225,7 +222,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
             val usePrevClose = period == PERIOD_INTRADAY  // only intraday uses prevClose baseline
             SwingUtilities.invokeLater {
                 if (loadId != id) return@invokeLater
-                b.loadHTML(
+                b.loadHtml(
                     if (points.isEmpty()) errorHtml()
                     else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period, market = market),
                     "http://stocklite.local/"
@@ -254,9 +251,13 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         }
     }
 
-    private fun ensureBrowser(): JBCefBrowser {
-        browser?.let { return it }
-        val b = JBCefBrowser().also { browser = it }
+    /** 返回 null 表示 JCEF 不可用，此时已展示降级提示，调用方直接 return */
+    private fun ensureChartBrowser(): CefChartBrowser? {
+        chartBrowser?.let { return it }
+        if (!CefChartBrowser.isSupported()) { showFallback(L10n.chartUnsupported); return null }
+        val b = CefChartBrowser.create()
+        if (b == null) { showFallback(L10n.chartUnsupported); return null }
+        chartBrowser = b
         browserHolder.removeAll(); browserHolder.add(b.component, BorderLayout.CENTER); browserHolder.revalidate()
         return b
     }
