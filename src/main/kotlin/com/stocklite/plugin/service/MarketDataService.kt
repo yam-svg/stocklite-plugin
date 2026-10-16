@@ -197,7 +197,7 @@ object MarketDataService {
     private val CN_ZONE = ZoneId.of("Asia/Shanghai")
 
     /**
-     * A 股涨跌停价（元，昨收 ± 幅度四舍五入到 0.01）：主板 10%（含 ST/*ST，
+     * A 股涨跌停价（元，昨收 ± 幅度四舍五入到 0.01）：主板 10%（含 ST 与 *ST，
      * 新规已与主板普通股统一，不再适用 5%）、创业板/科创板 20%、北交所 30%。
      */
     private fun cnLimitPrices(symbol: String, prevClose: Double): Pair<Double, Double>? {
