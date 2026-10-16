@@ -6,6 +6,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.PortfolioStatusWidget
 import com.stocklite.plugin.ui.dialogs.ImportExportDialog
+import com.stocklite.plugin.util.HttpUtil
 import com.stocklite.plugin.util.L10n
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -13,6 +14,10 @@ import java.awt.Insets
 import javax.swing.*
 
 class StockliteConfigurable : Configurable {
+
+    companion object {
+        private const val FEEDBACK_URL = "http://fanshu.xyz:8080/api/admin/message"
+    }
 
     // 语言
     private val langRadios = linkedMapOf(
@@ -109,6 +114,14 @@ class StockliteConfigurable : Configurable {
 
     private val stockBoxes = mutableMapOf<String, JBCheckBox>()
     private val fundBoxes  = mutableMapOf<String, JBCheckBox>()
+
+    // 意见反馈（不参与 isModified/apply，点击即发送）
+    private val feedbackArea    = JTextArea(4, 40).apply { lineWrap = true; wrapStyleWord = true }
+    private val feedbackSendBtn = JButton("发送反馈")
+    private val feedbackStatus  = JLabel("").apply {
+        font = font.deriveFont(java.awt.Font.PLAIN, 11f)
+        foreground = java.awt.Color.GRAY
+    }
 
     override fun getDisplayName() = "StockLite"
 
@@ -277,6 +290,21 @@ class StockliteConfigurable : Configurable {
         alwaysRow(L10n.settingsFundNavDate,     row++)
         for ((key, label) in fundOptional) optionalRow(key, label, fundBoxes, row++)
 
+        // ── 意见反馈 ──
+        sep("意见反馈", row); row += 2
+        gbc.gridy = row++
+        panel.add(JBScrollPane(feedbackArea).apply {
+            preferredSize = java.awt.Dimension(420, 90)
+        }, gbc)
+        gbc.gridy = row++
+        val feedbackRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            add(feedbackSendBtn)
+            add(Box.createHorizontalStrut(8))
+            add(feedbackStatus)
+        }
+        panel.add(feedbackRow, gbc)
+        feedbackSendBtn.addActionListener { sendFeedback() }
+
         // 撑开底部
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
         panel.add(JPanel(), gbc)
@@ -401,6 +429,41 @@ class StockliteConfigurable : Configurable {
     /** Tavily Key 行跟随联网搜索开关显示/隐藏 */
     private fun updateTavilyVisibility() {
         if (::tavilyRow.isInitialized) tavilyRow.isVisible = aiWebSearchCheckBox.isSelected
+    }
+
+    /** 后台线程提交意见反馈；email 固定为 StockLite，不需要用户填写 */
+    private fun sendFeedback() {
+        val content = feedbackArea.text.trim()
+        if (content.isEmpty()) {
+            feedbackStatus.text = "请先填写反馈内容"
+            feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
+            return
+        }
+        feedbackSendBtn.isEnabled = false
+        feedbackStatus.foreground = java.awt.Color.GRAY
+        feedbackStatus.text = "发送中…"
+        com.intellij.openapi.application.ApplicationManager.getApplication()
+            .executeOnPooledThread {
+                val payload = org.json.JSONObject()
+                    .put("content", content)
+                    .put("email", "StockLite")
+                    .toString()
+                val (code, raw) = HttpUtil.post(FEEDBACK_URL, payload, label = "feedback")
+                val ok = code == 200 && try {
+                    org.json.JSONObject(raw ?: "").optInt("code") == 20000
+                } catch (_: Exception) { false }
+                javax.swing.SwingUtilities.invokeLater {
+                    feedbackSendBtn.isEnabled = true
+                    if (ok) {
+                        feedbackArea.text = ""
+                        feedbackStatus.text = "发送成功，感谢你的反馈！"
+                        feedbackStatus.foreground = java.awt.Color.GRAY
+                    } else {
+                        feedbackStatus.text = "发送失败（HTTP $code），请稍后重试"
+                        feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
+                    }
+                }
+            }
     }
 
     /**
