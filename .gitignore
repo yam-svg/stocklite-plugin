@@ -56,6 +56,12 @@ desktop.ini
 build-syntax-check.gradle.kts
 
 # ══════════════════════════════════════════════════════════
+# 本地开发文档（不上传 GitHub，仅本机保留）
+# ══════════════════════════════════════════════════════════
+CLAUDE.md
+MARKETPLACE.md
+
+# ══════════════════════════════════════════════════════════
 # 以下文件应当提交到版本控制
 # ══════════════════════════════════════════════════════════
 # gradle/wrapper/gradle-wrapper.jar  → 保留（确保无需安装 Gradle 即可构建）
@@ -65,4 +71,4 @@ build-syntax-check.gradle.kts
 # build.gradle.kts                   → 保留
 # settings.gradle.kts                → 保留
 # gradle.properties                  → 保留
-# README.md / MARKETPLACE.md         → 保留
+# README.md                          → 保留
