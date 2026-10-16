@@ -45,12 +45,13 @@ class StockPanel : JPanel(BorderLayout()),
     private val chartPanel = InlineChartPanel()
     private val aiPanel    = AiAnalysisPanel(AiAnalysisService.promptForStock)
 
-    /** changePercent 列的值包装：主涨跌幅 + 可选的盘前/盘后信息 + 可选的 A 股集合竞价标记 */
+    /** changePercent 列的值包装：主涨跌幅 + 可选的盘前/盘后信息 + 可选的 A 股集合竞价标记 / 封单手数 */
     private data class ChangePctValue(
         val changePct: Double,
         val extPct: Double?,
         val session: ExtendedSession?,
-        val auction: Boolean = false
+        val auction: Boolean = false,
+        val sealLots: Long? = null
     )
 
     /** 能正确渲染 ChangePctValue 的 renderer（主行着色 + 盘前/盘后、集合竞价小字行） */
@@ -64,6 +65,16 @@ class StockPanel : JPanel(BorderLayout()),
             val mainPct = wrapped?.changePct ?: (value as? Double) ?: 0.0
             val comp = super.getTableCellRendererComponent(table, mainPct, isSelected, hasFocus, row, column)
                     as javax.swing.JLabel
+
+            // 涨跌停封单：与涨跌幅同行小字（优先于竞价标记，封板信息更有价值）
+            if (wrapped?.sealLots != null) {
+                val hex = "#%02x%02x%02x".format(comp.foreground.red, comp.foreground.green, comp.foreground.blue)
+                comp.text = "<html><center>" +
+                    "<span style='color:$hex'>${Fmt.pct(mainPct)}</span>" +
+                    " <span style='font-size:85%;color:gray'>${L10n.sealText(wrapped.sealLots!!)}</span>" +
+                    "</center></html>"
+                return comp
+            }
 
             // 集合竞价：标记与涨跌幅同行显示（拆行会被行高截断）
             if (wrapped != null && wrapped.auction) {
@@ -130,11 +141,12 @@ class StockPanel : JPanel(BorderLayout()),
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE, true)  { _, q  -> q?.price ?: 0.0 },
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  ->
             val pct = q?.changePercent ?: 0.0
-            if (q?.isAuction == true)
-                ChangePctValue(pct, null, null, auction = true)
-            else if (q?.extendedSession != null)
-                ChangePctValue(pct, q.extendedChangePercent, q.extendedSession)
-            else pct
+            when {
+                q?.sealLots != null -> ChangePctValue(pct, null, null, auction = q.isAuction, sealLots = q.sealLots)
+                q?.isAuction == true -> ChangePctValue(pct, null, null, auction = true)
+                q?.extendedSession != null -> ChangePctValue(pct, q.extendedChangePercent, q.extendedSession)
+                else -> pct
+            }
         },
         ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
         ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->

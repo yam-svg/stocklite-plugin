@@ -125,7 +125,9 @@ data class StockQuote(
     /** 当前处于盘前还是盘后 */
     val extendedSession: ExtendedSession? = null,
     /** true 表示价格/涨跌来自 A 股早盘集合竞价撮合（9:15–9:30 窗口内，腾讯源） */
-    val isAuction: Boolean = false
+    val isAuction: Boolean = false,
+    /** A 股封单手数：涨停时为买一挂单量（正），跌停时为卖一挂单量（负）；未封板为 null */
+    val sealLots: Long? = null
 )
 
 data class FundQuote(

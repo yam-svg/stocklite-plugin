@@ -51,6 +51,20 @@ object L10n {
     val lblPreMarket   get() = s("盘前", "Pre")
     val lblPostMarket  get() = s("盘后", "Post")
     val lblAuction     get() = s("竞价", "AUC")
+
+    /** 封单文案：如 封2.3万手 / Seal 23K lots（涨停买一封单、跌停卖一封单，正负仅表方向） */
+    fun sealText(lots: Long): String {
+        val a = Math.abs(lots)
+        return if (isEn()) when {
+            a >= 1_000_000 -> "Seal %.2fM lots".format(a / 1e6)
+            a >= 1_000     -> "Seal %.0fK lots".format(a / 1e3)
+            else           -> "Seal $a lots"
+        } else when {
+            a >= 1_0000_0000 -> "封%.2f亿手".format(a / 1e8)
+            a >= 1_0000      -> "封%.1f万手".format(a / 1e4)
+            else             -> "封${a}手"
+        }
+    }
     val colMarket      get() = s("市场", "Market")
     val colStatus      get() = s("状态", "Status")
     val btnRefresh      get() = s("刷新",    "Refresh")
