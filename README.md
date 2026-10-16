@@ -1,6 +1,12 @@
 # StockLite JetBrains 插件
 
+[![JetBrains Marketplace](https://img.shields.io/jetbrains/plugin/v/32115?label=JetBrains%20Marketplace&color=green)](https://plugins.jetbrains.com/plugin/32115-stocklite)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/32115)](https://plugins.jetbrains.com/plugin/32115-stocklite)
+[![Rating](https://img.shields.io/jetbrains/plugin/r/rating/32115)](https://plugins.jetbrains.com/plugin/32115-stocklite)
+
 股票 / 基金 / 期货 / 加密货币行情与持仓管理，另含全球指数、美股板块看板，原生 Kotlin/Swing 实现，适配所有 JetBrains IDE（2024.1+）。
+
+📦 **官方插件页：https://plugins.jetbrains.com/plugin/32115-stocklite**（IDE 内 `Settings → Plugins → Marketplace` 搜索 "StockLite" 即可安装）
 
 **当前版本：1.18.0**
 
