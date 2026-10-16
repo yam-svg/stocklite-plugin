@@ -105,6 +105,8 @@
                 serviceImplementation="com.stocklite.plugin.service.PortfolioWatcherService"/>
         <applicationService
                 serviceImplementation="com.stocklite.plugin.service.BreadthWatcherService"/>
+        <applicationService
+                serviceImplementation="com.stocklite.plugin.service.ForecastWatcherService"/>
         <applicationConfigurable
                 parentId="tools"
                 instance="com.stocklite.plugin.settings.StockliteConfigurable"

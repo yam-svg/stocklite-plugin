@@ -136,23 +136,46 @@ object L10n {
     val lblCitic              get() = s("中信", "CITIC")
     val lblMainForce          get() = s("主力", "Top20")
     val tipVarietyDetail      get() = s("各品种当日净加空明细", " net-add-short by variety")
-    val lblForecast           get() = s("盘后预测", "Outlook")
-    val forecastPendingClose  get() = s("待收盘", "Awaiting close")
+    val lblForecast           get() = s("盘前研判", "Pre-open view")
+    val lblSentiment          get() = s("市场天气", "Mood")
+    val forecastAwaiting      get() = s("待生成", "Pending")
     val lblAiAnalysis         get() = s("AI分析", "AI analysis")
-    val forecastPendingTip    get() = s(
-        "A股尚未收盘，面向下一交易日的盘后预测将在 15:00 收盘后生成（综合A50/纳指期货、期指龙虎榜、当日资金流与市场宽度）",
-        "CN market not closed yet — next-day outlook is generated after the 15:00 close (A50/Nasdaq futures, index-futures positions, capital flow & breadth)"
-    )
     val forecastBullish       get() = s("偏多", "Bullish lean")
     val forecastBearish       get() = s("偏空", "Bearish lean")
     val forecastNeutral       get() = s("震荡", "Neutral")
+    val gapHigh               get() = s("高开", "Gap up")
+    val gapFlat               get() = s("平开", "Flat open")
+    val gapLow                get() = s("低开", "Gap down")
+    fun gapStateLabel(state: String) = when (state) { "HIGH" -> gapHigh; "LOW" -> gapLow; else -> gapFlat }
+    fun sentimentTierName(tier: String) = when (tier) {
+        "freezing"   -> s("冰点", "Freezing")
+        "cold"       -> s("冷清", "Chilly")
+        "hot"        -> s("热烈", "Heated")
+        "overheated" -> s("过热", "Overheated")
+        else         -> s("正常", "Normal")
+    }
+    val lblGapAccuracy        get() = s("跳空命中", "Gap hit")
+    val forecastVerFinal      get() = s("终版", "final")
+    val forecastVerFirst      get() = s("初版", "early")
+    fun forecastGapTitle(n: Int, pct: Int, hit: Int) = s(
+        "近${n}次开盘跳空命中 ${pct}% ($hit/$n)",
+        "Opening-gap hit rate (last $n): ${pct}% ($hit/$n)"
+    )
     fun forecastAccuracyTitle(n: Int, pct: Int, correct: Int) = s(
-        "近${n}次方向准确率 ${pct}% ($correct/$n)",
-        "Direction accuracy (last $n): ${pct}% ($correct/$n)"
+        "近${n}次全天方向命中率 ${pct}% ($correct/$n)",
+        "Full-day direction accuracy (last $n): ${pct}% ($correct/$n)"
+    )
+    val preOpenPendingTip     get() = s(
+        "交易日 8:40 生成初版（隔夜 A50/纳指、人民币、昨日情绪极值与暴跌反转），9:15 后生成终版：并入韩国/日本早盘实时涨幅",
+        "First version after 08:40 (overnight A50/Nasdaq, CNH, T-1 sentiment extremes and crash rebound); final version after 09:15 adds live KOSPI/Nikkei morning moves"
+    )
+    val sentimentTipHint      get() = s(
+        "收盘后市场情绪温度计（描述性指标，五档：冰点/冷清/正常/热烈/过热），不参与预测与胜率统计",
+        "Post-close sentiment thermometer (descriptive; Freezing/Chilly/Normal/Heated/Overheated), excluded from prediction stats"
     )
     val forecastDisclaimer    get() = s(
-        "启发式多空信号加权汇总，仅供参考，不构成投资建议",
-        "Heuristic weighted signal aggregation — for reference only, not investment advice"
+        "实证：隔夜信息对开盘跳空 r≈0.2，韩日早盘实时涨幅 r≈0.75；全天方向仍为低置信倾向，不构成投资建议",
+        "Empirically, overnight data predicts the opening gap with r≈0.2 and live KOSPI/Nikkei morning moves with r≈0.75; full-day direction stays a low-confidence lean — not investment advice"
     )
     val statusWeekend   get() = s("休市（周末）", "Closed (Weekend)")
     fun statusPreOpen(t: String) = s("未开市（$t 开盘）", "Pre-market (opens $t)")

@@ -6,11 +6,13 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.table.JBTable
 import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.service.ChartDataService
+import com.stocklite.plugin.service.ForecastService
 import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.GlobalIndexQuote
 import com.stocklite.plugin.state.MarketBreadthData
-import com.stocklite.plugin.state.MarketForecast
+import com.stocklite.plugin.state.PreOpenForecast
 import com.stocklite.plugin.state.SectorPct
+import com.stocklite.plugin.state.SentimentSnapshot
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
@@ -91,8 +93,8 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val BREADTH_INTERVAL_MS = 20_000
     private var breadthTimer: Timer? = null
     private var lastBreadth: MarketBreadthData? = null
-    private var lastForecast: MarketForecast? = null
-    private var lastForecastPending = false
+    private var lastForecast: PreOpenForecast? = null
+    private var lastSentiment: SentimentSnapshot? = null
     private var lastAiAnalysis: String? = null
 
     private val breadthTitleLbl = JLabel(L10n.lblMarketBreadthTitle).apply {
@@ -108,6 +110,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val chipFlow     = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFuturesPosition = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipForecast = JLabel("--").apply { font = font.deriveFont(Font.BOLD, 11f) }
+    private val chipSentiment = JLabel("--").apply { font = font.deriveFont(11f) }
 
     // 领涨/领跌板块各展示 TOP6，固定 3行×2列 网格——不依赖自动换行，格子尺寸恒定，避免内容被截断
     private val topSectorCells    = List(6) { JLabel("--").apply { font = font.deriveFont(10f) } }
@@ -162,6 +165,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         bottomSectorsLbl.text = L10n.lblBottomSector
         lastBreadth?.let { updateBreadthUI(it) }
         updateForecastUI(lastForecast)
+        updateSentimentUI(lastSentiment)
         val cur = statusLabel.text
         val updatedPrefix = cur.substringBefore("   ").takeIf { it.isNotBlank() }
         statusLabel.text = if (updatedPrefix != null) "$updatedPrefix   ${MarketTimeUtil.getMarketStatusText()}"
@@ -453,6 +457,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         breadthRow2.add(chipFlow)
         breadthRow3.add(chipFuturesPosition)
         breadthRow3.add(chipForecast)
+        breadthRow3.add(chipSentiment)
 
         val topGrid = JPanel(GridLayout(3, 2, 10, 1))
         topSectorCells.forEach { topGrid.add(it) }
@@ -481,7 +486,8 @@ class GlobalPanel : JPanel(BorderLayout()),
         fetchBreadthAsync()
         breadthTimer?.stop()
         breadthTimer = Timer(BREADTH_INTERVAL_MS) {
-            if (MarketTimeUtil.isStockMarketOpen()) fetchBreadthAsync()
+            // 盘前研判窗口（8:40–9:25）在开盘前，isStockMarketOpen 为 false，需单独放行
+            if (MarketTimeUtil.isStockMarketOpen() || ForecastService.inPreOpenWindow()) fetchBreadthAsync()
         }.also { it.isRepeats = true; it.start() }
     }
 
@@ -490,80 +496,87 @@ class GlobalPanel : JPanel(BorderLayout()),
         ApplicationManager.getApplication().executeOnPooledThread {
             val data  = MarketDataService.getMarketBreadth()
             val times = MarketDataService.getBreadthDataTimes()
-            val pending = MarketDataService.isCnPendingClose()
-            val forecast = if (pending) null else MarketDataService.getMarketForecast(data)
+            ForecastService.settleForecasts()
+            val sentiment = ForecastService.getSentiment()
+            // 盘前窗口内生成/补生成当日研判（当天一次即锁定）；窗口外直接展示最近一条
+            val today = if (ForecastService.inPreOpenWindow()) ForecastService.generatePreOpenForecast() else null
+            val forecast = today ?: ForecastService.latestRecord()?.let { ForecastService.rehydrate(it) }
             SwingUtilities.invokeLater {
                 updateBreadthUI(data, times)
-                lastForecastPending = pending
-                if (pending) lastAiAnalysis = null
+                lastSentiment = sentiment
+                updateSentimentUI(sentiment)
                 updateForecastUI(forecast)
             }
-            // AI 二次分析：单独起线程（首次调用需数秒到数十秒），不阻塞大盘数据的展示；
-            // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为纯启发式展示。
-            if (!pending && forecast != null) {
-                MarketDataService.trySnapshotForecast(forecast, data)
-                val apiKey = StockliteState.getInstance().deepseekApiKey.trim()
-                if (apiKey.isNotEmpty()) {
-                    ApplicationManager.getApplication().executeOnPooledThread {
-                        val ai = MarketDataService.getAiForecastAnalysis(data, forecast, apiKey)
-                        if (ai != null) SwingUtilities.invokeLater {
-                            lastAiAnalysis = ai
-                            updateForecastUI(lastForecast)
-                        }
+            // AI 短评：单独起线程（首次调用需数秒），不阻塞大盘数据展示；
+            // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为无 AI 展示。
+            if (forecast != null && StockliteState.getInstance().deepseekApiKey.isNotBlank()) {
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    val ai = ForecastService.getAiBrief()
+                    if (ai != null) SwingUtilities.invokeLater {
+                        lastAiAnalysis = ai
+                        updateForecastUI(lastForecast)
                     }
                 }
             }
         }
     }
 
-    private fun updateForecastUI(f: MarketForecast?) {
+    private fun updateForecastUI(f: PreOpenForecast?) {
         lastForecast = f
         val scheme = StockliteState.getInstance().colorScheme
         val up = colorHex(QuoteRenderer.positiveColor(scheme) ?: table.foreground)
         val dn = colorHex(QuoteRenderer.negativeColor(scheme) ?: table.foreground)
         if (f == null) {
-            if (lastForecastPending) {
-                chipForecast.text = "<html>${L10n.lblForecast} <span style='color:#888aaa'>${L10n.forecastPendingClose}</span></html>"
-                chipForecast.toolTipText = "<html>${L10n.forecastPendingTip}</html>"
-            } else {
-                chipForecast.text = "${L10n.lblForecast} --"
-                chipForecast.toolTipText = null
-            }
+            chipForecast.text = "${L10n.lblForecast} ${L10n.forecastAwaiting}"
+            chipForecast.toolTipText = "<html>${L10n.preOpenPendingTip}</html>"
             return
         }
-        val (label, color) = when {
-            f.score >= 20  -> L10n.forecastBullish to up
-            f.score <= -20 -> L10n.forecastBearish to dn
-            else           -> L10n.forecastNeutral to "#888aaa"
+        // 主输出是跳空三态（有实证），全天方向分退居次要位置
+        val gapState = ForecastService.gapState(f.gapPct)
+        val gapTxt = if (gapState == "NAN") "" else {
+            val gc = if (gapState == "HIGH") up else if (gapState == "LOW") dn else "#888aaa"
+            " <b style='color:$gc'>${L10n.gapStateLabel(gapState)}${"%+.2f%%".format(f.gapPct)}</b>"
+        }
+        val (label, color) = when (ForecastService.directionOf(f.score)) {
+            "BULL"  -> L10n.forecastBullish to up
+            "BEAR"  -> L10n.forecastBearish to dn
+            else    -> L10n.forecastNeutral to "#888aaa"
         }
         val aiTag = if (lastAiAnalysis != null) " <span style='color:#888aaa'>·AI</span>" else ""
-        val (accCorrect, accTotal) = MarketDataService.getForecastAccuracy()
-        val accTag = if (accTotal >= 5) " <span style='color:#888aaa'>· ${accCorrect * 100 / accTotal}%</span>" else ""
-        chipForecast.text = "<html>${L10n.lblForecast}(${f.generatedAt}) " +
-            "<b style='color:$color'>$label ${"%+.0f".format(f.score)}</b>$aiTag$accTag</html>"
-        val accuracySection = run {
-            val settled = StockliteState.getInstance().forecastHistory.filter { it.settled }
+        val stats = ForecastService.getStats()
+        val accTag = if (stats.gapSample >= 5 && !stats.gapHitRate.isNaN())
+            " <span style='color:#888aaa'>· ${L10n.lblGapAccuracy} ${stats.gapHitRate.toInt()}%</span>" else ""
+        val verTag = " <span style='color:#888aaa'>·${if (f.finalized) L10n.forecastVerFinal else L10n.forecastVerFirst}</span>"
+        chipForecast.text = "<html>${L10n.lblForecast}(${f.date.substring(5)} ${f.generatedAt})$verTag$gapTxt " +
+            "<b style='color:$color'>$label</b>$aiTag$accTag</html>"
+        val gapSection = run {
+            val settled = StockliteState.getInstance().forecastHistory
+                .filter { it.kind == "PRE" && it.settled && !it.gapPct.isNaN() && !it.openPct.isNaN() }
             if (settled.size < 3) ""
             else {
                 val recent = settled.takeLast(20)
-                val correct = recent.count { it.correct }
+                val hit = recent.count { it.openHit }
                 val total = recent.size
-                val pct = correct * 100 / total
-                val last5 = recent.takeLast(5).reversed()
-                val rows = last5.joinToString("<br/>") { r ->
-                    val c = when (r.direction) { "BULL" -> up; "BEAR" -> dn; else -> "#888aaa" }
-                    val dir = when (r.direction) { "BULL" -> L10n.forecastBullish; "BEAR" -> L10n.forecastBearish; else -> L10n.forecastNeutral }
-                    val act = if (r.actualPct.isNaN()) "--" else "%+.1f%%".format(r.actualPct)
-                    "· ${r.date.substring(5)} <b style='color:$c'>$dir${"%+.0f".format(r.score)}</b> → $act ${if (r.correct) "✅" else "❌"}"
+                val pct = hit * 100 / total
+                val rows = recent.takeLast(5).reversed().joinToString("<br/>") { r ->
+                    val pred = ForecastService.gapState(r.gapPct)
+                    val act  = ForecastService.gapState(r.openPct)
+                    val c = if (r.openHit) up else dn
+                    "· ${r.date.substring(5)} ${L10n.gapStateLabel(pred)}${"%+.2f".format(r.gapPct)} → " +
+                        "${L10n.gapStateLabel(act)}${"%+.2f".format(r.openPct)} <b style='color:$c'>${if (r.openHit) "✅" else "❌"}</b>"
                 }
-                "<br/><b>${L10n.forecastAccuracyTitle(total, pct, correct)}</b><br/>$rows"
+                "<br/><b>${L10n.forecastGapTitle(total, pct, hit)}</b><br/>$rows"
             }
         }
+        val dirStats = ForecastService.getStats()
+        val dirSection = if (dirStats.dirSample >= 5 && !dirStats.dirHitRate.isNaN())
+            "<br/>${L10n.forecastAccuracyTitle(dirStats.dirSample, dirStats.dirHitRate.toInt(), dirStats.dirHits)}"
+        else ""
         val aiSection = lastAiAnalysis?.let { ai ->
             val safe = ai.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
             "<br/><b>${L10n.lblAiAnalysis}</b>：<div style='width:360px'>$safe</div>"
         } ?: ""
-        chipForecast.toolTipText = "<html><b>${L10n.lblForecast}</b>（得分 ${"%+.1f".format(f.score)}，范围 -100~+100）<br/>" +
+        chipForecast.toolTipText = "<html><b>${L10n.lblForecast}</b> ${f.date}（隐含跳空 ${if (f.gapPct.isNaN()) "--" else "%+.2f%%".format(f.gapPct)}，全天倾向 ${"%+.0f".format(f.score)}，-100~+100）<br/>" +
             f.factors.joinToString("<br/>") { factor ->
                 if (factor.score.isNaN()) "· ${factor.name}：${factor.detail.ifEmpty { "数据缺失" }}"
                 else {
@@ -571,9 +584,36 @@ class GlobalPanel : JPanel(BorderLayout()),
                     "· ${factor.name}：${factor.detail}　<b style='color:$c'>${"%+.1f".format(factor.score)}</b>"
                 }
             } +
-            accuracySection +
+            gapSection +
+            dirSection +
             aiSection +
             "<br/><span style='color:#888aaa'>${L10n.forecastDisclaimer}</span></html>"
+    }
+
+    private fun updateSentimentUI(snap: SentimentSnapshot?) {
+        if (snap == null || snap.score.isNaN()) {
+            chipSentiment.text = "${L10n.lblSentiment} --"
+            chipSentiment.toolTipText = null
+            return
+        }
+        val tier = ForecastService.sentimentTier(snap.score)
+        val color = when (tier) {
+            "overheated" -> "#ff6b6b"
+            "hot"        -> "#ffa657"
+            "cold"       -> "#69c0ff"
+            "freezing"   -> "#4d8dff"
+            else         -> "#888aaa"
+        }
+        chipSentiment.text = "<html>${L10n.lblSentiment} <b style='color:$color'>${L10n.sentimentTierName(tier)} ${"%+.0f".format(snap.score)}</b></html>"
+        chipSentiment.toolTipText = "<html><b>${L10n.lblSentiment}</b> ${snap.date}（得分 ${"%+.0f".format(snap.score)}，-100~+100）<br/>" +
+            snap.factors.joinToString("<br/>") { factor ->
+                if (factor.score.isNaN()) "· ${factor.name}：${factor.detail.ifEmpty { "数据缺失" }}"
+                else {
+                    val c = if (factor.score >= 0) "#ffa657" else "#69c0ff"
+                    "· ${factor.name}：${factor.detail}　<b style='color:$c'>${"%+.1f".format(factor.score)}</b>"
+                }
+            } +
+            "<br/><span style='color:#888aaa'>${L10n.sentimentTipHint}</span></html>"
     }
 
     private fun updateBreadthUI(d: MarketBreadthData,

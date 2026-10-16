@@ -236,32 +236,74 @@ data class IndexFuturesPosition(
 data class VarietyNetChange(val code: String, val name: String, val netAddShort: Double)
 
 /**
- * 盘后多空信号汇总（启发式，非严格意义的预测）。
- * @param score 综合得分 -100..100，正=偏多；由各可用因子加权求和后按可用权重归一
- * @param factors 各因子明细（含缺失数据时被跳过的说明），供悬浮提示透明展示
- * @param generatedAt 生成时间 "HH:mm"
+ * 涨停生态明细（东财 push2ex 涨停池/炸板池/跌停池）。
+ * 池接口以"最近一个有数据的交易日"为准（历史 date 参数不可靠），盘前取到的即 T-1 数据。
+ * @param ztCount 收盘仍封板的涨停家数
+ * @param dtCount 跌停家数
+ * @param zbCount 炸板家数（盘中曾触涨停后被打开，收盘未回封）
+ * @param maxLianban 最高连板高度（情绪周期"梯队"指标）
  */
-data class MarketForecast(
+data class LimitEcosystem(
+    val date: String,
+    val ztCount: Int,
+    val dtCount: Int,
+    val zbCount: Int,
+    val maxLianban: Int
+) {
+    /** 封板率 = 仍封板 / (仍封板+炸板)，NaN 表示无触板数据 */
+    val sealRate: Double
+        get() = if (ztCount + zbCount == 0) Double.NaN else ztCount.toDouble() / (ztCount + zbCount)
+}
+
+/**
+ * 盘后"市场天气"情绪快照（描述当日收盘后的情绪温度，不是方向预测）。
+ * @param score -100..100，正=亢奋、负=冰点
+ */
+data class SentimentSnapshot(
+    val date: String,
     val score: Double,
-    val factors: List<ForecastFactor>,
-    val generatedAt: String
+    val factors: List<ForecastFactor>
 )
 
 /**
- * @param score 该因子对综合得分的实际贡献（已乘权重），正=偏多；NaN 表示数据缺失被跳过
+ * 盘前研判（交易日 8:40–9:25 生成，信息集=隔夜外盘+T-1 全部定型数据，无未来数据）。
+ * 与全天方向不同，"隐含跳空"预测的是当日开盘价，隔夜信息对它的预测力有实证支持。
+ * @param gapPct 外盘隐含跳空%（A50 隔夜 + 纳指隔夜回归合成）
+ * @param score 全天倾向 -100..100（低置信，外盘对全天方向的公开实证 r≈0.16）
+ */
+data class PreOpenForecast(
+    val date: String,
+    val generatedAt: String,
+    val gapPct: Double,
+    val score: Double,
+    val factors: List<ForecastFactor>,
+    val finalized: Boolean = false          // true=9:15 后终版（已并入韩日早盘因子）
+)
+
+/**
+ * @param score 该因子对综合得分的实际贡献（已乘权重），正=偏多/偏亢奋；NaN 表示数据缺失被跳过
  * @param detail 因子取值的人话描述，如 "富时中国A50期货 +1.07%"
  */
 data class ForecastFactor(val name: String, val detail: String, val score: Double)
 
-/** 单次盘后预测快照（持久化），用于统计方向准确率 */
+/**
+ * 单次研判快照（持久化），用于统计命中率。
+ * kind："PRE"=盘前研判（当日开盘/收盘双结算）；""=旧版盘后预测（历史数据，仅结算收盘方向）
+ */
 class ForecastRecordData {
-    var date: String = ""                   // 预测日期 "2026-08-24"
-    var score: Double = 0.0                 // 预测得分
+    var date: String = ""                   // 研判对应日期 "2026-08-24"
+    var score: Double = 0.0                 // 全天倾向得分
     var direction: String = ""              // BULL / BEAR / NEUTRAL
-    var generatedAt: String = ""            // 生成时刻 "15:03"
+    var generatedAt: String = ""            // 生成时刻 "09:12"
     var actualPct: Double = Double.NaN      // 次日沪深300实际涨跌幅%（结算后填入）
     var settled: Boolean = false            // 是否已结算
-    var correct: Boolean = false            // 方向是否正确（settled=true 时有效）
+    var correct: Boolean = false            // 全天方向是否正确（settled=true 时有效）
+    var kind: String = ""                   // "PRE" / ""（旧版）
+    var gapPct: Double = Double.NaN         // 盘前隐含跳空%（预测值）
+    var openPct: Double = Double.NaN        // 当日实际开盘跳空%（结算后填入）
+    var openHit: Boolean = false            // 跳空方向是否命中（高开/平开/低开三态一致）
+    var factorsJson: String = ""            // 因子明细 JSON，供悬浮提示回溯当日依据
+    var finalized: Boolean = false          // 是否 9:15 后终版（含韩日早盘因子）；旧记录默认 false
 }
 
 data class SectorPct(val name: String, val pct: Double)

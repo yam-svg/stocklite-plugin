@@ -124,7 +124,7 @@ object MarketDataService {
      * 请求失败 / 无代表标的时，退回"只看星期"。同一市场内多个标的共用同一份结果，且缓存 30 分钟，
      * 避免每次刷新都发请求。
      */
-    private fun isTodayTradingDay(market: String, timezone: String, now: Long): Boolean {
+    fun isTodayTradingDay(market: String, timezone: String, now: Long): Boolean {
         val weekdayFallback = ZonedDateTime.now(ZoneId.of(timezone)).dayOfWeek.value.let { it != 6 && it != 7 }
 
         val cached = marketTradingDayCache[market]
@@ -1182,7 +1182,8 @@ object MarketDataService {
     private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val flowCache     = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val sectorCache   = StaleCache<Pair<List<SectorInfo>, List<SectorInfo>>>(2 * 60_000L, 5 * 60_000L)
-    private val forecastFuturesCache = StaleCache<Map<String, FutureQuote>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
+    // 涨停生态池（连板/炸板）：盘前拿到即 T-1 定型数据；新鲜 2 分钟仅防面板多次刷新重复请求
+    private val limitEcoCache = StaleCache<LimitEcosystem?>(2 * 60_000L, BREADTH_STALE_TTL)
 
     data class BreadthDataTimes(
         val advDec: Long,      // 涨跌家数
@@ -1296,205 +1297,87 @@ object MarketDataService {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 盘后多空信号汇总（启发式，非严格预测）
+    // 预测机制数据源（涨停生态 / 指数bar日期 / USDCNH / 指数快照）
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * A股当日尚未收盘（交易日 15:00 前，含午休和开盘前）时返回 true。
-     * 盘后预测面向"下一交易日"，需等当日数据（资金流/宽度/期指龙虎榜）定型后才有意义，
-     * 收盘前应显示"待收盘"而非基于盘中未定型数据的信号。
+     * 涨停生态明细（涨停/跌停/炸板家数与连板梯队）。
+     * 池接口实测历史 date 参数不可靠（恒返回最近一日），语义直接定义为
+     * "最近一个有涨停数据的交易日"：盘前当日池未生成自动落到 T-1，周末/节假日 tc=0 继续前移。
      */
-    fun isCnPendingClose(): Boolean {
-        val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
-        if (now.dayOfWeek.value >= 6) return false
-        if (!isTodayTradingDay("CN", "Asia/Shanghai", System.currentTimeMillis())) return false
-        return now.hour * 60 + now.minute < 15 * 60
+    fun getLimitEcosystem(): LimitEcosystem? = limitEcoCache.getOrFetch { fetchLimitEcosystem() }
+
+    private fun fetchLimitEcosystem(): LimitEcosystem? {
+        val shZone  = ZoneId.of("Asia/Shanghai")
+        val dateFmt = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")
+        // 返回 (tc 总数, pool 明细数组)；接口偶发断连返回 null 由上层按 0 处理
+        fun fetchData(url: String, label: String): Pair<Int, JSONArray?> {
+            val raw = HttpUtil.get(url, label = label) ?: return 0 to null
+            return try {
+                val data = JSONObject(raw).optJSONObject("data") ?: return 0 to null
+                data.optInt("tc") to data.optJSONArray("pool")
+            } catch (_: Exception) { 0 to null }
+        }
+        for (daysBack in 0..4) {
+            val date = ZonedDateTime.now(shZone).toLocalDate().minusDays(daysBack.toLong()).format(dateFmt)
+            val (ztTc, ztPool) = fetchData(
+                "https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989" +
+                "&dpt=wz.ztzt&Pageindex=0&pagesize=320&sort=lbc:desc&date=$date", "涨停池")
+            // 今日池未生成（盘前/非交易日）则回退更早日期；连板数与涨跌停家数天然同源同池，取不到生态则整体放弃
+            if (ztTc <= 0) continue
+            val (zbTc, _) = fetchData(
+                "https://push2ex.eastmoney.com/getTopicZBPool?ut=7eea3edcaed734bea9cbfc24409ed989" +
+                "&dpt=wz.ztzt&Pageindex=0&pagesize=320&sort=fbt:asc&date=$date", "炸板池")
+            val (dtTc, _) = fetchData(
+                "https://push2ex.eastmoney.com/getTopicDTPool?ut=7eea3edcaed734bea9cbfc24409ed989" +
+                "&dpt=wz.ztzt&Pageindex=0&pagesize=320&sort=fund:asc&date=$date", "跌停池")
+            var maxLbc = 0
+            ztPool?.let { pool ->
+                for (i in 0 until pool.length())
+                    maxLbc = maxOf(maxLbc, pool.optJSONObject(i)?.optInt("lbc") ?: 0)
+            }
+            // 日期标签取新浪指数 bar 日期：盘中=当日、盘前=T-1，与池数据实际归属日一致
+            val label = getAshareLastBarDate()
+                ?: "${date.take(4)}-${date.substring(4, 6)}-${date.substring(6, 8)}"
+            return LimitEcosystem(date = label, ztCount = ztTc, dtCount = dtTc, zbCount = zbTc, maxLianban = maxLbc)
+        }
+        return null
+    }
+
+    /** 新浪上证指数的数据日期（f[30]，形如 "2026-10-16"），即行情快照实际归属的交易日 */
+    fun getAshareLastBarDate(): String? {
+        val raw = HttpUtil.getGbk("https://hq.sinajs.cn/list=sh000001",
+            "https://finance.sina.com.cn", label = "指数数据日期") ?: return null
+        val f = Regex(""""([^"]*)"""").find(raw)?.groupValues?.get(1)?.split(",") ?: return null
+        return f.getOrNull(30)?.takeIf { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
     }
 
     /**
-     * 综合盘后可得的多空信号，输出 -100..100 的倾向得分。
-     * 因子与权重（每个因子先归一到 [-1,1] 再乘权重）：
-     * - A50期货涨跌%      权重35（新加坡A50几乎全天交易，是A股盘后最直接的情绪代理；±1.5%记满分）
-     * - 纳指期货涨跌%     权重20（隔夜全球风险偏好；±1.5%记满分）
-     * - 期指主力净操作     权重15（龙虎榜前20会员当日净加空为空头信号；±5000手记满分）
-     * - 主力资金净流入     权重15（当日沪深两市合计；±200亿记满分）
-     * - 市场宽度          权重15（(涨-跌)/(涨+跌)）
-     * 数据缺失的因子跳过、其权重不计入分母；全部缺失时返回 null。
+     * 离岸人民币（USDCNH）当日涨跌%：正=人民币贬值（利空）、负=升值（利好）。
+     * 新浪 fx_ 接口 f[10] 直接给涨跌%，缺失时用 f[1] 现价与 f[3] 昨收自算。
      */
-    fun getMarketForecast(breadth: MarketBreadthData): MarketForecast? {
-        fun clamp(v: Double) = v.coerceIn(-1.0, 1.0)
-        val factors = mutableListOf<ForecastFactor>()
-        var weightedSum = 0.0
-        var totalWeight = 0.0
-
-        fun addFactor(name: String, weight: Double, signal: Double?, detail: String) {
-            if (signal == null || !signal.isFinite()) {
-                factors.add(ForecastFactor(name, "数据缺失", Double.NaN))
-                return
-            }
-            val contribution = clamp(signal) * weight
-            weightedSum += contribution
-            totalWeight += weight
-            factors.add(ForecastFactor(name, detail, contribution))
-        }
-
-        // 期货行情：A50 + 纳指（一次请求，60秒内复用缓存，不用跟着盘后预测20秒的刷新节奏每次重新请求）
-        val futures = forecastFuturesCache.getOrFetch { getFutureQuotes(listOf("hf_CHA50CFD", "hf_NQ")).takeIf { it.isNotEmpty() } } ?: emptyMap()
-        val a50 = futures["hf_CHA50CFD"]?.takeIf { it.prevClose > 0 }
-        val nq  = futures["hf_NQ"]?.takeIf { it.prevClose > 0 }
-
-        addFactor("A50期货", 35.0, a50?.let { it.changePercent / 1.5 },
-            a50?.let { "富时中国A50期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
-        addFactor("纳指期货", 20.0, nq?.let { it.changePercent / 1.5 },
-            nq?.let { "纳斯达克指数期货 ${"%+.2f".format(it.changePercent)}%" } ?: "")
-
-        // 期指主力操作按品种性质折算：IF/IH（大盘蓝筹品种）的加空方向性更强、全权重；
-        // IC/IM 空单以量化中性策略对冲盘为主、不代表方向观点，按 30% 折算，避免把常规对冲误判为利空。
-        // 只有当龙虎榜数据确实是"今天"收盘后出炉的才计入预测——数据尚未更新（仍是上一交易日）时，
-        // 用它代表"今天的操作"会产生误导，此时该因子按缺失处理，不参与打分（但"股指期货多空"那一行
-        // 仍会正常展示最新可得数据，只是标注的日期会让用户看出不是当日，二者互不影响）。
-        val fp = breadth.futuresPosition
-        val todayMmDd = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).let { "%02d-%02d".format(it.monthValue, it.dayOfMonth) }
-        val fpIsToday = fp != null && fp.tradeDate == todayMmDd
-        val directionalOp = if (!fpIsToday) null else fp?.let { p ->
-            if (p.mainForceByVariety.isNotEmpty())
-                p.mainForceByVariety.sumOf { v ->
-                    v.netAddShort * (if (v.code == "IF" || v.code == "IH") 1.0 else 0.3)
-                }
-            else (p.mainForceShortChange - p.mainForceLongChange).takeIf { it.isFinite() }
-        }
-        addFactor("期指主力操作", 15.0, directionalOp?.let { -it / 3000.0 },
-            if (!fpIsToday) (fp?.let { "数据未更新，最新仍是${it.tradeDate}（非当日），本因子暂不计入" } ?: "")
-            else fp?.let { p ->
-                directionalOp?.let {
-                    val blueChip = p.mainForceByVariety.filter { v -> v.code == "IF" || v.code == "IH" }
-                        .sumOf { v -> v.netAddShort }
-                    "主力方向性${if (it >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(it))}手" +
-                        "(IF/IH合计${"%+.0f".format(blueChip)}手·全权重, IC/IM按30%折算, ${p.tradeDate})"
-                }
-            } ?: "")
-
-        addFactor("主力资金", 15.0, breadth.mainNetInflow?.let { it / 2e10 },
-            breadth.mainNetInflow?.let { "净${if (it >= 0) "流入" else "流出"}${"%.0f".format(kotlin.math.abs(it) / 1e8)}亿" } ?: "")
-
-        val breadthSignal = if (breadth.upCount != null && breadth.downCount != null && breadth.upCount + breadth.downCount > 0)
-            (breadth.upCount - breadth.downCount).toDouble() / (breadth.upCount + breadth.downCount) else null
-        addFactor("市场宽度", 15.0, breadthSignal,
-            if (breadth.upCount != null) "涨${breadth.upCount}家/跌${breadth.downCount}家" else "")
-
-        if (totalWeight <= 0) return null
-        val score = weightedSum / totalWeight * 100
-        val time = java.time.LocalTime.now().let { String.format("%02d:%02d", it.hour, it.minute) }
-        return MarketForecast(score = score, factors = factors, generatedAt = time)
+    fun getUsdcnhPct(): Double? {
+        val raw = HttpUtil.getGbk("https://hq.sinajs.cn/list=fx_susdcnh",
+            "https://finance.sina.com.cn", label = "USDCNH") ?: return null
+        val f = Regex(""""([^"]*)"""").find(raw)?.groupValues?.get(1)?.split(",") ?: return null
+        f.getOrNull(10)?.toDoubleOrNull()?.let { return it }
+        val price = f.getOrNull(1)?.toDoubleOrNull() ?: return null
+        val prev  = f.getOrNull(3)?.toDoubleOrNull() ?: return null
+        return if (prev > 0) (price - prev) / prev * 100 else null
     }
-
-    private val FORECAST_DIRECTION_THRESHOLD = 0.3   // 沪深300 ≥ +0.3% 视为上涨方向成立
-    private val FORECAST_MAX_HISTORY = 60
 
     /**
-     * 在收盘后窗口（15:00-16:30）记录今日盘后预测快照，并结算最近一条未结算记录。
-     * 同一交易日只记录一次；全程不抛异常，失败静默跳过。
-     * 结算依据：今日沪深300实际涨跌幅（breadth.largeCapPct），阈值 ±0.3% 判定方向。
+     * 腾讯指数快照 Triple(现价, 昨收, 今开)。盘前研判结算用：
+     * 开盘跳空 =(今开−昨收)/昨收，全天 =(现价−昨收)/昨收。
+     * 盘前今开为 0（尚未开盘），调用方据此保持未结算——符合预期，不会拿旧数据凑数。
      */
-    fun trySnapshotForecast(forecast: MarketForecast, breadth: MarketBreadthData) {
-        try {
-            val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
-            val minutes = now.hour * 60 + now.minute
-            if (minutes < 15 * 60 || minutes >= 16 * 60 + 30) return
-            if (now.dayOfWeek.value >= 6) return
-
-            val state = StockliteState.getInstance()
-            val today = now.toLocalDate().toString()
-
-            // 结算：用今日沪深300实际涨跌幅结算最近一条未结算记录（该记录预测的就是今日方向）
-            val largeCapPct = breadth.largeCapPct
-            if (largeCapPct != null) {
-                state.forecastHistory.lastOrNull { !it.settled && it.date < today }?.let { r ->
-                    r.actualPct = largeCapPct
-                    r.settled = true
-                    r.correct = when (r.direction) {
-                        "BULL"    -> largeCapPct >= FORECAST_DIRECTION_THRESHOLD
-                        "BEAR"    -> largeCapPct <= -FORECAST_DIRECTION_THRESHOLD
-                        "NEUTRAL" -> kotlin.math.abs(largeCapPct) < FORECAST_DIRECTION_THRESHOLD
-                        else      -> false
-                    }
-                }
-            }
-
-            // 快照：今日已有则跳过
-            if (state.forecastHistory.any { it.date == today }) return
-            val direction = when {
-                forecast.score >= 20  -> "BULL"
-                forecast.score <= -20 -> "BEAR"
-                else                  -> "NEUTRAL"
-            }
-            val record = ForecastRecordData().apply {
-                date = today
-                score = forecast.score
-                this.direction = direction
-                generatedAt = forecast.generatedAt
-            }
-            state.forecastHistory.add(record)
-            while (state.forecastHistory.size > FORECAST_MAX_HISTORY) state.forecastHistory.removeAt(0)
-        } catch (_: Exception) {}
-    }
-
-    /** 返回 (正确次数 to 总结算次数)，取最近 20 条已结算记录统计 */
-    fun getForecastAccuracy(): Pair<Int, Int> {
-        val settled = StockliteState.getInstance().forecastHistory
-            .filter { it.settled }.takeLast(20)
-        return settled.count { it.correct } to settled.size
-    }
-
-    private var aiForecastCache: String? = null
-    private var aiForecastCacheTime = 0L
-    private val AI_FORECAST_CACHE_TTL = 30 * 60_000L  // AI 分析 30 分钟内复用，避免后台高频烧 tokens
-
-    /**
-     * 盘后预测的 AI 二次分析（可选，仅在配置了 DeepSeek API Key 时调用）。
-     * 把启发式模型的原始数据（含期指分品种明细）交给 AI，重点让它判断期指加空的性质
-     * （中性对冲 vs 方向性看空）。结果缓存30分钟；失败返回 null，界面静默降级为纯启发式展示。
-     * 注意：调用方应在后台线程执行（单轮请求通常需 5~20 秒）。
-     */
-    fun getAiForecastAnalysis(breadth: MarketBreadthData, forecast: MarketForecast, apiKey: String): String? {
-        val now = System.currentTimeMillis()
-        aiForecastCache?.let { if (now - aiForecastCacheTime < AI_FORECAST_CACHE_TTL) return it }
-
-        val fp = breadth.futuresPosition
-        val todayMmDd = ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).let { "%02d-%02d".format(it.monthValue, it.dayOfMonth) }
-        val dataDesc = buildString {
-            appendLine("以下是A股收盘后的盘面数据：")
-            forecast.factors.forEach { f -> if (!f.score.isNaN()) appendLine("- ${f.name}：${f.detail}") }
-            // 期指龙虎榜若不是当日出炉的数据（仍是上一交易日），不喂给 AI，避免其误当成当日操作来分析
-            fp?.takeIf { it.tradeDate == todayMmDd }?.let { p ->
-                if (p.mainForceByVariety.isNotEmpty()) {
-                    appendLine("- 期指主力(前20会员)分品种净加空明细(${p.tradeDate})：" +
-                        p.mainForceByVariety.joinToString("、") { v ->
-                            "${v.name}${if (v.netAddShort >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
-                        })
-                    appendLine("- 中信期货(代客)分品种：" +
-                        p.citicByVariety.joinToString("、") { v ->
-                            "${v.name}${if (v.netAddShort >= 0) "加空" else "加多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
-                        })
-                }
-            }
-            breadth.topSectors.takeIf { it.isNotEmpty() }?.let { s ->
-                appendLine("- 领涨板块：${s.take(3).joinToString("、") { "${it.name}${"%+.2f".format(it.pct)}%" }}")
-            }
-            breadth.bottomSectors.takeIf { it.isNotEmpty() }?.let { s ->
-                appendLine("- 领跌板块：${s.take(3).joinToString("、") { "${it.name}${"%+.2f".format(it.pct)}%" }}")
-            }
-            appendLine("启发式模型综合得分：${"%+.1f".format(forecast.score)}（-100~+100，正为偏多）")
-        }
-        val systemPrompt = "你是A股市场分析师。特别注意：股指期货空单需区分性质——IC/IM上的空单大多是量化中性策略的" +
-            "常规对冲盘（不代表看空，甚至伴随现货加仓），IF/IH上的集中加空方向性更强；请结合分品种明细判断本次" +
-            "期指持仓变化更接近对冲行为还是方向性押注，并综合其它数据给出对下一交易日的判断。"
-        val userPrompt = dataDesc + "\n请给出：1)偏多/偏空/震荡的判断 2)不超过3句话的核心理由（必须提及期指空单性质的判断）。全文不超过120字。"
-
-        val reply = AiAnalysisService.quickAnalyze(systemPrompt, userPrompt, apiKey, maxTokens = 300) ?: return null
-        aiForecastCache = reply
-        aiForecastCacheTime = now
-        return reply
+    fun getTencentIndexSnapshot(symbol: String): Triple<Double, Double, Double>? {
+        val raw = HttpUtil.getGbk("https://qt.gtimg.cn/q=$symbol", label = "指数快照") ?: return null
+        val f = Regex(""""([^"]*)"""").find(raw)?.groupValues?.get(1)?.split("~") ?: return null
+        val price = f.getOrNull(3)?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val prev  = f.getOrNull(4)?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+        val open  = f.getOrNull(5)?.toDoubleOrNull() ?: 0.0
+        return Triple(price, prev, open)
     }
 
     // ══════════════════════════════════════════════════════════════

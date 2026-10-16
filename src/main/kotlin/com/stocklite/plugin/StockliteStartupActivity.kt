@@ -3,6 +3,8 @@ package com.stocklite.plugin
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.StartupActivity
+import com.stocklite.plugin.service.BreadthWatcherService
+import com.stocklite.plugin.service.ForecastWatcherService
 import com.stocklite.plugin.service.FundNavWatcherService
 import com.stocklite.plugin.service.PortfolioWatcherService
 import com.stocklite.plugin.service.StockAlertWatcherService
@@ -22,5 +24,7 @@ class StockliteStartupActivity : StartupActivity.DumbAware {
         app.getService(FundNavWatcherService::class.java)
         app.getService(StockAlertWatcherService::class.java)
         app.getService(PortfolioWatcherService::class.java)
+        app.getService(BreadthWatcherService::class.java)
+        app.getService(ForecastWatcherService::class.java)
     }
 }
