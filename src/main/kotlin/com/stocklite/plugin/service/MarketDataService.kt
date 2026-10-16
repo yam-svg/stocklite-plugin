@@ -234,7 +234,8 @@ object MarketDataService {
                 val changePct = f.getOrElse(32) { "" }.toDoubleOrNull()
                     ?: if (prevClose > 0) (price - prevClose) / prevClose * 100 else 0.0
                 val name = f.getOrElse(1) { symbol }.ifEmpty { symbol }
-                result[symbol] = StockQuote(symbol, name, price, prevClose, change, changePct, isAuction = true)
+                // 9:25 竞价定格后价格即当日开盘价，按正常行情展示，不再带竞价标记
+                result[symbol] = StockQuote(symbol, name, price, prevClose, change, changePct, isAuction = hhmmss < 92500)
             }
         }
         return result

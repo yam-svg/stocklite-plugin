@@ -74,6 +74,10 @@
 <ul>
   <li>修复 A 股早盘集合竞价期间「集合竞价」标注文字被行高截断、显示不全的问题：竞价标记改为与涨跌幅同行的小字显示，完整可读</li>
 </ul>
+<h4>优化</h4>
+<ul>
+  <li>集合竞价 9:25 定格后价格即当日开盘价，按正常行情着色展示，不再显示「竞价」标记</li>
+</ul>
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
