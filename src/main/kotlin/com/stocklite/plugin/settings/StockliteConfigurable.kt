@@ -46,6 +46,8 @@ class StockliteConfigurable : Configurable {
     private val portfolioBarCheckBox    = JBCheckBox(L10n.settingsPortfolioBar)
     private val chartMACheckBox         = JBCheckBox(L10n.settingsChartMA)
     private val chartVolumeCheckBox     = JBCheckBox(L10n.settingsChartVolume)
+    private val sealLotsCheckBox        = JBCheckBox(L10n.settingsSealLots)
+    private val sealShrinkCheckBox      = JBCheckBox(L10n.settingsSealShrinkAlert)
 
     // AI 分析
     private val apiKeyField    = JPasswordField(30)
@@ -177,6 +179,8 @@ class StockliteConfigurable : Configurable {
         gbc.gridy = row++; panel.add(portfolioBarCheckBox,  gbc)
         gbc.gridy = row++; panel.add(chartMACheckBox,       gbc)
         gbc.gridy = row++; panel.add(chartVolumeCheckBox,   gbc)
+        gbc.gridy = row++; panel.add(sealLotsCheckBox,      gbc)
+        gbc.gridy = row++; panel.add(sealShrinkCheckBox,    gbc)
 
         // ── AI 分析 ──
         sep(L10n.settingsAiSection, row); row += 2
@@ -297,6 +301,8 @@ class StockliteConfigurable : Configurable {
                portfolioBarCheckBox.isSelected != state.enablePortfolioStatusBar ||
                chartMACheckBox.isSelected      != state.enableChartMA ||
                chartVolumeCheckBox.isSelected  != state.enableChartVolume ||
+               sealLotsCheckBox.isSelected     != state.enableSealLots ||
+               sealShrinkCheckBox.isSelected   != state.enableSealShrinkAlert ||
                String(apiKeyField.password)        != state.deepseekApiKey ||
                modelCombo.selectedItem?.toString() != state.deepseekModel  ||
                aiInjectDataCheckBox.isSelected  != state.aiInjectRealTimeData  ||
@@ -328,6 +334,8 @@ class StockliteConfigurable : Configurable {
         if (!state.enablePortfolioStatusBar) PortfolioStatusWidget.update(0.0, 0.0, 0.0, emptyList())
         state.enableChartMA = chartMACheckBox.isSelected
         state.enableChartVolume = chartVolumeCheckBox.isSelected
+        state.enableSealLots = sealLotsCheckBox.isSelected
+        state.enableSealShrinkAlert = sealShrinkCheckBox.isSelected
         state.deepseekApiKey     = String(apiKeyField.password)
         state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
         state.aiInjectRealTimeData  = aiInjectDataCheckBox.isSelected
@@ -364,6 +372,8 @@ class StockliteConfigurable : Configurable {
         portfolioBarCheckBox.isSelected = state.enablePortfolioStatusBar
         chartMACheckBox.isSelected      = state.enableChartMA
         chartVolumeCheckBox.isSelected  = state.enableChartVolume
+        sealLotsCheckBox.isSelected     = state.enableSealLots
+        sealShrinkCheckBox.isSelected   = state.enableSealShrinkAlert
         apiKeyField.text                = state.deepseekApiKey
         // 若 combo 为空（首次打开），先用保存的值填入作为占位；有 Key 时自动拉取列表
         val savedModel = state.deepseekModel.ifBlank { "deepseek-chat" }

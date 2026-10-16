@@ -142,7 +142,7 @@ class StockPanel : JPanel(BorderLayout()),
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT,   true)  { _, q  ->
             val pct = q?.changePercent ?: 0.0
             when {
-                q?.sealLots != null -> ChangePctValue(pct, null, null, auction = q.isAuction, sealLots = q.sealLots)
+                q?.sealLots != null && state.enableSealLots -> ChangePctValue(pct, null, null, auction = q.isAuction, sealLots = q.sealLots)
                 q?.isAuction == true -> ChangePctValue(pct, null, null, auction = true)
                 q?.extendedSession != null -> ChangePctValue(pct, q.extendedChangePercent, q.extendedSession)
                 else -> pct

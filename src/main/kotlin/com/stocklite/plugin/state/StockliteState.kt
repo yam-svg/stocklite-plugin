@@ -58,6 +58,8 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableIpoPanel: Boolean = true       // 新股标签页（申购日历+次新股表现），默认开启
     var enableCryptoPanel: Boolean = true    // 加密货币标签页，默认开启（依赖网络可直连交易所公开接口）
     var enableSectorPanel: Boolean = true    // A股板块标签页（行业/概念/地域全览），默认开启
+    var enableSealLots: Boolean = true       // 涨停/跌停时涨跌幅旁显示封单手数，默认开启
+    var enableSealShrinkAlert: Boolean = true // 封单快速减少（开板/翘板前兆）通知提醒，默认开启
     var cryptoDefaultsSeeded: Boolean = false // 首次使用时内置一组常见币种；置位后不再重复播种（用户删除不会复活）
     var futuresDefaultsSeeded: Boolean = false // 首次使用时内置一组常见期货；置位后不再重复播种（用户删除不会复活）
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭

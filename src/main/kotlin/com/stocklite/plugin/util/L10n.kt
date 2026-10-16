@@ -52,19 +52,32 @@ object L10n {
     val lblPostMarket  get() = s("盘后", "Post")
     val lblAuction     get() = s("竞价", "AUC")
 
-    /** 封单文案：如 封2.3万手 / Seal 23K lots（涨停买一封单、跌停卖一封单，正负仅表方向） */
-    fun sealText(lots: Long): String {
+    /** 手数数值格式化（不含单位前后缀）：20.4万 / 204K */
+    fun lotsText(lots: Long): String {
         val a = Math.abs(lots)
         return if (isEn()) when {
-            a >= 1_000_000 -> "Seal %.2fM lots".format(a / 1e6)
-            a >= 1_000     -> "Seal %.0fK lots".format(a / 1e3)
-            else           -> "Seal $a lots"
+            a >= 1_000_000 -> "%.2fM".format(a / 1e6)
+            a >= 1_000     -> "%.0fK".format(a / 1e3)
+            else           -> a.toString()
         } else when {
-            a >= 1_0000_0000 -> "封%.2f亿手".format(a / 1e8)
-            a >= 1_0000      -> "封%.1f万手".format(a / 1e4)
-            else             -> "封${a}手"
+            a >= 1_0000_0000 -> "%.2f亿".format(a / 1e8)
+            a >= 1_0000      -> "%.1f万".format(a / 1e4)
+            else             -> a.toString()
         }
     }
+
+    /** 封单文案：如 封2.3万手 / Seal 23K lots（涨停买一封单、跌停卖一封单，正负仅表方向） */
+    fun sealText(lots: Long): String =
+        if (isEn()) "Seal ${lotsText(lots)} lots" else "封${lotsText(lots)}手"
+
+    /** 封单锐减通知（涨停方向：买盘支撑减弱；跌停方向：卖压衰竭可能翘板） */
+    val sealShrinkTitle get() = s("封单异动提醒", "Seal order alert")
+    fun sealShrinkMsgUp(name: String, from: String, to: String, pct: Int) =
+        s("$name 涨停封单从 ${from}手锐减至 ${to}手（-$pct%），买盘支撑减弱，警惕开板回落",
+          "$name limit-up seal shrank from ${from} to ${to} lots (-$pct%), support weakening — possible board opening")
+    fun sealShrinkMsgDown(name: String, from: String, to: String, pct: Int) =
+        s("$name 跌停封单从 ${from}手锐减至 ${to}手（-$pct%），卖压衰竭，或有翘板反弹机会",
+          "$name limit-down seal shrank from ${from} to ${to} lots (-$pct%), selling pressure fading — possible rebound")
     val colMarket      get() = s("市场", "Market")
     val colStatus      get() = s("状态", "Status")
     val btnRefresh      get() = s("刷新",    "Refresh")
@@ -260,6 +273,8 @@ object L10n {
                                         "Show API log tab (request monitoring, for debugging)")
     val settingsChartMA     get() = s("K线图显示均线（MA5 / MA10 / MA20）", "Show moving averages on chart (MA5 / MA10 / MA20)")
     val settingsChartVolume get() = s("K线图底部显示成交量（红绿柱）", "Show volume bars at chart bottom (red/green)")
+    val settingsSealLots    get() = s("涨停/跌停时在涨跌幅旁显示封单手数", "Show sealed order lots at price limits")
+    val settingsSealShrinkAlert get() = s("封单快速减少时通知提醒（涨停开板 / 跌停翘板信号）", "Notify when sealed orders drop rapidly (board opening / rebound signal)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")

@@ -27,20 +27,24 @@ class StockAlertWatcherService : Disposable {
 
     // ── 轮询 ────────────────────────────────────────────────────────
 
+    // 封单监测：本服务只负责按间隔拉取并喂给 AlertManager，实际的滑动窗口/冷却在 AlertManager 内维护。
+    // 与到价提醒共用同一轮询：封单只需监控自选里的 A 股（数据源仅对 A 股提供盘口）。
+    private fun isCnSymbol(sym: String): Boolean =
+        sym.startsWith("sh") || sym.startsWith("sz") || sym.startsWith("bj")
+
     private fun doPoll() {
         val state = StockliteState.getInstance()
 
-        // 没有启用提醒 或 没有任何待触发的提醒 → 跳过本次，继续调度
-        if (!state.enablePriceAlerts || state.priceAlerts.none { it.enabled && !it.triggered }) {
-            scheduleNext(); return
-        }
+        val priceAlerts = if (state.enablePriceAlerts)
+            state.priceAlerts.filter { it.enabled && !it.triggered } else emptyList()
+        val cnWatch = if (state.enableSealShrinkAlert)
+            state.stocks.map { it.symbol }.filter { isCnSymbol(it) } else emptyList()
 
-        // 只拉取有有效提醒的标的，减少无效请求
-        val symbols = state.priceAlerts
-            .filter { it.enabled && !it.triggered }
-            .map { it.symbol }
-            .distinct()
-            .ifEmpty { scheduleNext(); return }
+        val priceAlertOn = priceAlerts.isNotEmpty()
+        val sealAlertOn  = state.enableSealShrinkAlert && cnWatch.isNotEmpty()
+        if (!priceAlertOn && !sealAlertOn) { scheduleNext(); return }
+
+        val symbols = (priceAlerts.map { it.symbol } + cnWatch).distinct()
 
         ApplicationManager.getApplication().executeOnPooledThread {
             val fetched = try {
@@ -51,7 +55,8 @@ class StockAlertWatcherService : Disposable {
 
             SwingUtilities.invokeLater {
                 if (fetched.isNotEmpty()) {
-                    AlertManager.checkAlerts(fetched.mapValues { it.value.price })
+                    if (priceAlertOn) AlertManager.checkAlerts(fetched.mapValues { it.value.price })
+                    if (sealAlertOn)  AlertManager.checkSealShrink(fetched)
                 }
                 scheduleNext()
             }
