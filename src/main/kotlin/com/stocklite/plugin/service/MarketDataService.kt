@@ -197,15 +197,14 @@ object MarketDataService {
     private val CN_ZONE = ZoneId.of("Asia/Shanghai")
 
     /**
-     * A 股涨跌停价（元，昨收 ± 幅度四舍五入到 0.01）：主板 10%、创业板/科创板 20%、
-     * 主板 ST 5%（双创 ST 仍 20%）、北交所 30%。
+     * A 股涨跌停价（元，昨收 ± 幅度四舍五入到 0.01）：主板 10%（含 ST/*ST，
+     * 新规已与主板普通股统一，不再适用 5%）、创业板/科创板 20%、北交所 30%。
      */
-    private fun cnLimitPrices(symbol: String, name: String, prevClose: Double): Pair<Double, Double>? {
+    private fun cnLimitPrices(symbol: String, prevClose: Double): Pair<Double, Double>? {
         if (prevClose <= 0) return null
         val ratio = when {
             symbol.startsWith("bj") -> 0.30
             symbol.startsWith("sz30") || symbol.startsWith("sh688") -> 0.20
-            name.contains("ST") -> 0.05
             else -> 0.10
         }
         fun round2(v: Double) = Math.floor(v * 100 + 0.5) / 100
@@ -216,10 +215,10 @@ object MarketDataService {
      * 封单手数（正=涨停买一封单，负=跌停卖一封单，未封板 null）。
      * bidVol1Lots/askVol1Lots 统一按"手"传入（新浪盘口量为股，需先除以 100）。
      */
-    private fun cnSealLots(symbol: String, name: String, price: Double, prevClose: Double,
+    private fun cnSealLots(symbol: String, price: Double, prevClose: Double,
                            bidVol1Lots: Double?, askVol1Lots: Double?): Long? {
         if (price <= 0) return null
-        val (limitUp, limitDown) = cnLimitPrices(symbol, name, prevClose) ?: return null
+        val (limitUp, limitDown) = cnLimitPrices(symbol, prevClose) ?: return null
         val eps = 1e-6
         return when {
             price >= limitUp - eps  -> bidVol1Lots?.let { v -> if (v <= 0) null else (v + 0.5).toLong() }
@@ -319,7 +318,7 @@ object MarketDataService {
                 // 封单量取盘口一档量：买一量=fields[10]、卖一量=fields[20]，新浪单位为股，折手除以 100
                 val bidLots = if (fields.size > 21) fields[10].toDoubleOrNull()?.let { it / 100 } else null
                 val askLots = if (fields.size > 21) fields[20].toDoubleOrNull()?.let { it / 100 } else null
-                val seal = cnSealLots(symbol, name, price, prevClose, bidLots, askLots)
+                val seal = cnSealLots(symbol, price, prevClose, bidLots, askLots)
                 result[symbol] = StockQuote(symbol, name, price.takeIf { it != 0.0 } ?: prevClose, prevClose, change, changePct, sealLots = seal)
             }
         }
