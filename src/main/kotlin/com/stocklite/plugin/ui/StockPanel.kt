@@ -65,9 +65,18 @@ class StockPanel : JPanel(BorderLayout()),
             val comp = super.getTableCellRendererComponent(table, mainPct, isSelected, hasFocus, row, column)
                     as javax.swing.JLabel
 
+            // 集合竞价：标记与涨跌幅同行显示（拆行会被行高截断）
+            if (wrapped != null && wrapped.auction) {
+                val hex = "#%02x%02x%02x".format(comp.foreground.red, comp.foreground.green, comp.foreground.blue)
+                comp.text = "<html><center>" +
+                    "<span style='color:$hex'>${Fmt.pct(mainPct)}</span>" +
+                    " <span style='font-size:85%;color:gray'>${L10n.lblAuction}</span>" +
+                    "</center></html>"
+                return comp
+            }
+
             val subText = when {
                 wrapped == null -> null
-                wrapped.auction -> L10n.lblAuction
                 wrapped.extPct != null && wrapped.session != null -> {
                     val sessionLabel = when (wrapped.session) {
                         ExtendedSession.PRE_MARKET  -> L10n.lblPreMarket
@@ -709,7 +718,7 @@ class StockPanel : JPanel(BorderLayout()),
         updateSummary()
     }
 
-    /** 有盘前/盘后数据的行显示两行文字，需要更高的行高 */
+    /** 有盘前/盘后数据的行显示两行文字，需要更高的行高（集合竞价为同行小字，无需加高） */
     private fun adjustRowHeights() {
         rows.forEachIndexed { modelRow, (_, q) ->
             val viewRow = try { table.convertRowIndexToView(modelRow) } catch (_: Exception) { modelRow }

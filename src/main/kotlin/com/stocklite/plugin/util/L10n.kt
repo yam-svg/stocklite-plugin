@@ -50,7 +50,7 @@ object L10n {
     val colIndex       get() = s("指数", "Index")
     val lblPreMarket   get() = s("盘前", "Pre")
     val lblPostMarket  get() = s("盘后", "Post")
-    val lblAuction     get() = s("集合竞价", "Auction")
+    val lblAuction     get() = s("竞价", "AUC")
     val colMarket      get() = s("市场", "Market")
     val colStatus      get() = s("状态", "Status")
     val btnRefresh      get() = s("刷新",    "Refresh")
