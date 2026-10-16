@@ -132,6 +132,8 @@ object L10n {
     val lblSessionRegular     get() = s("盘中", "Regular")
     val lblSessionLive        get() = s("实时", "Live")
     val lblNoExtended         get() = s("暂无延伸数据", "No ext. data")
+    val lblUsMarketClosed     get() = s("美股休市", "US market closed")
+    val lblUsClosedLiveTip    get() = s("休市中，显示最近收盘数据", "Market closed — showing last session data")
     val lblFuturesPosition    get() = s("股指期货多空", "Index Futures L/S")
     val lblCitic              get() = s("中信", "CITIC")
     val lblMainForce          get() = s("主力", "Top20")

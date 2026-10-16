@@ -333,7 +333,11 @@ data class SectorQuote(
     val nameCn: String,
     val regularPct: Double,
     val prePct: Double? = null,
-    val postPct: Double? = null
+    val postPct: Double? = null,
+    /** 最近一次正式盘行情对应的纽约时区日期（yyyy-MM-dd），用于休市日检测 */
+    val lastRegularDate: String? = null,
+    /** 盘前/盘后延伸行情对应的纽约时区日期（yyyy-MM-dd），用于陈旧数据剔除 */
+    val extDate: String? = null
 )
 
 /** 股票交易记录（持久化） */

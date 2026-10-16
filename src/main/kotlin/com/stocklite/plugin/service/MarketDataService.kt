@@ -357,30 +357,50 @@ object MarketDataService {
                 val change   = price - prevClose
                 val pct      = if (prevClose > 0) change / prevClose * 100 else 0.0
 
-                // 盘前/盘后延伸交易数据：仅在 marketState 明确为 PRE/POST/POSTPOST 时才展示，
-                // 避免交易时段内残留的 preMarketPrice 字段干扰正常行情。
-                val marketState = meta.optString("marketState", "")
-                val extPair: Pair<Double?, ExtendedSession?> = when (marketState) {
-                    "PRE" -> {
-                        val p = meta.optDouble("preMarketPrice", Double.NaN).takeIf { it.isFinite() && it > 0 }
-                        p to if (p != null) ExtendedSession.PRE_MARKET else null
-                    }
-                    "POST", "POSTPOST" -> {
-                        val p = meta.optDouble("postMarketPrice", Double.NaN).takeIf { it.isFinite() && it > 0 }
-                        p to if (p != null) ExtendedSession.POST_MARKET else null
-                    }
-                    else -> null to null
-                }
-                val extPrice = extPair.first
-                val extSession = extPair.second
-                val extPct = if (extPrice != null && prevClose > 0)
-                    (extPrice - prevClose) / prevClose * 100 else null
-
-                result[sym] = StockQuote(sym, name, price, prevClose, change, pct,
-                    extendedPrice = extPrice, extendedChangePercent = extPct, extendedSession = extSession)
+                result[sym] = StockQuote(sym, name, price, prevClose, change, pct)
             } catch (_: Exception) {}
         }
 
+        // 美股盘前/盘后延伸数据：Yahoo v8 chart 的 meta 从未提供 pre/postMarketPrice 字段
+        // （旧读取逻辑永远不生效），改在盘前/盘后窗口用新浪 gb_ 批量补充
+        val usSession = currentUsSession()
+        if (usShares.isNotEmpty() &&
+            (usSession == UsSession.PRE || usSession == UsSession.POST)) {
+            for ((sym, pair) in getUsExtendedQuotes(usShares, usSession)) {
+                val q = result[sym] ?: continue
+                result[sym] = q.copy(
+                    extendedPrice = pair.first,
+                    extendedChangePercent = pair.second,
+                    extendedSession = if (usSession == UsSession.PRE)
+                        ExtendedSession.PRE_MARKET else ExtendedSession.POST_MARKET
+                )
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * 新浪 gb_ 批量取美股盘前/盘后价（symbols 为不带市场前缀的裸代码）。
+     * 返回 代码 → (延伸价, 相对最近正式收盘的涨跌幅%)；延伸时间戳非当天（ET）视为陈旧数据丢弃。
+     */
+    private fun getUsExtendedQuotes(symbols: List<String>, session: UsSession): Map<String, Pair<Double, Double>> {
+        val result = mutableMapOf<String, Pair<Double, Double>>()
+        if (session != UsSession.PRE && session != UsSession.POST) return result
+        val codeToSym = symbols.associateBy { "gb_" + it.lowercase() }
+        for (chunk in codeToSym.keys.chunked(30)) {
+            val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${chunk.joinToString(",")}",
+                "http://finance.sina.com.cn", label = "美股延伸时段行情") ?: continue
+            for (m in Regex("""var hq_str_gb_([^=]+)="([^"]*)"""").findAll(raw)) {
+                val sym = codeToSym["gb_" + m.groupValues[1].lowercase()] ?: continue
+                val f   = m.groupValues[2].split(",")
+                if (f.size < 27) continue
+                val close = f[1].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+                val ext   = f[21].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+                if (parseSinaUsStamp(f.getOrElse(24) { "" }) != etToday()) continue
+                result[sym] = ext to (ext - close) / close * 100
+            }
+        }
         return result
     }
 
@@ -1448,71 +1468,122 @@ object MarketDataService {
         }
     }
 
+    /**
+     * 美股板块 ETF 行情：主源新浪 gb_ 批量（单次请求，国内直连），
+     * 缺漏的标的再逐个走 Yahoo v8 chart 兜底。
+     */
     fun getUsSectorQuotes(): Map<String, SectorQuote> {
-        val result = mutableMapOf<String, SectorQuote>()
         val session = currentUsSession()
+        val result  = getUsSectorQuotesViaSina(session).toMutableMap()
         for ((symbol, nameCn) in US_SECTOR_ETFS) {
-            try {
-                val enc = URLEncoder.encode(symbol, "UTF-8")
-                // includePrePost=true 使盘前/盘后分钟数据包含在 indicators 里
-                val raw = HttpUtil.get(
-                    "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d&includePrePost=true",
-                    label = "美股板块ETF"
-                ) ?: continue
-                val result0 = JSONObject(raw).optJSONObject("chart")
-                    ?.optJSONArray("result")?.optJSONObject(0) ?: continue
-                val meta = result0.optJSONObject("meta") ?: continue
-
-                // 昨日正式收盘价（regularMarketPrice 在盘前/盘后也不变，等于昨收）
-                val prevClose = meta.optDouble("chartPreviousClose", Double.NaN).let {
-                    if (it.isFinite() && it > 0) it
-                    else meta.optDouble("regularMarketPreviousClose", Double.NaN).let { c ->
-                        if (c.isFinite() && c > 0) c else meta.optDouble("previousClose", Double.NaN)
-                    }
-                }.takeIf { it.isFinite() && it > 0 } ?: continue
-
-                // 上次正式收盘涨跌幅（regularMarketPrice 在盘前/盘后等于昨收，涨跌幅为 0；
-                // 取 meta 中的 regularMarketChangePercent 更准）
-                val regularPrice = meta.optDouble("regularMarketPrice", Double.NaN)
-                    .takeIf { it.isFinite() && it > 0 } ?: prevClose
-                val regularPct   = (regularPrice - prevClose) / prevClose * 100
-
-                // 盘前/盘后最新价：从 indicators 分钟线取最后一根有效 close
-                val extPct: Double? = if (session == UsSession.PRE || session == UsSession.POST) {
-                    val timestamps = result0.optJSONArray("timestamp")
-                    val closes = result0.optJSONObject("indicators")
-                        ?.optJSONArray("quote")?.optJSONObject(0)
-                        ?.optJSONArray("close")
-                    if (timestamps != null && closes != null) {
-                        val nyZone  = ZoneId.of("America/New_York")
-                        val preStart  =  4 * 60   // 04:00 ET in minutes
-                        val preEnd    =  9 * 60 + 30
-                        val postStart = 16 * 60
-                        val postEnd   = 20 * 60
-                        var lastExtPrice: Double? = null
-                        for (i in 0 until minOf(timestamps.length(), closes.length())) {
-                            val ts = timestamps.optLong(i, -1).takeIf { it > 0 } ?: continue
-                            val cl = closes.optDouble(i, Double.NaN).takeIf { it.isFinite() && it > 0 } ?: continue
-                            val nyMin = java.time.Instant.ofEpochSecond(ts)
-                                .atZone(nyZone).let { it.hour * 60 + it.minute }
-                            val inRange = if (session == UsSession.PRE)
-                                nyMin in preStart until preEnd
-                            else
-                                nyMin in postStart until postEnd
-                            if (inRange) lastExtPrice = cl
-                        }
-                        if (lastExtPrice != null) (lastExtPrice - prevClose) / prevClose * 100
-                        else null
-                    } else null
-                } else null
-
-                val prePct  = if (session == UsSession.PRE)  extPct else null
-                val postPct = if (session == UsSession.POST) extPct else null
-
-                result[symbol] = SectorQuote(symbol, nameCn, regularPct, prePct, postPct)
-            } catch (_: Exception) {}
+            if (symbol in result) continue
+            try { getUsSectorQuoteViaYahoo(symbol, nameCn, session)?.let { result[symbol] = it } } catch (_: Exception) {}
         }
         return result
+    }
+
+    private val NY_ZONE = ZoneId.of("America/New_York")
+
+    /** 今天的纽约时区日期（yyyy-MM-dd） */
+    private fun etToday(): String = ZonedDateTime.now(NY_ZONE).toLocalDate().toString()
+
+    /**
+     * 新浪美股时段戳（形如 "Oct 16 05:13AM EDT"，EDT/EST 随夏令时切换）→ 纽约时区日期。
+     * 解析失败返回 null；跨年场景（1 月初解析到 12 月戳）自动回退年份。
+     */
+    private fun parseSinaUsStamp(stamp: String): String? {
+        val m = Regex("""([A-Z][a-z]{2}) (\d{1,2}) (\d{1,2}):(\d{2})(AM|PM)\s*(?:EDT|EST)""").find(stamp) ?: return null
+        val month = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+            .indexOf(m.groupValues[1]).let { if (it < 0) return null else it + 1 }
+        val day  = m.groupValues[2].toIntOrNull()?.takeIf { it in 1..31 } ?: return null
+        val min  = m.groupValues[4].toIntOrNull()?.takeIf { it in 0..59 } ?: return null
+        val hour = m.groupValues[3].toIntOrNull()?.let { h ->
+            when {
+                m.groupValues[5] == "AM" && h == 12 -> 0
+                m.groupValues[5] == "PM" && h != 12 -> h + 12
+                else -> h
+            }
+        } ?: return null
+        if (hour !in 0..23) return null
+        val nowNy = ZonedDateTime.now(NY_ZONE)
+        var date  = java.time.LocalDate.of(nowNy.year, month, day)
+        if (date.isAfter(nowNy.toLocalDate().plusDays(2))) date = date.minusYears(1)
+        return date.toString()
+    }
+
+    /**
+     * 新浪 gb_ 批量解析。字段（0 基）：1=最近正式价（盘中实时/盘外为最近收盘），
+     * 21=盘前/盘后最新价，24=延伸时段戳，25=最近正式盘戳，26=最近正式价的昨收。
+     * 延伸涨跌幅基线用 f[1]（盘前=昨收、盘后=今收），时间戳非当天的陈旧延伸数据直接丢弃。
+     */
+    private fun getUsSectorQuotesViaSina(session: UsSession): Map<String, SectorQuote> {
+        val result = mutableMapOf<String, SectorQuote>()
+        val codes = US_SECTOR_ETFS.map { "gb_" + it.first.lowercase() }
+        for (chunk in codes.chunked(30)) {
+            val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=${chunk.joinToString(",")}",
+                "http://finance.sina.com.cn", label = "美股板块ETF") ?: continue
+            for (m in Regex("""var hq_str_gb_([^=]+)="([^"]*)"""").findAll(raw)) {
+                val symbol = m.groupValues[1].uppercase()
+                val f      = m.groupValues[2].split(",")
+                if (f.size < 27) continue
+                val price = f[1].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+                val prev  = f[26].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+                val nameCn = US_SECTOR_ETFS.firstOrNull { it.first == symbol }?.second ?: symbol
+                val lastRegularDate = parseSinaUsStamp(f[25])
+                val extDate  = if (f.size > 24) parseSinaUsStamp(f[24]) else null
+                val extPrice = f.getOrElse(21) { "" }.toDoubleOrNull()?.takeIf { it > 0 }
+                val extPct = if ((session == UsSession.PRE || session == UsSession.POST) &&
+                    extPrice != null && extDate == etToday())
+                    (extPrice - price) / price * 100 else null
+                result[symbol] = SectorQuote(
+                    symbol, nameCn, (price - prev) / prev * 100,
+                    if (session == UsSession.PRE)  extPct else null,
+                    if (session == UsSession.POST) extPct else null,
+                    lastRegularDate, extDate
+                )
+            }
+        }
+        return result
+    }
+
+    /**
+     * Yahoo v8 chart 兜底。延伸涨跌幅用 meta.fulldayPrice（含延伸时段最新价）
+     * 对比 regularMarketPrice（盘前=昨收、盘后=今收）；休市时无延伸成交，
+     * fulldayPrice 与 regularMarketPrice 相同，视为无延伸数据。
+     */
+    private fun getUsSectorQuoteViaYahoo(symbol: String, nameCn: String, session: UsSession): SectorQuote? {
+        val enc = URLEncoder.encode(symbol, "UTF-8")
+        val raw = HttpUtil.get(
+            "https://query1.finance.yahoo.com/v8/finance/chart/$enc?interval=1m&range=1d&includePrePost=true",
+            label = "美股板块ETF(Yahoo兜底)"
+        ) ?: return null
+        val result0 = JSONObject(raw).optJSONObject("chart")
+            ?.optJSONArray("result")?.optJSONObject(0) ?: return null
+        val meta = result0.optJSONObject("meta") ?: return null
+
+        val prevClose = meta.optDouble("chartPreviousClose", Double.NaN).let {
+            if (it.isFinite() && it > 0) it
+            else meta.optDouble("regularMarketPreviousClose", Double.NaN).let { c ->
+                if (c.isFinite() && c > 0) c else meta.optDouble("previousClose", Double.NaN)
+            }
+        }.takeIf { it.isFinite() && it > 0 } ?: return null
+
+        val regularPrice = meta.optDouble("regularMarketPrice", Double.NaN)
+            .takeIf { it.isFinite() && it > 0 } ?: prevClose
+        val regularPct   = (regularPrice - prevClose) / prevClose * 100
+
+        val extPct = if (session == UsSession.PRE || session == UsSession.POST) {
+            val fd = meta.optDouble("fulldayPrice", Double.NaN)
+            if (fd.isFinite() && fd > 0 && fd != regularPrice) (fd - regularPrice) / regularPrice * 100 else null
+        } else null
+
+        val lastRegularDate = meta.optLong("regularMarketTime", 0).takeIf { it > 0 }
+            ?.let { Instant.ofEpochSecond(it).atZone(NY_ZONE).toLocalDate().toString() }
+
+        return SectorQuote(symbol, nameCn, regularPct,
+            if (session == UsSession.PRE)  extPct else null,
+            if (session == UsSession.POST) extPct else null,
+            lastRegularDate, null)
     }
 
     // ══════════════════════════════════════════════════════════════
