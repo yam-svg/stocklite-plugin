@@ -167,20 +167,28 @@ class StockliteConfigurable : Configurable {
         intervalRow(L10n.settingsGlobalInterval, globalIntervalSpinner, row++)
         intervalRow(L10n.settingsCryptoInterval, cryptoIntervalSpinner, row++)
 
-        // ── 功能开关 ──
+        // ── 功能开关（按用途分组，灰体小标题 + 缩进复选框）──
         sep(L10n.settingsFeatures, row); row += 2
-        gbc.gridy = row++; panel.add(cryptoPanelCheckBox,  gbc)
-        gbc.gridy = row++; panel.add(sectorPanelCheckBox,  gbc)
-        gbc.gridy = row++; panel.add(ipoPanelCheckBox,     gbc)
-        gbc.gridy = row++; panel.add(usMarketPanelCheckBox, gbc)
-        gbc.gridy = row++; panel.add(apiLogPanelCheckBox,  gbc)
-        gbc.gridy = row++; panel.add(alertsCheckBox,        gbc)
-        gbc.gridy = row++; panel.add(fundNavAlertCheckBox,  gbc)
-        gbc.gridy = row++; panel.add(portfolioBarCheckBox,  gbc)
-        gbc.gridy = row++; panel.add(chartMACheckBox,       gbc)
-        gbc.gridy = row++; panel.add(chartVolumeCheckBox,   gbc)
-        gbc.gridy = row++; panel.add(sealLotsCheckBox,      gbc)
-        gbc.gridy = row++; panel.add(sealShrinkCheckBox,    gbc)
+
+        fun group(text: String, row: Int): Int {
+            gbc.gridy = row; gbc.insets = Insets(8, 12, 2, 8)
+            panel.add(JLabel("<html><font color='gray'><b>$text</b></font></html>"), gbc)
+            return row + 1
+        }
+        fun cbRow(cb: JComponent, row: Int): Int {
+            gbc.gridy = row; gbc.insets = Insets(2, 24, 2, 8)
+            panel.add(cb, gbc)
+            return row + 1
+        }
+
+        row = group(L10n.settingsGroupPanels, row)
+        listOf(cryptoPanelCheckBox, sectorPanelCheckBox, ipoPanelCheckBox,
+               usMarketPanelCheckBox, apiLogPanelCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        row = group(L10n.settingsGroupAlerts, row)
+        listOf(alertsCheckBox, fundNavAlertCheckBox, sealShrinkCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        row = group(L10n.settingsGroupDisplay, row)
+        listOf(chartMACheckBox, chartVolumeCheckBox, sealLotsCheckBox, portfolioBarCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        gbc.insets = Insets(2, 8, 2, 8)  // 恢复后续区块的默认缩进
 
         // ── AI 分析 ──
         sep(L10n.settingsAiSection, row); row += 2

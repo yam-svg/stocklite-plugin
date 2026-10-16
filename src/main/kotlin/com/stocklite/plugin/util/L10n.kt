@@ -267,6 +267,9 @@ object L10n {
     val settingsGlobalInterval   get() = s("全球指数（秒）:", "Global (sec):")
     val settingsCryptoInterval   get() = s("加密行情（秒）:", "Crypto (sec):")
     val settingsFeatures    get() = s("功能开关",         "Features")
+    val settingsGroupPanels get() = s("行情面板",         "Market Panels")
+    val settingsGroupAlerts get() = s("提醒通知",         "Alerts & Notifications")
+    val settingsGroupDisplay get() = s("行情显示",        "Display")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
