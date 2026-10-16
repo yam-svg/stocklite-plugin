@@ -135,10 +135,7 @@ data class FundQuote(
     val name: String,
     val nav: Double,
     val changePercent: Double,
-    val date: String,
-    val estimatedNav: Double? = null,
-    val estimatedChangePercent: Double? = null,
-    val hasEstimate: Boolean = false
+    val date: String
 )
 
 data class FutureQuote(

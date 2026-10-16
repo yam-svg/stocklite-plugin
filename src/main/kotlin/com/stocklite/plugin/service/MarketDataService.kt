@@ -388,16 +388,13 @@ object MarketDataService {
     // 基金行情（移植自 registerFundQuoteHandlers — 完整多级备用逻辑）
     // ══════════════════════════════════════════════════════════════
 
-    private val KNOWN_QDII_CODES = setOf("017437")
-    private val QDII_NAME_KW = listOf("qdii","全球","海外","纳斯达克","标普","道琼斯","日经","恒生","msci","nasdaq","s&p","dow","hang seng")
     // 面板自身的刷新定时器和 FundNavWatcherService 的后台轮询会各自在独立线程上并发调用
-    // getFundQuotes，此处以及下方水位线缓存必须使用线程安全集合，否则并发读写可能
+    // getFundQuotes，下方水位线缓存必须使用线程安全集合，否则并发读写可能
     // 抛出 ConcurrentModificationException 导致某轮抓取静默失败。
-    private val detectedQdiiCodes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /**
      * 官方净值水位线：记录每个基金代码"已确认"的最新官方净值（nav/changePercent/date）。
-     * fundgz、Sina、F10 均走 CDN，边缘节点数据不同步时偶发返回滞后快照，
+     * 腾讯、F10 均走 CDN，边缘节点数据不同步时偶发返回滞后快照，
      * 若不加约束会导致净值在新旧数据之间来回跳变。这里跨轮次记忆已知最优结果，
      * 任何一次抓取若日期落后于水位线，则用水位线纠正，只允许官方净值随时间前进、不倒退。
      */
@@ -409,8 +406,7 @@ object MarketDataService {
         var result = computed
         officialQuoteHighWaterMark.compute(code) { _, prevBest: FundQuote? ->
             if (prevBest != null && !(computed.date.isNotEmpty() && computed.date >= prevBest.date)) {
-                // 本次官方日期落后于已知最优（命中滞后 CDN 节点等）——
-                // 官方字段用水位线纠正，估值类字段仍保留本轮抓取结果（这些字段本就逐轮刷新）。
+                // 本次官方日期落后于已知最优（命中滞后 CDN 节点等）——用水位线纠正
                 result = computed.copy(nav = prevBest.nav, changePercent = prevBest.changePercent, date = prevBest.date)
                 prevBest
             } else {
@@ -422,39 +418,22 @@ object MarketDataService {
     }
 
     private fun normFundCode(raw: String) = raw.trim().let { Regex("\\d{6}").find(it)?.value ?: it }
-    private fun isQDIIByCode(code: String) = normFundCode(code) in KNOWN_QDII_CODES
-    private fun isQDIIByName(name: String?) = name?.lowercase()?.let { n -> QDII_NAME_KW.any { n.contains(it) } } == true
-    private fun isQDII(code: String) = isQDIIByCode(code) || code in detectedQdiiCodes
 
+    // 天天基金实时估值接口 fundgz.1234567.com.cn 已整体下线（官方公告"下线指数基金净值估算
+    // 功能"，接口对所有代码返回 404 页，东财移动 API 的 GSZ 字段亦为 null），基金面板
+    // 因此不再有"今日估算"列。新浪 fund_ 基金接口同样已下线（对所有代码返回空串），
+    // 行情改为 腾讯 jj 批量接口 + 东财 F10 官方净值 两级结构。
     fun getFundQuotes(codes: List<String>): Map<String, FundQuote> {
         if (codes.isEmpty()) return emptyMap()
         val unique = codes.map { normFundCode(it) }.distinct().filter { it.isNotEmpty() }
         val results = mutableMapOf<String, FundQuote>()
 
-        // ── 第一步：全部走 fundgz（获取估算 + 名称 + 官方净值日期） ──
+        // ── 第一步：腾讯批量抓取（名称 + 单位净值 + 涨跌 + 净值日期，一次请求覆盖全部代码） ──
+        fetchFundsTencent(unique).forEach { (c, q) -> results[c] = q }
+
+        // ── 第二步：F10 增强（东财历史净值 API 是官方涨跌权威来源，逐代码补全） ──
+        //   合并原则：日期更新的数据胜出；F10 失败或日期滞后时不覆盖已有净值日期 ──
         for (code in unique) {
-            fetchFundgz(code)?.let { q ->
-                results[code] = q
-                if (isQDIIByName(q.name)) detectedQdiiCodes.add(code)
-            }
-        }
-
-        // ── 第二步：Sina 备用（fundgz 失败的） ──
-        val needSina = unique.filter { !results.containsKey(it) }
-        if (needSina.isNotEmpty()) fetchFundsSina(needSina).forEach { (c, q) ->
-            results[c] = q
-            if (isQDIIByName(q.name)) detectedQdiiCodes.add(c)
-        }
-
-        // ── 第三步：F10 增强
-        //   QDII：F10 是官方涨跌权威来源，必须获取
-        //   普通基金：fundgz 不返回官方涨跌幅（changePercent 固定为 0），均需 F10 补全
-        //   合并原则：日期更新的数据胜出；F10 未更新时不覆盖 fundgz 的净值日期 ──
-        val needF10 = unique.filter { code ->
-            val q = results[code]
-            q == null || isQDII(code) || !q.changePercent.isFinite() || q.changePercent == 0.0
-        }
-        for (code in needF10) {
             val f10 = fetchF10Nav(code) ?: continue
             val existing = results[code]
             if (existing == null) {
@@ -474,25 +453,14 @@ object MarketDataService {
                     // nav 和 changePercent 取 F10（官方精度），与 Electron 版一致
                     nav                     = if (f10.nav > 0) f10.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble() else existing.nav,
                     changePercent           = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-                    // 取两者中较新的日期：F10 已更新时用 F10 日期，F10 CDN 旧节点返回旧日期时保持 fundgz 日期不退
-                    date                    = maxOf(existing.date, f10.date.ifEmpty { existing.date }),
-                    estimatedNav            = if (isQDII(code)) null else existing.estimatedNav,
-                    estimatedChangePercent  = if (isQDII(code)) null else existing.estimatedChangePercent,
-                    hasEstimate             = if (isQDII(code)) false else existing.hasEstimate
+                    // 取两者中较新的日期：F10 已更新时用 F10 日期，F10 CDN 旧节点返回旧日期时保持腾讯日期不退
+                    date                    = maxOf(existing.date, f10.date.ifEmpty { existing.date })
                 )
             }
         }
 
-        // ── QDII 兜底清除估算（F10 失败时 fundgz 的估算字段可能残留） ──
-        for (code in unique.filter { isQDII(it) }) {
-            results[code]?.let { q ->
-                if (q.hasEstimate || q.estimatedNav != null)
-                    results[code] = q.copy(estimatedNav = null, estimatedChangePercent = null, hasEstimate = false)
-            }
-        }
-
         // ── 官方净值水位线：跨轮次纠正，杜绝面板定时器与后台 Watcher 并发轮询时
-        //    谁先返回谁生效导致的净值新旧来回跳变（不影响本轮抓到的估值字段）──
+        //    谁先返回谁生效导致的净值新旧来回跳变 ──
         for (code in unique) {
             results[code]?.let { results[code] = advanceHighWaterMark(code, it) }
         }
@@ -500,61 +468,28 @@ object MarketDataService {
         return results
     }
 
-    private fun fetchFundgz(code: String): FundQuote? {
-        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js", label = "基金估算净值") ?: return null
-        val m = Regex("""jsonpgz\((.*)\);?""").find(raw)?.groupValues?.get(1) ?: return null
-        return try {
-            val j = JSONObject(m)
-            val fundCode = j.optString("fundcode", code)
-            val name   = j.optString("name").takeIf { it.isNotEmpty() } ?: return null
-            val gsz    = j.optString("gsz").toDoubleOrNull()?.takeIf { it > 0 }
-            val dwjz   = j.optString("dwjz").toDoubleOrNull()?.takeIf { it > 0 }
-            val gszzl  = j.optString("gszzl").toDoubleOrNull()
-            val jzrq   = j.optString("jzrq", "")
-            val gztime = j.optString("gztime", "")
-            val nav    = dwjz ?: gsz ?: return null
-            val estimatedChange = if (dwjz != null && gszzl != null) gszzl / 100.0 * dwjz else 0.0
-            val isToday = gztime.isNotEmpty() && isTodayValue(gztime)
-            FundQuote(
-                code = fundCode, name = name, nav = nav,
-                changePercent = 0.0,  // 由 F10 补全
-                date = jzrq,
-                estimatedNav = gsz, estimatedChangePercent = gszzl,
-                hasEstimate = gsz != null && isToday
-            )
-        } catch (_: Exception) { null }
-    }
-
-    private fun fetchFundsSina(codes: List<String>): Map<String, FundQuote> {
+    // 腾讯 jj 基金接口（GBK 编码，批量），字段以 ~ 分隔：
+    // 0=代码 1=名称 5=单位净值 6=累计净值 7=净值日涨跌% 8=净值日期
+    private fun fetchFundsTencent(codes: List<String>): Map<String, FundQuote> {
         if (codes.isEmpty()) return emptyMap()
-        val q = codes.joinToString(",") { "fund_$it" }
-        val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=$q", "http://finance.sina.com.cn",
-            label = "基金行情-新浪") ?: return emptyMap()
+        val raw = HttpUtil.getGbk("https://qt.gtimg.cn/q=${codes.joinToString(",") { "jj$it" }}",
+            label = "基金行情-腾讯") ?: return emptyMap()
         val result = mutableMapOf<String, FundQuote>()
-        val re = Regex("""var hq_str_fund_([^=]+)="([^"]*)"""")
+        val re = Regex("""v_jj(\d{6})="([^"]*)"""")
         for (m in re.findAll(raw)) {
-            val code = m.groupValues[1].trim()
-            val data = m.groupValues[2].split(",")
-            if (data.size < 3) continue
-            val name = data[0].trim().takeIf { it.isNotEmpty() } ?: continue
-            val nav  = data[1].toDoubleOrNull() ?: 0.0
-            val prev = data[2].toDoubleOrNull() ?: 0.0
-            val effectiveNav = (nav.takeIf { it > 0 } ?: prev).takeIf { it > 0 } ?: continue
-            val change    = if (nav != 0.0) nav - prev else 0.0
-            val changePct = if (prev != 0.0) change / prev * 100 else 0.0
+            val code = m.groupValues[1]
+            val f = m.groupValues[2].split("~")
+            if (f.size < 9) continue
+            val name = f[1].trim().takeIf { it.isNotEmpty() } ?: continue
+            val nav  = f[5].toDoubleOrNull()?.takeIf { it > 0 } ?: continue
+            val pct  = f[7].toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
             result[code] = FundQuote(
-                code = code, name = name, nav = effectiveNav,
-                changePercent = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-                date = data.getOrElse(4) { today() }
+                code = code, name = name, nav = nav,
+                changePercent = pct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
+                date = f[8].trim().ifEmpty { today() }
             )
         }
         return result
-    }
-
-    private fun fetchFundName(code: String): String? {
-        val raw = HttpUtil.get("https://fundgz.1234567.com.cn/js/$code.js", label = "基金名称查询") ?: return null
-        val m = Regex("""jsonpgz\((.*)\);?""").find(raw)?.groupValues?.get(1) ?: return null
-        return try { JSONObject(m).optString("name").ifEmpty { null } } catch (_: Exception) { null }
     }
 
     /**
@@ -595,7 +530,7 @@ object MarketDataService {
         return FundQuote(code = code, name = name,
             nav = p.nav.toBigDecimal().setScale(4, java.math.RoundingMode.HALF_UP).toDouble(),
             changePercent = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
-            date = p.date.ifEmpty { today() }, hasEstimate = false)
+            date = p.date.ifEmpty { today() })
     }
 
     private fun enrichWithF10(q: FundQuote, p: F10Nav): FundQuote {
@@ -607,14 +542,6 @@ object MarketDataService {
             changePercent = changePct.toBigDecimal().setScale(2, java.math.RoundingMode.HALF_UP).toDouble(),
             date = p.date.ifEmpty { q.date }
         )
-    }
-
-    private fun isTodayValue(raw: String): Boolean {
-        val m = Regex("(\\d{4})-(\\d{1,2})-(\\d{1,2})").find(raw.replace("/", "-")) ?: return false
-        val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
-        return now.year == m.groupValues[1].toInt() &&
-               now.monthValue == m.groupValues[2].toInt() &&
-               now.dayOfMonth == m.groupValues[3].toInt()
     }
 
     private fun today() = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))

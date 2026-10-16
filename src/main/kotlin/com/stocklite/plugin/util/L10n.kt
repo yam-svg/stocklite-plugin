@@ -44,7 +44,6 @@ object L10n {
     val colNav         get() = s("当前净值", "NAV")
     val colOfficialChg get() = s("官方涨跌", "Official Chg")
     val colNavDate     get() = s("净值日期", "NAV Date")
-    val colTodayEst    get() = s("今日估算", "Today Est.")
     val colShares      get() = s("持仓份额", "Shares")
     val colCostNav     get() = s("成本净值", "Cost NAV")
     val colIndex       get() = s("指数", "Index")
@@ -290,14 +289,12 @@ object L10n {
     val settingsFundNav     get() = colNav       + always
     val settingsFundOfficialChg get() = colOfficialChg + always
     val settingsFundNavDate get() = s("净值日期（始终显示，日期变今天即说明已更新）", "NAV Date (always shown; changes to today when official NAV is published)")
-    val settingsFundTodayEst get() = s("今日估算（始终显示，官方净值更新后显示 官方✓）", "Today Est. (always shown; shows Official✓ after NAV is published)")
     val settingsOptStockSymbol  get() = s("代码",    "Symbol")
     val settingsOptStockQty     get() = s("持仓数量", "Quantity")
     val settingsOptStockCost    get() = s("成本价",   "Cost Price")
     val settingsOptStockValue   get() = s("市值",     "Market Value")
     val settingsOptStockPnl     get() = s("盈亏",     "P&L")
     val settingsOptStockPnlPct  get() = s("盈亏%",    "P&L%")
-    val settingsOptFundTodayEst get() = s("今日估算", "Today Est.")
     val settingsOptFundCode     get() = s("代码",    "Code")
     val settingsOptFundShares   get() = s("持仓份额", "Shares")
     val settingsOptFundCostNav  get() = s("成本净值", "Cost NAV")

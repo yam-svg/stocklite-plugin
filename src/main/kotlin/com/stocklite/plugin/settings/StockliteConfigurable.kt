@@ -103,7 +103,6 @@ class StockliteConfigurable : Configurable {
 
     // 基金可选列
     private val fundOptional get() = listOf(
-        "todayChange" to L10n.settingsOptFundTodayEst,
         "code"        to L10n.settingsOptFundCode,
         "shares"      to L10n.settingsOptFundShares,
         "costNav"     to L10n.settingsOptFundCostNav,

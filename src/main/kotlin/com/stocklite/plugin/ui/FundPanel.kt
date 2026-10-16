@@ -9,8 +9,6 @@ import com.stocklite.plugin.service.MarketDataService
 import com.stocklite.plugin.state.*
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
-import com.stocklite.plugin.ui.common.QuoteRenderer.Companion.SENTINEL_NO_ESTIMATE
-import com.stocklite.plugin.ui.common.QuoteRenderer.Companion.SENTINEL_OFFICIAL_UPDATED
 import com.stocklite.plugin.ui.dialogs.AddFundDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
@@ -53,14 +51,6 @@ class FundPanel : JPanel(BorderLayout()),
             val d = q?.date ?: return@ColDef "--"
             if (d.length >= 10) d.substring(5) else d
         },
-        ColDef("todayChange",  L10n.colTodayEst,   QuoteColumnType.PCT,    false) { _, q  ->
-            when {
-                q == null        -> SENTINEL_NO_ESTIMATE
-                q.hasEstimate    -> q.estimatedChangePercent ?: 0.0
-                q.date == todayStr() -> SENTINEL_OFFICIAL_UPDATED
-                else             -> SENTINEL_NO_ESTIMATE
-            }
-        },
         ColDef("code",         L10n.colSymbol,     QuoteColumnType.PLAIN)        { f, _  -> f.code },
         ColDef("shares",       L10n.colShares,     QuoteColumnType.QTY)          { f, _  -> f.shares },
         ColDef("costNav",      L10n.colCostNav,    QuoteColumnType.PRICE4)       { f, _  -> f.costNav },
@@ -76,11 +66,6 @@ class FundPanel : JPanel(BorderLayout()),
             if (f.shares > 0 && n > 0 && f.costNav > 0) (n - f.costNav) / f.costNav * 100.0 else 0.0
         },
     )
-
-    private fun todayStr(): String {
-        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
-        return String.format("%04d-%02d-%02d", now.year, now.monthValue, now.dayOfMonth)
-    }
 
     private var visibleCols: List<ColDef> = emptyList()
     private val state get() = StockliteState.getInstance()
@@ -229,7 +214,7 @@ class FundPanel : JPanel(BorderLayout()),
                 val (f, q) = rows[modelRow]
                 when (table.getColumnName(viewCol)) {
                     L10n.colName -> com.stocklite.plugin.ui.dialogs.FundHoldingsDialog(f.name, f.code).show()
-                    L10n.colOfficialChg, L10n.colTodayEst -> chartPanel.showChart(
+                    L10n.colOfficialChg -> chartPanel.showChart(
                         displayName   = f.alias.ifBlank { f.name },
                         displaySymbol = f.code,
                         changePercent = q?.changePercent ?: 0.0,
@@ -241,7 +226,7 @@ class FundPanel : JPanel(BorderLayout()),
         })
 
         // 鼠标悬停在名称/涨跌幅列时显示手型光标
-        val clickableCols = setOf(L10n.colName, L10n.colOfficialChg, L10n.colTodayEst)
+        val clickableCols = setOf(L10n.colName, L10n.colOfficialChg)
         table.addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
             override fun mouseMoved(e: MouseEvent) {
                 val col = table.columnAtPoint(e.point)
@@ -306,10 +291,6 @@ class FundPanel : JPanel(BorderLayout()),
             sb.appendLine("当前净值：${"%.4f".format(q.nav)}")
             val offSign = if (q.changePercent >= 0) "+" else ""
             sb.appendLine("官方涨跌：$offSign${"%.2f".format(q.changePercent)}%")
-            if (q.estimatedChangePercent != null) {
-                val estSign = if ((q.estimatedChangePercent ?: 0.0) >= 0) "+" else ""
-                sb.appendLine("今日估算：$estSign${"%.2f".format(q.estimatedChangePercent)}%")
-            }
             if (!q.date.isNullOrBlank()) sb.appendLine("净值日期：${q.date}")
             if (f.costNav > 0) {
                 sb.appendLine("成本净值：${"%.4f".format(f.costNav)}")
@@ -474,7 +455,7 @@ class FundPanel : JPanel(BorderLayout()),
         val todayPnl   = rows.sumOf { (f, q) ->
             if (f.shares <= 0 || q == null) return@sumOf 0.0
             val n = q.nav; if (n <= 0) return@sumOf 0.0
-            val pct = (if (q.hasEstimate) q.estimatedChangePercent ?: q.changePercent else q.changePercent) / 100.0
+            val pct = q.changePercent / 100.0
             n / (1 + pct) * pct * f.shares
         }
         fun sign(v: Double) = if (v >= 0) "+" else ""
@@ -520,7 +501,6 @@ class FundPanel : JPanel(BorderLayout()),
             for ((f, q) in holdings) {
                 val nav    = q?.nav?.let { "%.4f".format(it) } ?: "--"
                 val offChg = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
-                val estChg = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
                 val date   = q?.date?.let { "净值日期:$it" } ?: ""
                 val pnlStr = if (q != null && f.costNav > 0) {
                     val pct    = (q.nav - f.costNav) / f.costNav * 100
@@ -528,7 +508,7 @@ class FundPanel : JPanel(BorderLayout()),
                     val s      = if (pct >= 0) "+" else ""
                     "成本净值:${"%.4f".format(f.costNav)}  持有份额:${"%.2f".format(f.shares)}  盈亏:$s${"%.2f".format(amount)}($s${"%.2f".format(pct)}%)"
                 } else ""
-                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date  $pnlStr")
+                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $date  $pnlStr")
             }
         }
 
@@ -538,9 +518,8 @@ class FundPanel : JPanel(BorderLayout()),
             for ((f, q) in watchlist) {
                 val nav    = q?.nav?.let { "%.4f".format(it) } ?: "--"
                 val offChg = q?.changePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(官方)" } ?: ""
-                val estChg = q?.estimatedChangePercent?.let { val s = if (it >= 0) "+" else ""; "${s}${"%.2f".format(it)}%(今估)" } ?: ""
                 val date   = q?.date?.let { "净值日期:$it" } ?: ""
-                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $estChg  $date")
+                sb.appendLine("- ${f.name}(${f.code}): 净值$nav  $offChg  $date")
             }
         }
 
