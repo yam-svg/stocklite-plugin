@@ -38,7 +38,9 @@ class StockAlertWatcherService : Disposable {
         val priceAlerts = if (state.enablePriceAlerts)
             state.priceAlerts.filter { it.enabled && !it.triggered } else emptyList()
         val cnWatch = if (state.enableSealShrinkAlert)
-            state.stocks.map { it.symbol }.filter { isCnSymbol(it) } else emptyList()
+            state.stocks.asSequence()
+                .filter { !state.sealAlertHoldingOnly || it.quantity > 0 }  // 仅持仓模式：只盯数量>0 的票
+                .map { it.symbol }.filter { isCnSymbol(it) }.toList() else emptyList()
 
         val priceAlertOn = priceAlerts.isNotEmpty()
         val sealAlertOn  = state.enableSealShrinkAlert && cnWatch.isNotEmpty()

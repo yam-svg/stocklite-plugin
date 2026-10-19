@@ -64,6 +64,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableSectorPanel: Boolean = true    // A股板块标签页（行业/概念/地域全览），默认开启
     var enableSealLots: Boolean = true       // 涨停/跌停时涨跌幅旁显示封单手数，默认开启
     var enableSealShrinkAlert: Boolean = true // 封单快速减少（开板/翘板前兆）通知提醒，默认开启
+    var sealAlertHoldingOnly: Boolean = false // 封单提醒仅覆盖持仓股票（数量>0）；关闭时全部自选 A 股均提醒
     var cryptoDefaultsSeeded: Boolean = false // 首次使用时内置一组常见币种；置位后不再重复播种（用户删除不会复活）
     var futuresDefaultsSeeded: Boolean = false // 首次使用时内置一组常见期货；置位后不再重复播种（用户删除不会复活）
     var stocksDefaultsSeeded: Boolean = false // 首次使用时内置示例股票（含ETF演示项）；同上，删除不复活

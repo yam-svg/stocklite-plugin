@@ -304,6 +304,7 @@ object L10n {
     val settingsChartVolume get() = s("K线图底部显示成交量（红绿柱）", "Show volume bars at chart bottom (red/green)")
     val settingsSealLots    get() = s("涨停/跌停时在涨跌幅旁显示封单手数", "Show sealed order lots at price limits")
     val settingsSealShrinkAlert get() = s("封单快速减少时通知提醒（涨停开板 / 跌停翘板信号）", "Notify when sealed orders drop rapidly (board opening / rebound signal)")
+    val settingsSealAlertHoldingOnly get() = s("封单提醒仅覆盖持仓股票（关闭时全部自选股均提醒）", "Only alert on held stocks (off: all watchlist stocks)")
     val settingsPriceAlerts get() = s("启用价格到价提醒", "Enable price alerts (IDE notification)")
     val settingsDataMgmt    get() = s("数据管理",             "Data Management")
     val settingsStockCols   get() = s("股票列设置",           "Stock Columns")

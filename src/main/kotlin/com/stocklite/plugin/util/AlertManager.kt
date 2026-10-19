@@ -95,6 +95,8 @@ object AlertManager {
     // 以窗口内封单峰值为基线，当前值较基线累计减少 ≥50% 且下降步数 ≥2 才触发，
     // 排除单笔撤单的瞬时噪音与反复撤单挂回的震荡。封板→开板视为"锐减到 0"。
     // 冷却：同一股票同一方向每天最多提醒一次（当天反复开板不轰炸）。
+    // 仅正盘（连续竞价）监测：集合竞价的封撤单是试盘假单，不代表真实多空，
+    // 开盘竞价 9:15-9:25、收盘竞价 14:57-15:00 期间不采样且清空历史。
 
     private data class SealSample(val ts: Long, val lots: Long)
     private val sealHistory  = mutableMapOf<String, kotlin.collections.ArrayDeque<SealSample>>()
@@ -110,9 +112,20 @@ object AlertManager {
     // 不要求多步趋势、只需 2 个采样点——大额撤单本身已是最强开板/翘板前兆
     private const val SEAL_CLIFF_BASE_LOTS = 10_000L
 
+    /** A 股正盘（连续竞价）时段：9:30-11:30、13:00-14:57（北京时间，含开盘不含收盘边界） */
+    private fun isContinuousSession(): Boolean {
+        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
+        val min = now.hour * 60 + now.minute
+        return (min >= 9 * 60 + 30 && min < 11 * 60 + 30) ||
+               (min >= 13 * 60 && min < 14 * 60 + 57)
+    }
+
     /** 每次行情刷新后调用（quotes 为本次拉到的全部行情，含无封单的标的） */
     fun checkSealShrink(quotes: Map<String, StockQuote>) {
         if (!StockliteState.getInstance().enableSealShrinkAlert) return
+        // 集合竞价时段（9:15-9:25 / 14:57-15:00）的封撤单是试盘假单，不监测并清空历史，
+        // 避免竞价数据污染正盘基线
+        if (!isContinuousSession()) { sealHistory.clear(); return }
         val now = System.currentTimeMillis()
         val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()
         if (today != sealTrackDate) { sealHistory.clear(); sealNotified.clear(); sealTrackDate = today }

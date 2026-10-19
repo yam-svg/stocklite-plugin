@@ -53,6 +53,7 @@ class StockliteConfigurable : Configurable {
     private val chartVolumeCheckBox     = JBCheckBox(L10n.settingsChartVolume)
     private val sealLotsCheckBox        = JBCheckBox(L10n.settingsSealLots)
     private val sealShrinkCheckBox      = JBCheckBox(L10n.settingsSealShrinkAlert)
+    private val sealHoldingOnlyCheckBox = JBCheckBox(L10n.settingsSealAlertHoldingOnly)
 
     // AI 分析
     private val apiKeyField    = JPasswordField(30)
@@ -198,6 +199,9 @@ class StockliteConfigurable : Configurable {
                usMarketPanelCheckBox, apiLogPanelCheckBox).forEach { cb -> row = cbRow(cb, row) }
         row = group(L10n.settingsGroupAlerts, row)
         listOf(alertsCheckBox, fundNavAlertCheckBox, sealShrinkCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        // 封单提醒的子选项：更深一级缩进表明从属关系
+        gbc.gridy = row; gbc.insets = Insets(2, 44, 2, 8)
+        panel.add(sealHoldingOnlyCheckBox, gbc); row++
         row = group(L10n.settingsGroupDisplay, row)
         listOf(chartMACheckBox, chartVolumeCheckBox, sealLotsCheckBox, portfolioBarCheckBox).forEach { cb -> row = cbRow(cb, row) }
         gbc.insets = Insets(2, 8, 2, 8)  // 恢复后续区块的默认缩进
@@ -338,6 +342,7 @@ class StockliteConfigurable : Configurable {
                chartVolumeCheckBox.isSelected  != state.enableChartVolume ||
                sealLotsCheckBox.isSelected     != state.enableSealLots ||
                sealShrinkCheckBox.isSelected   != state.enableSealShrinkAlert ||
+               sealHoldingOnlyCheckBox.isSelected != state.sealAlertHoldingOnly ||
                String(apiKeyField.password)        != state.deepseekApiKey ||
                modelCombo.selectedItem?.toString() != state.deepseekModel  ||
                aiInjectDataCheckBox.isSelected  != state.aiInjectRealTimeData  ||
@@ -371,6 +376,7 @@ class StockliteConfigurable : Configurable {
         state.enableChartVolume = chartVolumeCheckBox.isSelected
         state.enableSealLots = sealLotsCheckBox.isSelected
         state.enableSealShrinkAlert = sealShrinkCheckBox.isSelected
+        state.sealAlertHoldingOnly  = sealHoldingOnlyCheckBox.isSelected
         state.deepseekApiKey     = String(apiKeyField.password)
         state.deepseekModel      = modelCombo.selectedItem?.toString() ?: "deepseek-chat"
         state.aiInjectRealTimeData  = aiInjectDataCheckBox.isSelected
@@ -409,6 +415,7 @@ class StockliteConfigurable : Configurable {
         chartVolumeCheckBox.isSelected  = state.enableChartVolume
         sealLotsCheckBox.isSelected     = state.enableSealLots
         sealShrinkCheckBox.isSelected   = state.enableSealShrinkAlert
+        sealHoldingOnlyCheckBox.isSelected = state.sealAlertHoldingOnly
         apiKeyField.text                = state.deepseekApiKey
         // 若 combo 为空（首次打开），先用保存的值填入作为占位；有 Key 时自动拉取列表
         val savedModel = state.deepseekModel.ifBlank { "deepseek-chat" }
