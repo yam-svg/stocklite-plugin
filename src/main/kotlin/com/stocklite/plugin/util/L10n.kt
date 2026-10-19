@@ -296,6 +296,9 @@ object L10n {
     val settingsGroupPanels get() = s("行情面板",         "Market Panels")
     val settingsGroupAlerts get() = s("提醒通知",         "Alerts & Notifications")
     val settingsGroupDisplay get() = s("行情显示",        "Display")
+    val settingsFundPanel get() = s("显示基金标签页", "Show Funds tab")
+    val settingsFuturePanel get() = s("显示期货标签页", "Show Futures tab")
+    val settingsGlobalPanel get() = s("显示全球标签页（大盘概览与全球指数）", "Show Global tab (market breadth & world indices)")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
@@ -378,10 +381,10 @@ object L10n {
 
     // ── 新股标签页 ──
     val tabIpo get() = s("新股", "New IPOs")
-    val settingsSectorPanel get() = s("显示板块标签页（A股行业/概念/地域板块涨跌幅全览，默认开启）",
-                                      "Show Sectors tab (A-share industry/concept/region board overview, on by default)")
-    val settingsIpoPanel get() = s("显示新股标签页（新股申购日历与新股/次新股表现，默认开启）",
-                                   "Show New IPOs tab (subscription calendar & recent listings, enabled by default)")
+    val settingsSectorPanel get() = s("显示板块标签页（A股行业/概念/地域板块涨跌幅全览，默认关闭）",
+                                      "Show Sectors tab (A-share industry/concept/region board overview, off by default)")
+    val settingsIpoPanel get() = s("显示新股标签页（新股申购日历与新股/次新股表现，默认关闭）",
+                                   "Show New IPOs tab (subscription calendar & recent listings, off by default)")
     val colApplyDate   get() = s("申购日",    "Apply")
     val colApplyCode   get() = s("申购代码",  "Apply Code")
     val colIssuePrice  get() = s("发行价",    "Issue")
@@ -417,8 +420,8 @@ object L10n {
 
     // ── 加密标签页 ──
     val tabCrypto get() = s("加密", "Crypto")
-    val settingsCryptoPanel get() = s("显示加密标签页（Bitget/Gate.io 等公开行情，需当前网络可直连加密交易所接口，默认开启）",
-                                      "Show Crypto tab (public quotes from Bitget/Gate.io; requires network access to exchange APIs; enabled by default)")
+    val settingsCryptoPanel get() = s("显示加密标签页（Bitget/Gate.io 等公开行情，需当前网络可直连加密交易所接口，默认关闭）",
+                                      "Show Crypto tab (public quotes from Bitget/Gate.io; requires network access to exchange APIs; off by default)")
     val colHigh24h get() = s("24h最高", "24h High")
     val colLow24h  get() = s("24h最低", "24h Low")
     val btnAddCrypto   get() = s("添加币种", "Add Crypto")

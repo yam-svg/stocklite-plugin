@@ -41,6 +41,9 @@ class StockliteConfigurable : Configurable {
     private val cryptoIntervalSpinner = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
 
     // 功能开关
+    private val fundPanelCheckBox       = JBCheckBox(L10n.settingsFundPanel)
+    private val futurePanelCheckBox     = JBCheckBox(L10n.settingsFuturePanel)
+    private val globalPanelCheckBox     = JBCheckBox(L10n.settingsGlobalPanel)
     private val cryptoPanelCheckBox     = JBCheckBox(L10n.settingsCryptoPanel)
     private val sectorPanelCheckBox     = JBCheckBox(L10n.settingsSectorPanel)
     private val ipoPanelCheckBox        = JBCheckBox(L10n.settingsIpoPanel)
@@ -195,8 +198,10 @@ class StockliteConfigurable : Configurable {
         }
 
         row = group(L10n.settingsGroupPanels, row)
-        listOf(cryptoPanelCheckBox, sectorPanelCheckBox, ipoPanelCheckBox,
-               usMarketPanelCheckBox, apiLogPanelCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        // 股票标签页固定显示不可关，其余按展示顺序排列
+        listOf(fundPanelCheckBox, futurePanelCheckBox, globalPanelCheckBox, cryptoPanelCheckBox,
+               sectorPanelCheckBox, ipoPanelCheckBox, usMarketPanelCheckBox,
+               apiLogPanelCheckBox).forEach { cb -> row = cbRow(cb, row) }
         row = group(L10n.settingsGroupAlerts, row)
         listOf(alertsCheckBox, fundNavAlertCheckBox, sealShrinkCheckBox).forEach { cb -> row = cbRow(cb, row) }
         // 封单提醒的子选项：更深一级缩进表明从属关系
@@ -330,6 +335,9 @@ class StockliteConfigurable : Configurable {
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
                (cryptoIntervalSpinner.value as Int) != state.refreshIntervalCrypto ||
+               fundPanelCheckBox.isSelected    != state.enableFundPanel   ||
+               futurePanelCheckBox.isSelected  != state.enableFuturePanel ||
+               globalPanelCheckBox.isSelected  != state.enableGlobalPanel ||
                cryptoPanelCheckBox.isSelected  != state.enableCryptoPanel ||
                sectorPanelCheckBox.isSelected  != state.enableSectorPanel ||
                ipoPanelCheckBox.isSelected     != state.enableIpoPanel   ||
@@ -363,6 +371,9 @@ class StockliteConfigurable : Configurable {
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
         state.refreshIntervalCrypto = cryptoIntervalSpinner.value as Int
+        state.enableFundPanel     = fundPanelCheckBox.isSelected
+        state.enableFuturePanel   = futurePanelCheckBox.isSelected
+        state.enableGlobalPanel   = globalPanelCheckBox.isSelected
         state.enableCryptoPanel   = cryptoPanelCheckBox.isSelected
         state.enableSectorPanel   = sectorPanelCheckBox.isSelected
         state.enableIpoPanel      = ipoPanelCheckBox.isSelected
@@ -403,6 +414,9 @@ class StockliteConfigurable : Configurable {
         fundIntervalSpinner.value   = state.refreshIntervalFund
         globalIntervalSpinner.value = state.refreshIntervalGlobal
         cryptoIntervalSpinner.value = state.refreshIntervalCrypto
+        fundPanelCheckBox.isSelected     = state.enableFundPanel
+        futurePanelCheckBox.isSelected   = state.enableFuturePanel
+        globalPanelCheckBox.isSelected   = state.enableGlobalPanel
         cryptoPanelCheckBox.isSelected   = state.enableCryptoPanel
         sectorPanelCheckBox.isSelected   = state.enableSectorPanel
         ipoPanelCheckBox.isSelected      = state.enableIpoPanel

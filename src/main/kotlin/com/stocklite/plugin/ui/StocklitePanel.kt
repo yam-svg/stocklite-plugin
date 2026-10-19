@@ -24,17 +24,33 @@ class StocklitePanel : JPanel(BorderLayout()),
     private val tabs = JBTabbedPane()
     private val state = StockliteState.getInstance()
 
-    init {
-        tabs.addTab(L10n.tabStock,  stockPanel)
-        tabs.addTab(L10n.tabFund,   fundPanel)
-        tabs.addTab(L10n.tabFuture, futurePanel)
-        if (state.enableCryptoPanel) tabs.addTab(L10n.tabCrypto, cryptoPanel)
-        tabs.addTab(L10n.tabGlobal, globalPanel)
-        if (state.enableSectorPanel) tabs.addTab(L10n.tabSector, sectorPanel)
+    /** 除股票外的标签页规格：固定展示顺序 + 各自的开关与标题（股票固定第 0 位不可关闭） */
+    private data class TabSpec(val component: JComponent, val enabled: () -> Boolean, val label: () -> String)
 
-        if (state.enableIpoPanel)      tabs.addTab(L10n.tabIpo, ipoPanel)
-        if (state.enableUsMarketPanel) tabs.addTab(L10n.tabUsMarket, usMarketPanel)
-        if (state.enableApiLogPanel)   tabs.addTab(L10n.tabApiLog,   apiLogPanel)
+    private val optionalTabs = listOf(
+        TabSpec(fundPanel,     { state.enableFundPanel },     { L10n.tabFund }),
+        TabSpec(futurePanel,   { state.enableFuturePanel },   { L10n.tabFuture }),
+        TabSpec(cryptoPanel,   { state.enableCryptoPanel },   { L10n.tabCrypto }),
+        TabSpec(globalPanel,   { state.enableGlobalPanel },   { L10n.tabGlobal }),
+        TabSpec(sectorPanel,   { state.enableSectorPanel },   { L10n.tabSector }),
+        TabSpec(ipoPanel,      { state.enableIpoPanel },      { L10n.tabIpo }),
+        TabSpec(usMarketPanel, { state.enableUsMarketPanel }, { L10n.tabUsMarket }),
+        TabSpec(apiLogPanel,   { state.enableApiLogPanel },   { L10n.tabApiLog }),
+    )
+
+    /** 按启用状态整体重建选项卡：组件实例复用不丢状态，只需恢复选中项 */
+    private fun rebuildTabs() {
+        val selected = tabs.selectedComponent
+        tabs.removeAll()
+        tabs.addTab(L10n.tabStock, stockPanel)
+        optionalTabs.filter { it.enabled() }
+            .forEach { tabs.addTab(it.label(), it.component) }
+        val idx = tabs.indexOfComponent(selected)
+        tabs.selectedIndex = if (idx >= 0) idx else 0
+    }
+
+    init {
+        rebuildTabs()
 
         tabs.addChangeListener {
             when (tabs.selectedComponent) {
@@ -65,56 +81,7 @@ class StocklitePanel : JPanel(BorderLayout()),
         return true
     }
 
-    private fun applyTabVisibility(component: JComponent, enabled: Boolean, label: String) {
-        val exists = tabs.indexOfComponent(component) >= 0
-        when {
-            enabled && !exists -> tabs.addTab(label, component)
-            !enabled && exists -> {
-                if (tabs.selectedComponent == component) tabs.selectedIndex = 0
-                tabs.remove(component)
-            }
-        }
-    }
+    override fun onFeatureToggleChanged() = rebuildTabs()
 
-    /** 加密 Tab 有固定位置（期货之后、全球之前），开关时插回原位而不是追加到末尾 */
-    private fun applyCryptoTabVisibility(enabled: Boolean) {
-        val exists = tabs.indexOfComponent(cryptoPanel) >= 0
-        when {
-            enabled && !exists -> {
-                val idx = tabs.indexOfComponent(globalPanel).takeIf { it >= 0 } ?: tabs.tabCount
-                tabs.insertTab(L10n.tabCrypto, null, cryptoPanel, null, idx)
-            }
-            !enabled && exists -> {
-                if (tabs.selectedComponent == cryptoPanel) tabs.selectedIndex = 0
-                tabs.remove(cryptoPanel)
-            }
-        }
-    }
-
-    override fun onFeatureToggleChanged() {
-        applyCryptoTabVisibility(state.enableCryptoPanel)
-        applyTabVisibility(sectorPanel,   state.enableSectorPanel,   L10n.tabSector)
-        applyTabVisibility(ipoPanel,      state.enableIpoPanel,      L10n.tabIpo)
-        applyTabVisibility(usMarketPanel, state.enableUsMarketPanel, L10n.tabUsMarket)
-        applyTabVisibility(apiLogPanel,   state.enableApiLogPanel,   L10n.tabApiLog)
-    }
-
-    override fun onLanguageChanged() {
-        // 统一按组件反查下标设置标题：标签页有可开关项，顺序会变，硬编码下标在加密页开/关时会错位
-        val titles = listOf(
-            stockPanel    to L10n.tabStock,
-            fundPanel     to L10n.tabFund,
-            futurePanel   to L10n.tabFuture,
-            cryptoPanel   to L10n.tabCrypto,
-            globalPanel   to L10n.tabGlobal,
-            sectorPanel   to L10n.tabSector,
-            ipoPanel      to L10n.tabIpo,
-            usMarketPanel to L10n.tabUsMarket,
-            apiLogPanel   to L10n.tabApiLog,
-        )
-        titles.forEach { (comp, title) ->
-            val idx = tabs.indexOfComponent(comp)
-            if (idx >= 0) tabs.setTitleAt(idx, title)
-        }
-    }
+    override fun onLanguageChanged() = rebuildTabs()
 }

@@ -59,9 +59,12 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enablePortfolioStatusBar: Boolean = true
     var enableUsMarketPanel: Boolean = false  // 默认关闭，使用频率低
     var enableApiLogPanel: Boolean = false   // 默认关闭，调试用途
-    var enableIpoPanel: Boolean = true       // 新股标签页（申购日历+次新股表现），默认开启
-    var enableCryptoPanel: Boolean = true    // 加密货币标签页，默认开启（依赖网络可直连交易所公开接口）
-    var enableSectorPanel: Boolean = true    // A股板块标签页（行业/概念/地域全览），默认开启
+    var enableIpoPanel: Boolean = false      // 新股标签页（申购日历+次新股表现），默认关闭
+    var enableCryptoPanel: Boolean = false   // 加密货币标签页，默认关闭（依赖网络可直连交易所公开接口）
+    var enableSectorPanel: Boolean = false   // A股板块标签页（行业/概念/地域全览），默认关闭
+    var enableFundPanel: Boolean = true      // 基金标签页，默认开启（股票/基金/期货/全球为默认四页）
+    var enableFuturePanel: Boolean = true    // 期货标签页，默认开启
+    var enableGlobalPanel: Boolean = true    // 全球标签页，默认开启
     var enableSealLots: Boolean = true       // 涨停/跌停时涨跌幅旁显示封单手数，默认开启
     var enableSealShrinkAlert: Boolean = true // 封单快速减少（开板/翘板前兆）通知提醒，默认开启
     var sealAlertHoldingOnly: Boolean = false // 封单提醒仅覆盖持仓股票（数量>0）；关闭时全部自选 A 股均提醒

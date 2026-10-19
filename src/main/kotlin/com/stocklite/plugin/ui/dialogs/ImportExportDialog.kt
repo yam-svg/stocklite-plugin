@@ -163,7 +163,14 @@ class ImportExportDialog : DialogWrapper(true) {
             put("enablePriceAlerts",      state.enablePriceAlerts)
             put("enableFundNavAlert",     state.enableFundNavAlert)
             put("enablePortfolioStatusBar", state.enablePortfolioStatusBar)
+            put("enableFundPanel",        state.enableFundPanel)
+            put("enableFuturePanel",      state.enableFuturePanel)
+            put("enableGlobalPanel",      state.enableGlobalPanel)
+            put("enableCryptoPanel",      state.enableCryptoPanel)
+            put("enableSectorPanel",      state.enableSectorPanel)
+            put("enableIpoPanel",         state.enableIpoPanel)
             put("enableUsMarketPanel",    state.enableUsMarketPanel)
+            put("enableApiLogPanel",      state.enableApiLogPanel)
             put("stockVisibleColumns",    JSONArray().also { arr ->
                 state.stockVisibleColumns.forEach { arr.put(it) }
             })
@@ -332,7 +339,14 @@ class ImportExportDialog : DialogWrapper(true) {
             if (s.has("enablePriceAlerts"))        state.enablePriceAlerts        = s.getBoolean("enablePriceAlerts")
             if (s.has("enableFundNavAlert"))       state.enableFundNavAlert       = s.getBoolean("enableFundNavAlert")
             if (s.has("enablePortfolioStatusBar")) state.enablePortfolioStatusBar = s.getBoolean("enablePortfolioStatusBar")
+            if (s.has("enableFundPanel"))          state.enableFundPanel          = s.getBoolean("enableFundPanel")
+            if (s.has("enableFuturePanel"))        state.enableFuturePanel        = s.getBoolean("enableFuturePanel")
+            if (s.has("enableGlobalPanel"))        state.enableGlobalPanel        = s.getBoolean("enableGlobalPanel")
+            if (s.has("enableCryptoPanel"))        state.enableCryptoPanel        = s.getBoolean("enableCryptoPanel")
+            if (s.has("enableSectorPanel"))        state.enableSectorPanel        = s.getBoolean("enableSectorPanel")
+            if (s.has("enableIpoPanel"))           state.enableIpoPanel           = s.getBoolean("enableIpoPanel")
             if (s.has("enableUsMarketPanel"))      state.enableUsMarketPanel      = s.getBoolean("enableUsMarketPanel")
+            if (s.has("enableApiLogPanel"))        state.enableApiLogPanel        = s.getBoolean("enableApiLogPanel")
             s.optJSONArray("stockVisibleColumns")?.let { arr ->
                 state.stockVisibleColumns = (0 until arr.length()).map { arr.getString(it) }.toMutableList() as ArrayList
             }
