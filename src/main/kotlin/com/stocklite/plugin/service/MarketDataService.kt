@@ -1356,9 +1356,9 @@ object MarketDataService {
                 for (i in 0 until pool.length())
                     maxLbc = maxOf(maxLbc, pool.optJSONObject(i)?.optInt("lbc") ?: 0)
             }
-            // 日期标签取新浪指数 bar 日期：盘中=当日、盘前=T-1，与池数据实际归属日一致
-            val label = getAshareLastBarDate()
-                ?: "${date.take(4)}-${date.substring(4, 6)}-${date.substring(6, 8)}"
+            // 日期标签直接用回溯命中的池自身日期：bar 日期盘中恒为今天，池尚未生成时（实测早盘 10 点前
+            // 当日池 tc=0）会把 T-1 池的数据标成今天，造成归属日错位；池日期才是数据的真实归属
+            val label = "${date.take(4)}-${date.substring(4, 6)}-${date.substring(6, 8)}"
             return LimitEcosystem(date = label, ztCount = ztTc, dtCount = dtTc, zbCount = zbTc, maxLianban = maxLbc)
         }
         return null

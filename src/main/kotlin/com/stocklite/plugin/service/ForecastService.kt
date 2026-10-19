@@ -118,7 +118,7 @@ object ForecastService {
         }
 
         if (factors.isEmpty()) return null
-        val score = factors.sumOf { it.score }.coerceIn(-100.0, 100.0)
+        val score = factors.filterNot { it.score.isNaN() }.sumOf { it.score }.coerceIn(-100.0, 100.0)
         return SentimentSnapshot(date, score, factors)
     }
 
@@ -130,10 +130,10 @@ object ForecastService {
     }
 
     private fun persistSentiment(s: SentimentSnapshot) = try {
-        val arr = JSONArray()
-        s.factors.forEach { arr.put(JSONObject().put("n", it.name).put("d", it.detail).put("s", it.score)) }
         StockliteState.getInstance().apply {
-            sentimentJson = JSONObject().put("date", s.date).put("score", s.score).put("factors", arr).toString()
+            sentimentJson = JSONObject()
+                .put("date", s.date).put("score", s.score)
+                .put("factors", JSONArray(factorsToJson(s.factors))).toString()
             sentimentDate = s.date
         }
     } catch (_: Exception) { Unit }
@@ -221,11 +221,14 @@ object ForecastService {
             else if (it <= -0.3) factors += ForecastFactor("人民币升值", "%.2f%%".format(it), 4.0)
         }
 
-        val score = factors.sumOf { it.score }.coerceIn(-100.0, 100.0)
+        // NaN 分值的因子（如"韩日早盘：数据缺失"）只做展示、不计入得分
+        val score = factors.filterNot { it.score.isNaN() }.sumOf { it.score }.coerceIn(-100.0, 100.0)
         val generatedAt = "%02d:%02d".format(now.hour, now.minute)
         val forecast = PreOpenForecast(today, generatedAt, gap, score, factors, finalizeNow)
 
         // ── 落库（同日唯一：终版覆盖隔夜初版；超量裁旧）──
+        // JSON 必须在删除旧记录之前构建成功，否则任何意外都会把当日初版一并丢掉
+        val factorsJson = factorsToJson(factors)
         state.forecastHistory.removeAll { it.kind == "PRE" && it.date == today }
         state.forecastHistory += ForecastRecordData().apply {
             date = today
@@ -233,7 +236,7 @@ object ForecastService {
             this.score = forecast.score
             direction = directionOf(forecast.score)
             kind = "PRE"; gapPct = forecast.gapPct
-            factorsJson = factorsToJson(factors)
+            this.factorsJson = factorsJson
             finalized = finalizeNow
         }
         if (state.forecastHistory.size > MAX_RECORDS)
@@ -250,9 +253,11 @@ object ForecastService {
         PreOpenForecast(r.date, r.generatedAt, r.gapPct, r.score, parseFactorsJson(r.factorsJson), r.finalized)
 
     /**
-     * 结算未到终态的记录。只在"指数 bar 日期 == 研判日期"（即结算当日盘中/盘后）时取实时快照：
-     * 开盘跳空用今开、全天用现价；bar 日期已越过的记录无法再还原当日数值（昨收口径每日漂移），
-     * 直接标记 settled 但数值保持 NaN，不进任何统计——宁缺毋假。
+     * 结算未到终态的记录，跳空与全天方向分两段：
+     * 开盘跳空今开出数即结（当日任意时刻可得）；全天方向必须等收盘——15:00 前只写 openPct/openHit
+     * 并保持未结算，15:00 后的轮次再用收盘价定 actualPct/correct 并置 settled。
+     * 若当日始终没等到收盘轮次，bar 日期越过后的"错过的历史日期"分支会把已结出的跳空数值
+     * 保留进跳空账本，全天方向则因 actualPct 为 NaN 不进统计——宁缺毋假。
      */
     fun settleForecasts() {
         val state = StockliteState.getInstance()
@@ -260,14 +265,16 @@ object ForecastService {
         if (pending.isEmpty()) return
         val barDate = MarketDataService.getAshareLastBarDate() ?: return
         val snap = MarketDataService.getTencentIndexSnapshot(SETTLE_INDEX)
+        val afterClose = ZonedDateTime.now(shZone).toLocalTime() >= LocalTime.of(15, 0)
         for (r in pending) {
             if (r.date > barDate) continue   // 研判日期还没到（理论上不会发生，防御）
             if (r.date == barDate && snap != null) {
                 val openPct = if (snap.third > 0) (snap.third - snap.second) / snap.second * 100 else Double.NaN
                 if (openPct.isNaN()) continue   // 尚未开盘，等开盘后再结
                 r.openPct = openPct
-                r.actualPct = (snap.first - snap.second) / snap.second * 100
                 if (!r.gapPct.isNaN()) r.openHit = gapState(r.gapPct) == gapState(openPct)
+                if (!afterClose) continue       // 方向用收盘价判定，未到收盘本轮只结跳空
+                r.actualPct = (snap.first - snap.second) / snap.second * 100
                 val flat = kotlin.math.abs(r.actualPct) <= DAY_FLAT_BAND
                 r.correct = when (r.direction) {
                     "BULL" -> r.actualPct > DAY_FLAT_BAND
@@ -276,7 +283,7 @@ object ForecastService {
                 }
                 r.settled = true
             } else {
-                r.settled = true   // 错过的历史日期：结而不统计
+                r.settled = true   // 错过的历史日期：结而不统计（已结出的跳空数值仍进跳空账本）
             }
         }
     }
@@ -286,11 +293,16 @@ object ForecastService {
         val dirSample: Int, val dirHits: Int, val dirHitRate: Double
     )
 
-    /** 双账本统计：跳空三态命中率 与 全天方向命中率（仅 BULL/BEAR 进方向样本） */
+    /**
+     * 双账本统计：跳空三态命中率 与 全天方向命中率（仅新版盘前研判的 BULL/BEAR 进方向样本；
+     * 旧版盘后预测 kind="" 属另一实验、排除在外；方向样本要求已结出收盘涨跌，防"结而不统计"记录按未命中计）
+     */
     fun getStats(): ForecastStats {
         val settled = StockliteState.getInstance().forecastHistory.filter { it.settled }
         val gapRecs = settled.filter { it.kind == "PRE" && !it.gapPct.isNaN() && !it.openPct.isNaN() }
-        val dirRecs = settled.filter { it.direction == "BULL" || it.direction == "BEAR" }
+        val dirRecs = settled.filter {
+            it.kind == "PRE" && (it.direction == "BULL" || it.direction == "BEAR") && !it.actualPct.isNaN()
+        }
         val gapHits = gapRecs.count { it.openHit }
         val dirHits = dirRecs.count { it.correct }
         return ForecastStats(
@@ -399,9 +411,13 @@ object ForecastService {
 
     private fun clamp(v: Double) = v.coerceIn(-1.0, 1.0)
 
+    /** org.json 禁止非有限数（NaN put 直接抛 JSONException），缺失因子的 NaN 分值以 null 落盘，解析侧 optDouble 缺省回到 NaN */
+    private fun ForecastFactor.toJson(): JSONObject =
+        JSONObject().put("n", name).put("d", detail).put("s", if (score.isNaN()) JSONObject.NULL else score)
+
     internal fun factorsToJson(factors: List<ForecastFactor>): String {
         val arr = JSONArray()
-        factors.forEach { arr.put(JSONObject().put("n", it.name).put("d", it.detail).put("s", it.score)) }
+        factors.forEach { arr.put(it.toJson()) }
         return arr.toString()
     }
 

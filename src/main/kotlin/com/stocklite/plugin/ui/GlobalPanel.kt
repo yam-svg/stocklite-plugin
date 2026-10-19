@@ -494,30 +494,34 @@ class GlobalPanel : JPanel(BorderLayout()),
     private fun fetchBreadthAsync() {
         if (!windowVisible) return
         ApplicationManager.getApplication().executeOnPooledThread {
-            val data  = MarketDataService.getMarketBreadth()
-            val times = MarketDataService.getBreadthDataTimes()
-            ForecastService.settleForecasts()
-            val sentiment = ForecastService.getSentiment()
-            // 盘前窗口内生成/补生成当日研判（当天一次即锁定）；窗口外直接展示最近一条
-            val today = if (ForecastService.inPreOpenWindow()) ForecastService.generatePreOpenForecast() else null
-            val forecast = today ?: ForecastService.latestRecord()?.let { ForecastService.rehydrate(it) }
-            SwingUtilities.invokeLater {
-                updateBreadthUI(data, times)
-                lastSentiment = sentiment
-                updateSentimentUI(sentiment)
-                updateForecastUI(forecast)
-            }
-            // AI 短评：单独起线程（首次调用需数秒），不阻塞大盘数据展示；
-            // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为无 AI 展示。
-            if (forecast != null && StockliteState.getInstance().deepseekApiKey.isNotBlank()) {
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    val ai = ForecastService.getAiBrief()
-                    if (ai != null) SwingUtilities.invokeLater {
-                        lastAiAnalysis = ai
-                        updateForecastUI(lastForecast)
+            // 兜底 try：任一数据源/结算/研判环节抛出异常都不能让本轮静默夭折——
+            // 没有兜底时一次异常即整块大盘概览停止更新，且 20 秒定时器会反复撞在同一异常上
+            try {
+                val data  = MarketDataService.getMarketBreadth()
+                val times = MarketDataService.getBreadthDataTimes()
+                ForecastService.settleForecasts()
+                val sentiment = ForecastService.getSentiment()
+                // 盘前窗口内生成/补生成当日研判（当天一次即锁定）；窗口外直接展示最近一条
+                val today = if (ForecastService.inPreOpenWindow()) ForecastService.generatePreOpenForecast() else null
+                val forecast = today ?: ForecastService.latestRecord()?.let { ForecastService.rehydrate(it) }
+                SwingUtilities.invokeLater {
+                    updateBreadthUI(data, times)
+                    lastSentiment = sentiment
+                    updateSentimentUI(sentiment)
+                    updateForecastUI(forecast)
+                }
+                // AI 短评：单独起线程（首次调用需数秒），不阻塞大盘数据展示；
+                // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为无 AI 展示。
+                if (forecast != null && StockliteState.getInstance().deepseekApiKey.isNotBlank()) {
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val ai = ForecastService.getAiBrief()
+                        if (ai != null) SwingUtilities.invokeLater {
+                            lastAiAnalysis = ai
+                            updateForecastUI(lastForecast)
+                        }
                     }
                 }
-            }
+            } catch (_: Exception) { }
         }
     }
 
