@@ -38,19 +38,37 @@ class StocklitePanel : JPanel(BorderLayout()),
         TabSpec(apiLogPanel,   { state.enableApiLogPanel },   { L10n.tabApiLog }),
     )
 
-    /** 按启用状态整体重建选项卡：组件实例复用不丢状态，只需恢复选中项 */
-    private fun rebuildTabs() {
-        val selected = tabs.selectedComponent
-        tabs.removeAll()
-        tabs.addTab(L10n.tabStock, stockPanel)
-        optionalTabs.filter { it.enabled() }
-            .forEach { tabs.addTab(it.label(), it.component) }
-        val idx = tabs.indexOfComponent(selected)
-        tabs.selectedIndex = if (idx >= 0) idx else 0
+    /** 按清单顺序把组件插回规范位置：排在它之后且当前存在的第一个组件之前 */
+    private fun insertTabAtCanonicalPosition(spec: TabSpec) {
+        val idx = optionalTabs.indexOf(spec)
+        var target = tabs.tabCount
+        for (other in optionalTabs.drop(idx + 1)) {
+            val oi = tabs.indexOfComponent(other.component)
+            if (oi >= 0) { target = oi; break }
+        }
+        tabs.insertTab(spec.label(), null, spec.component, null, target)
+    }
+
+    /**
+     * 增量增删单个 Tab。不能整表 removeAll 重建：所有组件被瞬时摘除会让内容首选尺寸
+     * 塌成接近 0，IDE 工具窗口随之收缩且不会随组件恢复而回弹，表现为每开关一次缩一圈。
+     */
+    private fun syncTabsFromToggles() {
+        for (spec in optionalTabs) {
+            val exists = tabs.indexOfComponent(spec.component) >= 0
+            when {
+                spec.enabled() && !exists -> insertTabAtCanonicalPosition(spec)
+                !spec.enabled() && exists -> {
+                    if (tabs.selectedComponent == spec.component) tabs.selectedIndex = 0
+                    tabs.remove(spec.component)
+                }
+            }
+        }
     }
 
     init {
-        rebuildTabs()
+        tabs.addTab(L10n.tabStock, stockPanel)
+        optionalTabs.filter { it.enabled() }.forEach { tabs.addTab(it.label(), it.component) }
 
         tabs.addChangeListener {
             when (tabs.selectedComponent) {
@@ -81,7 +99,15 @@ class StocklitePanel : JPanel(BorderLayout()),
         return true
     }
 
-    override fun onFeatureToggleChanged() = rebuildTabs()
+    override fun onFeatureToggleChanged() = syncTabsFromToggles()
 
-    override fun onLanguageChanged() = rebuildTabs()
+    override fun onLanguageChanged() {
+        // 只改标题不动结构：增删/重建会导致工具窗口尺寸抖动
+        val titles = (listOf(stockPanel to L10n.tabStock) +
+            optionalTabs.map { it.component to it.label() })
+        titles.forEach { (comp, title) ->
+            val idx = tabs.indexOfComponent(comp)
+            if (idx >= 0) tabs.setTitleAt(idx, title)
+        }
+    }
 }
