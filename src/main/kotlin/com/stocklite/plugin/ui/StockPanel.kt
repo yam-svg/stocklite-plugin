@@ -220,6 +220,7 @@ class StockPanel : JPanel(BorderLayout()),
     private var panelActive = true
 
     init {
+        seedDefaults()
         state.addColumnListener(this)
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
@@ -238,6 +239,22 @@ class StockPanel : JPanel(BorderLayout()),
                 if (showing) fetchQuotesAsync()
             }
         }
+    }
+
+    /**
+     * 首次使用时内置一组示例股票，安装后标签页即有数据可看，
+     * 也供新手指引点名演示（沪深300ETF 用于演示右键「基金持仓明细」）。
+     * stocksDefaultsSeeded 置位后不再播种，用户删除的内置股票不会复活。
+     * 在注册数据监听之前调用，避免播种过程中的 notify 打到未完成的 UI。
+     */
+    private fun seedDefaults() {
+        if (state.stocksDefaultsSeeded) return
+        state.stocksDefaultsSeeded = true
+        if (state.stocks.isNotEmpty() || state.stockGroups.isNotEmpty()) return
+        val group = state.createStockGroup(L10n.stockDefaultGroup)
+        state.createStock("sh600519", "贵州茅台",  group.id, 0.0, 0.0)
+        state.createStock("sz300059", "东方财富",  group.id, 0.0, 0.0)
+        state.createStock("sh510300", "沪深300ETF", group.id, 0.0, 0.0)
     }
 
     override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }

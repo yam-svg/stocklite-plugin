@@ -11,6 +11,7 @@ import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.ui.content.ContentFactory
 import com.stocklite.plugin.settings.StockliteConfigurable
 import com.stocklite.plugin.ui.StocklitePanel
+import com.stocklite.plugin.ui.dialogs.OnboardingDialog
 
 class StockliteToolWindowFactory : ToolWindowFactory {
 
@@ -18,6 +19,17 @@ class StockliteToolWindowFactory : ToolWindowFactory {
         val panel = StocklitePanel()
         val content = ContentFactory.getInstance().createContent(panel, "", false)
         toolWindow.contentManager.addContent(content)
+
+        // 新手指引按钮（?）：常驻入口，随时可重看隐藏功能清单
+        val guideAction = object : AnAction(
+            "StockLite Guide",
+            "Open the beginner guide",
+            AllIcons.General.ContextHelp
+        ) {
+            override fun actionPerformed(e: AnActionEvent) {
+                OnboardingDialog(project, panel).show()
+            }
+        }
 
         // 在工具窗口标题栏右侧添加设置齿轮按钮
         val settingsAction = object : AnAction(
@@ -31,6 +43,6 @@ class StockliteToolWindowFactory : ToolWindowFactory {
             }
         }
 
-        (toolWindow as? ToolWindowEx)?.setTitleActions(listOf(settingsAction))
+        (toolWindow as? ToolWindowEx)?.setTitleActions(listOf(guideAction, settingsAction))
     }
 }

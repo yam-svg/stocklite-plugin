@@ -46,6 +46,19 @@ object AlertManager {
     }
 
     /**
+     * 新手指引入口气泡：新安装首次启动时发一次（置位由调用方负责），
+     * 指向工具窗口标题栏的 ? 按钮。不自动弹出指引对话框，避免打扰。
+     */
+    fun notifyOnboardingHint() {
+        try {
+            NotificationGroupManager.getInstance()
+                .getNotificationGroup("StockLite Alerts")
+                .createNotification(L10n.onbHintTitle, L10n.onbHintMsg, NotificationType.INFORMATION)
+                .notify(null)
+        } catch (_: Exception) {}
+    }
+
+    /**
      * @param quotes  Map<symbol, price>，本次刷新到的行情
      */
     fun checkAlerts(quotes: Map<String, Double>) {

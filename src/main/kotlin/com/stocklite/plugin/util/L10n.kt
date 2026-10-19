@@ -193,6 +193,8 @@ object L10n {
     val groupHoldingFunds  get() = s("我的持有", "My Holdings")
     val groupAllFutures    get() = s("全部期货", "All Futures")
     val futureDefaultGroup get() = s("常用外盘", "Popular")
+    val stockDefaultGroup  get() = s("示例自选", "Starter")
+    val fundDefaultGroup   get() = s("示例自选", "Starter")
     val dlgAddStock      get() = s("添加股票",     "Add Stock")
     val dlgEditStock     get() = s("编辑股票",     "Edit Stock")
     val dlgAddFund       get() = s("添加基金",     "Add Fund")
@@ -478,4 +480,48 @@ object L10n {
     val biStNameCorrected  get() = s("名称已按行情修正", "Name corrected")
     val biTipAmbiguous     get() = s("其他同名代码: ", "Other symbols with same name: ")
     val biTipRaw           get() = s("原文: ", "Source text: ")
+
+    // ── 新手指引 ──
+    val onbHintTitle    get() = s("StockLite 已就绪", "StockLite is ready")
+    val onbHintMsg      get() = s("点击右侧「打开设置」齿轮左边的 ? 按钮，随时查看新手指引。",
+                                  "Click the ? button left of the settings gear to open the beginner guide anytime.")
+    val onbTitle        get() = s("StockLite 新手指引", "StockLite Beginner Guide")
+    val onbIntro        get() = s("安装时已内置示例行情，照着下面几条点一点就能上手。",
+                                  "Sample watchlists are pre-loaded. Try the tips below to get started.")
+    val onbBtnStockTab  get() = s("去股票页试试", "Go to Stocks")
+    val onbBtnFundTab   get() = s("去基金页试试", "Go to Funds")
+    val onbBtnSettings  get() = s("打开设置",     "Open Settings")
+    val onbTipChart     get() = s("点任意一行的「涨跌幅」单元格（别点列头），在表格下方展开该股票的 K 线/分时图。",
+                                  "Click the Change% cell of a row (not the header) to open its K-line/intraday chart below the table.")
+    val onbTipSummary   get() = s("点表格底部汇总栏，查看总持仓盈亏走势曲线。",
+                                  "Click the summary bar under the table for portfolio P/L trend.")
+    val onbTipTrades    get() = s("右键任意股票行：添加交易记录、查看历史、一键清仓。",
+                                  "Right-click a stock row: add trades, view history, or close the position.")
+    val onbTipAlert     get() = s("右键任意股票行「设置提醒」，到价时 IDE 弹通知。",
+                                  "Right-click a row and choose Set alert to get notified at your price.")
+    val onbTipAi        get() = s("各面板右键选「AI 深度分析」（需先在设置里填 DeepSeek Key）。",
+                                  "Right-click any row for AI deep analysis (add a DeepSeek key in Settings first).")
+    val onbTipSort      get() = s("选中一行后用工具栏 ↑↓ 或直接拖拽排序；点列头可三态排序。",
+                                  "Select a row then use ↑↓ or drag to reorder; click a header for tri-state sort.")
+    val onbTipEtf       get() = s("给股票页右键出现「基金持仓明细」，试试内置的沪深300ETF 510300。",
+                                  "ETF/LOF rows show a Holdings item on right-click — try 510300.")
+    val onbTipStatusBar get() = s("启用后，IDE 底部状态栏常驻显示持仓/今日盈亏，可点击查看明细。",
+                                  "When enabled, the status bar shows holdings/today's P/L — click for details.")
+    val onbTipFundNav   get() = s("场外基金净值更新、今日新股申购也会自动弹通知。",
+                                  "Fund NAV updates and today's IPO subscriptions also pop automatic alerts.")
+    val onbTipToggle    get() = s("设置里可开关板块/新股/美股/日志标签页、提醒类型与图表选项。",
+                                  "Settings toggles: Sectors/IPO/US/Logs tabs, alert types and chart options.")
+    val onbTipImport    get() = s("设置页底部可一键导入/导出全部数据（换机备份），并提交意见反馈。",
+                                  "Settings bottom: one-click import/export for backup, plus feedback.")
+    val onbTChart     get() = s("内嵌 K 线图", "Inline K-line")
+    val onbTSummary   get() = s("总持仓盈亏走势", "Portfolio P/L Trend")
+    val onbTTrades    get() = s("交易记录与清仓", "Trade Records")
+    val onbTAlert     get() = s("到价提醒", "Price Alerts")
+    val onbTSort      get() = s("拖拽排序", "Reorder Rows")
+    val onbTEtf       get() = s("ETF 基金持仓明细", "ETF Holdings")
+    val onbTFund      get() = s("场外基金功能", "Over-the-counter Funds")
+    val onbTStatusBar get() = s("底部状态栏持仓", "Status Bar Holdings")
+    val onbTAi        get() = s("AI 深度分析", "AI Deep Analysis")
+    val onbTToggle    get() = s("功能开关", "Feature Toggles")
+    val onbTImport    get() = s("数据导入导出", "Import / Export")
 }

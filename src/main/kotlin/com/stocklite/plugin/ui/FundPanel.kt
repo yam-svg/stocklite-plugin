@@ -105,6 +105,7 @@ class FundPanel : JPanel(BorderLayout()),
     private lateinit var filterField: SearchTextField
 
     init {
+        seedDefaults()
         state.addColumnListener(this)
         state.addLanguageListener(this)
         state.addRefreshIntervalListener(this)
@@ -123,6 +124,20 @@ class FundPanel : JPanel(BorderLayout()),
                 if (showing) fetchQuotesAsync()
             }
         }
+    }
+
+    /**
+     * 首次使用时内置两只知名场外基金，安装后标签页即有数据可看。
+     * fundsDefaultsSeeded 置位后不再播种，用户删除的内置基金不会复活。
+     * 在注册数据监听之前调用，避免播种过程中的 notify 打到未完成的 UI。
+     */
+    private fun seedDefaults() {
+        if (state.fundsDefaultsSeeded) return
+        state.fundsDefaultsSeeded = true
+        if (state.funds.isNotEmpty() || state.fundGroups.isNotEmpty()) return
+        val group = state.createFundGroup(L10n.fundDefaultGroup)
+        state.createFund("161725", "招商中证白酒指数(LOF)A", group.id, 0.0, 0.0)
+        state.createFund("110011", "易方达优质精选混合",     group.id, 0.0, 0.0)
     }
 
     override fun onColumnSettingsChanged() { rebuildVisibleCols(); loadRows() }

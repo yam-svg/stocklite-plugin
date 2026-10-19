@@ -54,6 +54,17 @@ class StocklitePanel : JPanel(BorderLayout()),
         state.addFeatureToggleListener(this)
     }
 
+    /**
+     * 供新手指引跳转标签页：按组件反查下标（可开关 tab 顺序会变，不能按下标定位）。
+     * @return false 表示该标签页因功能开关未启用而不在选项卡中，调用方应改为引导去设置开启
+     */
+    fun selectTab(component: JComponent): Boolean {
+        val idx = tabs.indexOfComponent(component)
+        if (idx < 0) return false
+        tabs.selectedIndex = idx
+        return true
+    }
+
     private fun applyTabVisibility(component: JComponent, enabled: Boolean, label: String) {
         val exists = tabs.indexOfComponent(component) >= 0
         when {

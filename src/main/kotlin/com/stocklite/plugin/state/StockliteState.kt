@@ -66,6 +66,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableSealShrinkAlert: Boolean = true // 封单快速减少（开板/翘板前兆）通知提醒，默认开启
     var cryptoDefaultsSeeded: Boolean = false // 首次使用时内置一组常见币种；置位后不再重复播种（用户删除不会复活）
     var futuresDefaultsSeeded: Boolean = false // 首次使用时内置一组常见期货；置位后不再重复播种（用户删除不会复活）
+    var stocksDefaultsSeeded: Boolean = false // 首次使用时内置示例股票（含ETF演示项）；同上，删除不复活
+    var fundsDefaultsSeeded: Boolean = false // 首次使用时内置示例基金；同上，删除不复活
+    var onboardingHintShown: Boolean = false // 新手指引入口气泡：仅新安装首次启动提示一次，老用户升级静默置位
+    var hadPersistedConfig: Boolean = false  // loadState 时置位：本机曾持久化过配置=老用户。新安装不走 loadState，据此判定新装（不受播种时序影响）
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
     var enableChartVolume: Boolean = true    // K线图底部成交量（红绿柱），默认开启
 
@@ -104,6 +108,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
 
     override fun loadState(state: StockliteState) {
         XmlSerializerUtil.copyBean(state, this)
+        hadPersistedConfig = true
     }
 
     // ── 列宽 CRUD ──
