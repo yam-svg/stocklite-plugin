@@ -8,7 +8,7 @@
 
 📦 **官方插件页：https://plugins.jetbrains.com/plugin/32115-stocklite**（IDE 内 `Settings → Plugins → Marketplace` 搜索 "StockLite" 即可安装）
 
-**当前版本：1.18.1**
+**当前版本：1.18.2**
 
 ## 功能
 
@@ -19,8 +19,10 @@
 | **新手指引（? 按钮功能直达 + 新装内置示例数据开箱即看）** | ✅ 1.18.1 新增 |
 | **标签页自由开关（除股票外均可关闭，默认仅股票/基金/期货/全球）** | ✅ 1.18.1 新增 |
 | **美股板块盘前/盘后延伸行情 + 休市检测 + 智能降频** | ✅ 1.18.1 优化 |
+| **盈亏日历（月历热图看每日盈亏，点某天钻取当日各股明细）** | ✅ 1.18.2 新增 |
+| **今日盈亏列（股票/基金表格按当日涨跌实时推算）** | ✅ 1.18.2 新增 |
 | **涨停/跌停封单手数显示 + 封单锐减提醒（开板/翘板信号）** | ✅ 1.18 新增 |
-| **意见反馈（设置页直接提交给开发者）** | ✅ 1.18 新增 |
+| **意见反馈（设置页直接提交给开发者）** | ✅ 1.18 新增 · 1.18.2 可回复升级 |
 | **A 股板块标签页（行业/概念/地域涨跌榜 / 主力资金 / 领涨股走势图）** | ✅ 1.17 新增 |
 | **A 股早盘集合竞价行情（9:15–9:30 撮合价实时显示）** | ✅ 1.17 新增 · 1.17.2 修复后可用 · 1.17.4 标注显示优化 |
 | **2026.2+ IDE 兼容（修复打开工具窗口崩溃）** | ✅ 1.17.3 修复 |
@@ -93,6 +95,18 @@
 | 拖拽排序                      | ❌（已移除）     |
 | 资讯/新闻                     | ❌（已排除）     |
 | 系统托盘                      | ❌（插件架构不支持） |
+
+## v1.18.2 新功能说明
+
+### 盈亏日历与今日盈亏
+
+- 盈亏走势弹窗新增「盈亏日历」标签页：按月热图呈现每日盈亏，格子颜色深浅随当日盈亏金额、涨跌配色跟随全局涨跌方案；右上角实时统计当月盈利 / 亏损天数，点任意一天在下方展开当日各股盈亏明细（名称 / 当日盈亏 / 涨跌幅，按金额降序），月份可前后导航并一键回到当月
+- 手动录入持仓（无交易记录）的单只股票也按成本价还原逐日盈亏，走势曲线与日历不再空白
+- 股票与基金表格新增「今日盈亏」列：个股按（现价 − 昨收）× 持仓数量、基金按官方涨跌幅反推当日损益计算，可在 设置 → StockLite → 列配置 中勾选显示
+
+### 意见反馈升级
+
+- 反馈改为匿名双通道提交（无需登录账号），新增「我的反馈」面板：可随时查看本机提交历史与开发者回复（本机匿名设备标识核验身份，无需注册），支持删除单条记录
 
 ## v1.18.1 新功能说明
 
@@ -249,7 +263,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.18.1.zip`
+输出路径：`build/distributions/stocklite-plugin-1.18.2.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
@@ -278,7 +292,9 @@ src/main/kotlin/com/stocklite/plugin/
 ├── service/
 │   ├── MarketDataService.kt        # 所有行情/搜索 HTTP 调用
 │   ├── ChartDataService.kt         # 日内走势图数据（K 线 / 分钟线）
-│   └── ForecastService.kt          # 盘前研判 / 市场天气 / 命中率双账本（1.18.1 新增）
+│   ├── ForecastService.kt          # 盘前研判 / 市场天气 / 命中率双账本（1.18.1 新增）
+│   ├── PnlChartService.kt          # 盈亏走势与逐日盈亏明细计算
+│   └── FeedbackService.kt          # 可回复意见反馈（匿名通道，1.18.2 新增）
 ├── util/
 │   ├── HttpUtil.kt                 # HTTP 工具（含 GBK 解码）
 │   ├── MarketTimeUtil.kt           # 市场开市时间判断
@@ -296,6 +312,7 @@ src/main/kotlin/com/stocklite/plugin/
     ├── IpoPanel.kt                 # 新股标签页（1.15 新增）
     ├── SectorPanel.kt              # A 股板块标签页（1.17 新增）
     ├── InlineChartPanel.kt         # 内嵌日内走势图面板（JBCefBrowser）
+    ├── PnlCalendarPanel.kt         # 盈亏日历月历热图（1.18.2 新增）
     ├── common/
     │   ├── Formatters.kt           # 数值格式化（自动 2/3/4 位小数）
     │   ├── QuoteRenderer.kt        # 表格着色渲染器（红涨绿跌）
@@ -314,6 +331,7 @@ src/main/kotlin/com/stocklite/plugin/
         ├── SetAlertDialog.kt       # 设置价格到价提醒
         ├── ImportExportDialog.kt   # 数据导入/导出
         ├── BatchImportStockDialog.kt # 股票批量导入（1.14 新增）
+        ├── PortfolioPnlDialog.kt   # 盈亏走势 / 盈亏日历弹窗
         └── OnboardingDialog.kt     # 新手指引（1.18.1 新增）
 ```
 
