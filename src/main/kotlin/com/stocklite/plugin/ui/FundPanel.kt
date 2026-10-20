@@ -57,6 +57,12 @@ class FundPanel : JPanel(BorderLayout()),
         ColDef("marketValue",  L10n.colValue,      QuoteColumnType.VALUE)        { f, q  ->
             if (f.shares > 0) (q?.nav ?: 0.0) * f.shares else 0.0
         },
+        ColDef("dayPnl",       L10n.colDayPnl,     QuoteColumnType.PNL)          { f, q  ->
+            val n   = q?.nav ?: 0.0
+            val chg = q?.changePercent ?: 0.0
+            // 官方涨跌幅是最新净值相对上一净值的涨跌，反推上一净值 prevNav=nav/(1+chg/100)，盈亏=(nav-prevNav)*份额
+            if (f.shares > 0 && n > 0 && chg > -100.0) n * f.shares * (1 - 100.0 / (100.0 + chg)) else 0.0
+        },
         ColDef("pnl",          L10n.colPnl,        QuoteColumnType.PNL)          { f, q  ->
             val n = q?.nav ?: 0.0
             if (f.shares > 0 && n > 0) (n - f.costNav) * f.shares else 0.0

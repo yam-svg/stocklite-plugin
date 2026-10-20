@@ -149,6 +149,11 @@ class StockPanel : JPanel(BorderLayout()),
             }
         },
         ColDef("marketValue",  L10n.colValue,     QuoteColumnType.VALUE)        { s, q  -> (q?.price ?: 0.0) * s.quantity },
+        ColDef("dayPnl",       L10n.colDayPnl,    QuoteColumnType.PNL)          { s, q  ->
+            val prev = q?.prevClose ?: 0.0
+            val p    = q?.price     ?: 0.0
+            if (p > 0 && prev > 0) (p - prev) * s.quantity else 0.0
+        },
         ColDef("pnl",          L10n.colPnl,       QuoteColumnType.PNL)          { s, q  ->
             val p = q?.price ?: 0.0
             val unrealized = if (p > 0) (p - s.costPrice) * s.quantity else 0.0

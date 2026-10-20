@@ -105,6 +105,7 @@ class StockliteConfigurable : Configurable {
         "quantity"    to L10n.settingsOptStockQty,
         "cost"        to L10n.settingsOptStockCost,
         "marketValue" to L10n.settingsOptStockValue,
+        "dayPnl"      to L10n.settingsOptStockDayPnl,
         "pnl"         to L10n.settingsOptStockPnl,
         "pnlPercent"  to L10n.settingsOptStockPnlPct
     )
@@ -115,6 +116,7 @@ class StockliteConfigurable : Configurable {
         "shares"      to L10n.settingsOptFundShares,
         "costNav"     to L10n.settingsOptFundCostNav,
         "marketValue" to L10n.settingsOptFundValue,
+        "dayPnl"      to L10n.settingsOptFundDayPnl,
         "pnl"         to L10n.settingsOptFundPnl,
         "pnlPercent"  to L10n.settingsOptFundPnlPct
     )
