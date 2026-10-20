@@ -41,7 +41,8 @@ class PortfolioPnlDialog : DialogWrapper(true) {
         tabs.addTab(L10n.tabPnlCalendar, calendarPanel)
 
         val panel = JPanel(BorderLayout()).apply {
-            preferredSize = Dimension(720, 400)
+            // 高度需容纳"明细区占满（持仓多时固定 140px）"的最坏情况，否则日历格子会被压扁
+            preferredSize = Dimension(720, 480)
         }
         panel.add(tabs, BorderLayout.CENTER)
         return panel

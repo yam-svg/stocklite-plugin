@@ -42,7 +42,6 @@ class PnlCalendarPanel : JPanel(BorderLayout()) {
     private val todayBtn   = flatBtn(L10n.calendarToday)
     private val summaryLbl = JLabel(" ")
     private val gridPanel  = JPanel(GridLayout(0, 7, 3, 3))
-    private val legendPanel = JPanel(FlowLayout(FlowLayout.LEFT, 3, 0))
 
     // ── 底部：点击日期后展示各股当日盈亏明细 ──
     private val detailTitle = JLabel(L10n.calendarDetailHint)
@@ -79,9 +78,6 @@ class PnlCalendarPanel : JPanel(BorderLayout()) {
             add(navPanel, BorderLayout.WEST)
             add(summaryLbl, BorderLayout.EAST)
         }
-        legendPanel.isOpaque = false
-        legendPanel.border = BorderFactory.createEmptyBorder(2, 0, 0, 0)
-
         // ── 底部明细表装配 ──
         detailTitle.font = detailTitle.font.deriveFont(11f)
         detailTable.rowHeight = 22
@@ -134,16 +130,10 @@ class PnlCalendarPanel : JPanel(BorderLayout()) {
         detailPanel.add(detailTitle,  BorderLayout.NORTH)
         detailPanel.add(detailScroll, BorderLayout.CENTER)
 
-        val southPanel = JPanel(BorderLayout()).apply {
-            isOpaque = false
-            add(detailPanel, BorderLayout.CENTER)
-            add(legendPanel, BorderLayout.SOUTH)
-        }
-
         gridPanel.isOpaque = false
         add(top, BorderLayout.NORTH)
         add(gridPanel, BorderLayout.CENTER)
-        add(southPanel, BorderLayout.SOUTH)
+        add(detailPanel, BorderLayout.SOUTH)
         render()
     }
 
@@ -257,16 +247,6 @@ class PnlCalendarPanel : JPanel(BorderLayout()) {
         summaryLbl.text = "<html>${L10n.calendarMonthPnl} <b style='color:$sumHex'>${Fmt.sign(monthSum)}${compact(monthSum)}</b>" +
             "&nbsp;&nbsp;${L10n.calendarWinDays} $winDays&nbsp;&nbsp;${L10n.calendarLoseDays} $loseDays</html>"
 
-        // ── 图例：亏损（深←→浅） 盈利（浅←→深） ──
-        legendPanel.removeAll()
-        legendPanel.add(legendLabel(L10n.calendarLoseDays))
-        if (upColor != null && dnColor != null) {
-            listOf(dnColor to 0.65, dnColor to 0.28, upColor to 0.28, upColor to 0.65).forEach { (c, a) ->
-                legendPanel.add(JPanel().apply { preferredSize = Dimension(14, 10); background = blend(resolve(c), base, a) })
-            }
-        }
-        legendPanel.add(legendLabel(L10n.calendarWinDays))
-
         prevBtn.isEnabled  = month > minMonth
         nextBtn.isEnabled  = month < YearMonth.now(shZone)
 
@@ -340,10 +320,6 @@ class PnlCalendarPanel : JPanel(BorderLayout()) {
     private fun emptyCell(base: Color): JComponent = JPanel().apply {
         background = base.darker()
         preferredSize = Dimension(0, 46)
-    }
-
-    private fun legendLabel(text: String) = JLabel(text).apply {
-        font = font.deriveFont(10f); foreground = QuoteRenderer.FLAT
     }
 
     private fun monthLabel(m: YearMonth) =
