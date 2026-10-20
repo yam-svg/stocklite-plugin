@@ -515,7 +515,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                 }
                 // AI 短评：单独起线程（首次调用需数秒），不阻塞大盘数据展示；
                 // 服务层缓存30分钟，后续周期几乎无开销。失败静默降级为无 AI 展示。
-                if (forecast != null && StockliteState.getInstance().deepseekApiKey.isNotBlank()) {
+                if (forecast != null && forecastVisible(forecast) && StockliteState.getInstance().deepseekApiKey.isNotBlank()) {
                     ApplicationManager.getApplication().executeOnPooledThread {
                         val ai = ForecastService.getAiBrief()
                         if (ai != null) SwingUtilities.invokeLater {
@@ -528,12 +528,14 @@ class GlobalPanel : JPanel(BorderLayout()),
         }
     }
 
+    /** 盘前研判行可见性：盘前窗口内始终可见；窗口外仅当日研判可见（旧研判的跳空预测已兑现，无意义） */
+    private fun forecastVisible(f: PreOpenForecast?): Boolean =
+        ForecastService.inPreOpenWindow() ||
+            (f != null && f.date == java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString())
+
     private fun updateForecastUI(f: PreOpenForecast?) {
         lastForecast = f
-        // 显示时机：盘前窗口内始终展示（含"等待生成"）；窗口外只展示当日研判——
-        // 跳空已兑现，隔日旧研判与永远等不到生成的占位都无意义，整行隐藏
-        val show = ForecastService.inPreOpenWindow() ||
-            (f != null && f.date == java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString())
+        val show = forecastVisible(f)
         if (breadthRowForecast.isVisible != show) {
             breadthRowForecast.isVisible = show
             breadthPanel.revalidate()
