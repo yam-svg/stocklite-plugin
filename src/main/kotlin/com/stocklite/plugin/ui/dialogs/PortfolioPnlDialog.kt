@@ -5,16 +5,20 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.service.PnlChartService
 import com.stocklite.plugin.state.StockliteState
+import com.stocklite.plugin.ui.DayStockRow
 import com.stocklite.plugin.ui.InlineChartPanel
+import com.stocklite.plugin.ui.PnlCalendarPanel
 import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.time.LocalDate
 import javax.swing.*
 
 class PortfolioPnlDialog : DialogWrapper(true) {
 
-    private val chartPanel = InlineChartPanel()
-    private val statusLbl  = JLabel(L10n.chartLoading, SwingConstants.CENTER).apply {
+    private val chartPanel    = InlineChartPanel()
+    private val calendarPanel = PnlCalendarPanel()
+    private val statusLbl     = JLabel(L10n.chartLoading, SwingConstants.CENTER).apply {
         font = font.deriveFont(12f)
         foreground = java.awt.Color(0x888aaa)
     }
@@ -27,11 +31,19 @@ class PortfolioPnlDialog : DialogWrapper(true) {
     }
 
     override fun createCenterPanel(): JComponent {
-        val panel = JPanel(BorderLayout()).apply {
-            preferredSize = Dimension(720, 360)
+        val chartTab = JPanel(BorderLayout()).apply {
+            add(statusLbl,  BorderLayout.NORTH)
+            add(chartPanel, BorderLayout.CENTER)
         }
-        panel.add(statusLbl,  BorderLayout.NORTH)
-        panel.add(chartPanel, BorderLayout.CENTER)
+
+        val tabs = JTabbedPane()
+        tabs.addTab(L10n.tabPnlChart,    chartTab)
+        tabs.addTab(L10n.tabPnlCalendar, calendarPanel)
+
+        val panel = JPanel(BorderLayout()).apply {
+            preferredSize = Dimension(720, 400)
+        }
+        panel.add(tabs, BorderLayout.CENTER)
         return panel
     }
 
@@ -47,16 +59,38 @@ class PortfolioPnlDialog : DialogWrapper(true) {
         }
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val allPnl = holdings.mapNotNull { stock ->
+            data class StockRows(val name: String, val rows: List<PnlChartService.DayRow>)
+            val perStock = holdings.mapNotNull { stock ->
                 val records = state.getTradeRecordsForStock(stock.id)
                 val kline = ChartDataService.getHistoryKLine(stock.symbol, "daily", 9999)
                 if (kline.isEmpty()) return@mapNotNull null
-                PnlChartService.calcStockPnl(stock, records, kline).takeIf { it.isNotEmpty() }
+                PnlChartService.calcStockDayRows(stock, records, kline)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { StockRows(stock.alias.ifBlank { stock.name }, it) }
             }
 
-            val merged = PnlChartService.mergePortfolioPnl(allPnl)
+            val merged = PnlChartService.mergePortfolioPnl(perStock.map { s ->
+                s.rows.map { PnlChartService.DailyPnl(it.date, it.cumPnl) }
+            })
             val points = PnlChartService.toChartPoints(merged)
             val totalPnl = merged.lastOrNull()?.pnl ?: 0.0
+            // 累计盈亏曲线差分 → 当日盈亏（累计值只在有行情/交易的日期变化，差分即为当日变动）
+            val dailyPnl = LinkedHashMap<LocalDate, Double>()
+            run {
+                var prev = 0.0
+                for (dp in merged) {
+                    dailyPnl[dp.date] = dp.pnl - prev
+                    prev = dp.pnl
+                }
+            }
+            // 日期 → 各股当日盈亏明细（供日历点击钻取）
+            val detailMap = mutableMapOf<LocalDate, MutableList<DayStockRow>>()
+            for (s in perStock) {
+                for (r in s.rows) {
+                    if (r.dayPnl == 0.0) continue
+                    detailMap.getOrPut(r.date) { mutableListOf() }.add(DayStockRow(s.name, r.dayPnl, r.dayPct))
+                }
+            }
 
             SwingUtilities.invokeLater {
                 statusLbl.text = ""
@@ -65,6 +99,7 @@ class PortfolioPnlDialog : DialogWrapper(true) {
                     return@invokeLater
                 }
                 chartPanel.showPnlChart(L10n.dlgPortfolioPnl, points, totalPnl)
+                calendarPanel.setData(dailyPnl, detailMap)
             }
         }
     }
