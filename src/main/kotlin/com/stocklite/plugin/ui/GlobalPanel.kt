@@ -122,6 +122,8 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val breadthRow1 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
     private val breadthRow2 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
     private val breadthRow3 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    /** 盘前研判单独一行：内容较长，与期指/情绪同行时在窄面板下会被裁切不可见 */
+    private val breadthRowForecast = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
     private val breadthPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
@@ -456,8 +458,8 @@ class GlobalPanel : JPanel(BorderLayout()),
         breadthRow2.add(chipCapTier)
         breadthRow2.add(chipFlow)
         breadthRow3.add(chipFuturesPosition)
-        breadthRow3.add(chipForecast)
         breadthRow3.add(chipSentiment)
+        breadthRowForecast.add(chipForecast)
 
         val topGrid = JPanel(GridLayout(3, 2, 10, 1))
         topSectorCells.forEach { topGrid.add(it) }
@@ -473,11 +475,12 @@ class GlobalPanel : JPanel(BorderLayout()),
             add(bottomGrid, BorderLayout.CENTER)
         }
 
-        listOf(breadthRow1, breadthRow2, breadthRow3, topSection, bottomSection)
+        listOf(breadthRow1, breadthRow2, breadthRow3, breadthRowForecast, topSection, bottomSection)
             .forEach { it.alignmentX = Component.LEFT_ALIGNMENT }
         breadthPanel.add(breadthRow1)
         breadthPanel.add(breadthRow2)
         breadthPanel.add(breadthRow3)
+        breadthPanel.add(breadthRowForecast)
         breadthPanel.add(topSection)
         breadthPanel.add(bottomSection)
     }
@@ -527,6 +530,15 @@ class GlobalPanel : JPanel(BorderLayout()),
 
     private fun updateForecastUI(f: PreOpenForecast?) {
         lastForecast = f
+        // 显示时机：盘前窗口内始终展示（含"等待生成"）；窗口外只展示当日研判——
+        // 跳空已兑现，隔日旧研判与永远等不到生成的占位都无意义，整行隐藏
+        val show = ForecastService.inPreOpenWindow() ||
+            (f != null && f.date == java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString())
+        if (breadthRowForecast.isVisible != show) {
+            breadthRowForecast.isVisible = show
+            breadthPanel.revalidate()
+        }
+        if (!show) return
         val scheme = StockliteState.getInstance().colorScheme
         val up = colorHex(QuoteRenderer.positiveColor(scheme) ?: table.foreground)
         val dn = colorHex(QuoteRenderer.negativeColor(scheme) ?: table.foreground)
