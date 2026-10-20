@@ -77,6 +77,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
     var enableChartVolume: Boolean = true    // K线图底部成交量（红绿柱），默认开启
 
+    /** 反馈设备标识：匿名 UUID，用户不登录也能凭它查询自己反馈的回复；首次提交时生成 */
+    var feedbackDeviceId: String = ""
+
     // ── AI 分析 ──
     var deepseekApiKey: String   = ""
     var deepseekModel:  String   = "deepseek-chat"

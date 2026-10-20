@@ -3,6 +3,8 @@ package com.stocklite.plugin.settings
 import com.intellij.openapi.options.Configurable
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.table.JBTable
+import com.stocklite.plugin.service.FeedbackService
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.PortfolioStatusWidget
 import com.stocklite.plugin.ui.dialogs.ImportExportDialog
@@ -17,6 +19,8 @@ class StockliteConfigurable : Configurable {
 
     companion object {
         private const val FEEDBACK_URL = "http://fanshu.xyz:8080/api/admin/message"
+        /** 反馈邮箱固定值：回复走插件内"我的反馈"，无需用户提供联系方式 */
+        private const val FEEDBACK_EMAIL = "StockLite"
     }
 
     // 语言
@@ -125,6 +129,58 @@ class StockliteConfigurable : Configurable {
         font = font.deriveFont(java.awt.Font.PLAIN, 11f)
         foreground = java.awt.Color.GRAY
     }
+    // 我的反馈历史（Supabase 后端已配置时显示；长文本截断，tooltip 显示全文）
+    private val feedbackTipRenderer = object : javax.swing.table.DefaultTableCellRenderer() {
+        override fun getTableCellRendererComponent(
+            table: JTable, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
+        ): java.awt.Component {
+            toolTipText = value?.toString()?.takeIf { it.isNotEmpty() }
+            return super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
+        }
+    }
+    /** 内容/回复列的自动换行渲染器：按当前列宽折行，行高随内容自适应 */
+    private val feedbackWrapRenderer = object : JTextArea(), javax.swing.table.TableCellRenderer {
+        init { lineWrap = true; wrapStyleWord = true }
+        override fun getTableCellRendererComponent(
+            table: JTable, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
+        ): java.awt.Component {
+            font = table.font
+            text = value?.toString() ?: ""
+            foreground = if (isSelected) table.selectionForeground else table.foreground
+            background = if (isSelected) table.selectionBackground else table.background
+            border = UIManager.getBorder("Table.cellPadding") ?: javax.swing.border.EmptyBorder(2, 4, 2, 4)
+            return this
+        }
+    }
+    private val feedbackHistoryModel = object : javax.swing.table.DefaultTableModel(
+        arrayOf<Any>("时间", "反馈内容", "状态", "回复"), 0
+    ) {
+        override fun isCellEditable(row: Int, column: Int) = false
+    }
+    private val feedbackHistoryTable = JBTable(feedbackHistoryModel).apply {
+        rowHeight = 24
+        tableHeader.reorderingAllowed = false
+        selectionModel.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        for (i in 0 until columnCount) {
+            columnModel.getColumn(i).cellRenderer =
+                if (i == 1 || i == 3) feedbackWrapRenderer else feedbackTipRenderer
+            columnModel.getColumn(i).preferredWidth = intArrayOf(110, 260, 60, 240)[i]
+        }
+        // 拖动列宽后重新折行计算行高
+        columnModel.addColumnModelListener(object : javax.swing.event.TableColumnModelListener {
+            override fun columnAdded(e: javax.swing.event.TableColumnModelEvent?) {}
+            override fun columnRemoved(e: javax.swing.event.TableColumnModelEvent?) {}
+            override fun columnMoved(e: javax.swing.event.TableColumnModelEvent?) {}
+            override fun columnMarginChanged(e: javax.swing.event.ChangeEvent?) { updateFeedbackRowHeights() }
+            override fun columnSelectionChanged(e: javax.swing.event.ListSelectionEvent?) {}
+        })
+    }
+    private val feedbackRefreshBtn = JButton("刷新")
+    private val feedbackDeleteBtn  = JButton("删除选中")
+    /** 与表格行一一对应的反馈 id（服务端主键），删除时用 */
+    private val feedbackIds = mutableListOf<String>()
+    /** "我的反馈"整块面板：无反馈数据时隐藏 */
+    private var feedbackHistorySection: JPanel? = null
 
     override fun getDisplayName() = "StockLite"
 
@@ -313,6 +369,26 @@ class StockliteConfigurable : Configurable {
         panel.add(feedbackRow, gbc)
         feedbackSendBtn.addActionListener { sendFeedback() }
 
+        // 我的反馈历史（仅在配置了 Supabase 反馈后端时显示；旧通道不支持查询回复）
+        if (FeedbackService.configured) {
+            gbc.gridy = row++
+            val historyHeader = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0)).apply {
+                add(JLabel("我的反馈"))
+                add(feedbackRefreshBtn)
+                add(feedbackDeleteBtn)
+            }
+            val historySection = JPanel(java.awt.BorderLayout()).apply {
+                add(historyHeader, java.awt.BorderLayout.NORTH)
+                add(JBScrollPane(feedbackHistoryTable).apply {
+                    preferredSize = java.awt.Dimension(420, 160)
+                }, java.awt.BorderLayout.CENTER)
+            }
+            feedbackHistorySection = historySection
+            panel.add(historySection, gbc)
+            feedbackRefreshBtn.addActionListener { loadFeedbackHistory() }
+            feedbackDeleteBtn.addActionListener { deleteSelectedFeedback() }
+        }
+
         // 撑开底部
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
         panel.add(JPanel(), gbc)
@@ -443,6 +519,7 @@ class StockliteConfigurable : Configurable {
         webSearchRoundsSpinner.value     = state.aiWebSearchMaxRounds
         aiDeepReasonCheckBox.isSelected  = state.aiEnableDeepReasoning
         aiMaxTokensSpinner.value         = state.aiMaxTokens
+        loadFeedbackHistory()
         if (::tavilyRow.isInitialized) updateTavilyVisibility()
     }
 
@@ -451,7 +528,7 @@ class StockliteConfigurable : Configurable {
         if (::tavilyRow.isInitialized) tavilyRow.isVisible = aiWebSearchCheckBox.isSelected
     }
 
-    /** 后台线程提交意见反馈；email 固定为 StockLite，不需要用户填写 */
+    /** 后台线程提交意见反馈；回复邮箱选填，留空时仍以 StockLite 提交（保持后台兼容） */
     private fun sendFeedback() {
         val content = feedbackArea.text.trim()
         if (content.isEmpty()) {
@@ -462,28 +539,132 @@ class StockliteConfigurable : Configurable {
         feedbackSendBtn.isEnabled = false
         feedbackStatus.foreground = java.awt.Color.GRAY
         feedbackStatus.text = "发送中…"
+        val useSupabase = FeedbackService.configured
         com.intellij.openapi.application.ApplicationManager.getApplication()
             .executeOnPooledThread {
-                val payload = org.json.JSONObject()
-                    .put("content", content)
-                    .put("email", "StockLite")
-                    .toString()
-                val (code, raw) = HttpUtil.post(FEEDBACK_URL, payload, label = "feedback")
-                val ok = code == 200 && try {
-                    org.json.JSONObject(raw ?: "").optInt("code") == 20000
-                } catch (_: Exception) { false }
+                val ok: Boolean
+                var failHint = ""
+                if (useSupabase) {
+                    ok = FeedbackService.submit(content, FEEDBACK_EMAIL)
+                    if (ok) {
+                        // 双通道：同时走旧留言接口触发邮箱通知，保证开发者及时收到；
+                        // 该调用失败不影响主流程（反馈已入库）
+                        val notify = org.json.JSONObject()
+                            .put("content", content)
+                            .put("email", FEEDBACK_EMAIL)
+                            .toString()
+                        HttpUtil.post(FEEDBACK_URL, notify, timeoutMs = 15_000, label = "feedback-mail-notify")
+                    }
+                } else {
+                    // 旧单向留言通道（Supabase 未配置时兜底），仅支持提交不支持查回复
+                    val payload = org.json.JSONObject()
+                        .put("content", content)
+                        .put("email", FEEDBACK_EMAIL)
+                        .toString()
+                    val (code, raw) = HttpUtil.post(FEEDBACK_URL, payload, label = "feedback")
+                    ok = code == 200 && try {
+                        org.json.JSONObject(raw ?: "").optInt("code") == 20000
+                    } catch (_: Exception) { false }
+                    if (!ok) failHint = "（HTTP $code）"
+                }
                 javax.swing.SwingUtilities.invokeLater {
                     feedbackSendBtn.isEnabled = true
                     if (ok) {
                         feedbackArea.text = ""
                         feedbackStatus.text = "发送成功，感谢你的反馈！"
                         feedbackStatus.foreground = java.awt.Color.GRAY
+                        if (useSupabase) loadFeedbackHistory()
                     } else {
-                        feedbackStatus.text = "发送失败（HTTP $code），请稍后重试"
+                        feedbackStatus.text = "发送失败$failHint，请稍后重试"
                         feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
                     }
                 }
             }
+    }
+
+    /** 后台拉取本机反馈历史填入表格；配置页打开/重置、发送成功及删除后调用。无数据时隐藏整个区块 */
+    private fun loadFeedbackHistory() {
+        if (!FeedbackService.configured) return
+        com.intellij.openapi.application.ApplicationManager.getApplication()
+            .executeOnPooledThread {
+                val items = FeedbackService.fetchMine()
+                javax.swing.SwingUtilities.invokeLater {
+                    feedbackHistoryModel.rowCount = 0
+                    feedbackIds.clear()
+                    if (items == null) {
+                        feedbackHistoryModel.addRow(arrayOf("", "反馈历史加载失败，点击\"刷新\"重试", "", ""))
+                    } else {
+                        items.forEach {
+                            feedbackIds += it.id
+                            feedbackHistoryModel.addRow(arrayOf(
+                                it.time,
+                                it.content,
+                                if (it.reply.isBlank()) "待回复" else "已回复",
+                                when {
+                                    it.reply.isBlank()      -> ""
+                                    it.repliedTime.isBlank() -> it.reply
+                                    else                      -> "${it.reply}（${it.repliedTime}）"
+                                }
+                            ))
+                        }
+                    }
+                    // 区块可见性：有数据才显示；加载失败时保留显示以便看到错误提示
+                    val section = feedbackHistorySection ?: return@invokeLater
+                    val show = items == null || items.isNotEmpty()
+                    if (section.isVisible != show) {
+                        section.isVisible = show
+                        section.parent?.revalidate()
+                    }
+                    if (show) updateFeedbackRowHeights()
+                }
+            }
+    }
+
+    /** 删除表格中选中的反馈（二次确认）；成功后重新加载，全删完则区块自动隐藏 */
+    private fun deleteSelectedFeedback() {
+        val row = feedbackHistoryTable.selectedRow
+        if (row < 0 || row >= feedbackIds.size) {
+            feedbackStatus.text = "请先在\"我的反馈\"列表中点击选中一条"
+            feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
+            return
+        }
+        val id = feedbackIds[row]
+        if (com.intellij.openapi.ui.Messages.showYesNoDialog(
+                feedbackHistoryTable, "确定删除这条反馈吗？删除后不可恢复。", "删除反馈",
+                com.intellij.openapi.ui.Messages.getQuestionIcon()
+            ) != com.intellij.openapi.ui.Messages.YES
+        ) return
+        feedbackDeleteBtn.isEnabled = false
+        com.intellij.openapi.application.ApplicationManager.getApplication()
+            .executeOnPooledThread {
+                val ok = FeedbackService.delete(id)
+                javax.swing.SwingUtilities.invokeLater {
+                    feedbackDeleteBtn.isEnabled = true
+                    if (ok) loadFeedbackHistory()
+                    else {
+                        feedbackStatus.text = "删除失败，请稍后重试"
+                        feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
+                    }
+                }
+            }
+    }
+
+    /** 按当前列宽重新折行计算各行高（自动换行内容随列宽/数据变化） */
+    private fun updateFeedbackRowHeights() {
+        val table = feedbackHistoryTable
+        for (row in 0 until table.rowCount) {
+            var h = 24
+            for (col in 0 until table.columnCount) {
+                val width = table.columnModel.getColumn(col).width
+                if (width <= 0) continue
+                val renderer = table.columnModel.getColumn(col).cellRenderer ?: continue
+                val comp = renderer.getTableCellRendererComponent(
+                    table, table.getValueAt(row, col), false, false, row, col) ?: continue
+                comp.setBounds(0, 0, width, 10_000)
+                h = maxOf(h, comp.preferredSize.height)
+            }
+            table.setRowHeight(row, h)
+        }
     }
 
     /**

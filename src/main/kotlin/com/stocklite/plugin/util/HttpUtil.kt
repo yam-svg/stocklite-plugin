@@ -44,7 +44,7 @@ object HttpUtil {
      * @return Pair(statusCode, body)；-1 表示网络异常；errorStream 的内容作为 body 返回，便于展示错误信息
      */
     fun post(url: String, json: String, authHeader: String? = null, timeoutMs: Int = 45_000,
-             label: String? = null): Pair<Int, String?> {
+             label: String? = null, headers: Map<String, String> = emptyMap()): Pair<Int, String?> {
         val t0 = System.currentTimeMillis()
         // Authorization header 中的 Bearer token 脱敏：只保留前8位
         val sanitizedReqBody = if (authHeader != null)
@@ -57,6 +57,7 @@ object HttpUtil {
             conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             conn.setRequestProperty("Accept", "application/json")
             if (authHeader != null) conn.setRequestProperty("Authorization", authHeader)
+            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
             conn.connectTimeout = TIMEOUT
             conn.readTimeout    = timeoutMs
             conn.doOutput = true
@@ -82,7 +83,8 @@ object HttpUtil {
      * @return Pair(statusCode, body)，网络异常时 statusCode = -1
      */
     fun getWithStatus(url: String, referer: String? = null, charset: String = "UTF-8",
-                      authHeader: String? = null, label: String? = null): Pair<Int, String?> {
+                      authHeader: String? = null, label: String? = null,
+                      headers: Map<String, String> = emptyMap()): Pair<Int, String?> {
         val t0 = System.currentTimeMillis()
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
@@ -90,6 +92,7 @@ object HttpUtil {
             conn.setRequestProperty("User-Agent", UA)
             if (referer    != null) conn.setRequestProperty("Referer",       referer)
             if (authHeader != null) conn.setRequestProperty("Authorization", authHeader)
+            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
             conn.setRequestProperty("Accept", "*/*")
             conn.connectTimeout = TIMEOUT
             conn.readTimeout = TIMEOUT
@@ -103,6 +106,32 @@ object HttpUtil {
             ApiLogger.log(label ?: urlLabel(url), "GET", url, referer, null,
                 false, -1, System.currentTimeMillis() - t0, e.message)
             -1 to null
+        }
+    }
+
+    /** DELETE 请求（Supabase 等 REST 接口用），返回 Pair(statusCode, body)，网络异常时 -1 */
+    fun delete(url: String, label: String? = null,
+               headers: Map<String, String> = emptyMap()): Pair<Int, String?> {
+        val t0 = System.currentTimeMillis()
+        return try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.requestMethod = "DELETE"
+            conn.setRequestProperty("User-Agent", UA)
+            conn.setRequestProperty("Accept", "application/json")
+            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            conn.connectTimeout = TIMEOUT
+            conn.readTimeout = TIMEOUT
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.use { String(it.readBytes(), Charsets.UTF_8) }
+            conn.disconnect()
+            ApiLogger.log(label ?: urlLabel(url), "DELETE", url, null, null,
+                code in 200..299, code, System.currentTimeMillis() - t0, body)
+            code to body
+        } catch (e: Exception) {
+            ApiLogger.log(label ?: urlLabel(url), "DELETE", url, null, null,
+                false, -1, System.currentTimeMillis() - t0, e.message)
+            -1 to e.message
         }
     }
 
