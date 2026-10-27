@@ -23,7 +23,9 @@ object MarketDataService {
     data class GlobalIndexConfig(
         val symbol: String, val code: String,
         val nameEn: String, val nameCn: String,
-        val market: String, val timezone: String
+        val market: String, val timezone: String,
+        /** true = 小众扩展指数：设置页"更多指数"tab 管理，默认不显示 */
+        val optional: Boolean = false
     )
 
     val GLOBAL_INDEXES = listOf(
@@ -47,6 +49,25 @@ object MarketDataService {
         GlobalIndexConfig("399006.SZ","CYB",    "ChiNext",         "创业板指",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000300.SS","CSI300", "CSI 300",         "沪深300",    "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000688.SS","STAR50", "STAR 50",         "科创50",     "CN", "Asia/Shanghai"),
+        // ── 以下为"更多指数"扩展条目（optional，默认关闭）。Yahoo 无源的市场勿加：
+        // 实测无数据/已下架——意大利FTSE MIB、波兰WIG20、葡萄牙PSI20、菲律宾PSEi、土耳其BIST100、俄罗斯RTSI、墨西哥IPC ──
+        GlobalIndexConfig("^STOXX50E","STOXX50","EURO STOXX 50",   "欧洲STOXX50", "EU", "Europe/Paris",     true),
+        GlobalIndexConfig("^SSMI",    "SMI",    "Swiss Market",    "瑞士SMI",     "CH", "Europe/Zurich",    true),
+        GlobalIndexConfig("^AEX",     "AEX",    "AEX Amsterdam",   "荷兰AEX",     "NL", "Europe/Amsterdam", true),
+        GlobalIndexConfig("^OMXSPI",  "OMX",    "OMX Stockholm 30","瑞典OMX",     "SE", "Europe/Stockholm", true),
+        GlobalIndexConfig("^IBEX",    "IBEX",   "IBEX 35",         "西班牙IBEX35","ES", "Europe/Madrid",    true),
+        GlobalIndexConfig("^GSPTSE",  "TSX",    "S&P/TSX",         "加拿大TSX",   "CA", "America/Toronto",  true),
+        GlobalIndexConfig("^MERV",    "MERV",   "MERVAL",          "阿根廷Merval","AR", "America/Argentina/Buenos_Aires", true),
+        GlobalIndexConfig("^NSEI",    "NIFTY",  "NIFTY 50",        "印度Nifty50", "IN", "Asia/Kolkata",     true),
+        GlobalIndexConfig("^STI",     "STI",    "Straits Times",   "新加坡海峡时报","SG","Asia/Singapore",   true),
+        GlobalIndexConfig("^KLSE",    "KLCI",   "KLSE Composite",  "马来西亚KLCI","MY", "Asia/Kuala_Lumpur",true),
+        GlobalIndexConfig("^JKSE",    "JCI",    "IDX Composite",   "印尼雅加达综指","ID","Asia/Jakarta",     true),
+        GlobalIndexConfig("^SET.BK",  "SET",    "SET Index",       "泰国SET",     "TH", "Asia/Bangkok",     true),
+        GlobalIndexConfig("^VNINDEX.VN","VNINDEX","VN Index",      "越南VNIndex", "VN", "Asia/Ho_Chi_Minh", true),
+        GlobalIndexConfig("^TASI.SR", "TASI",   "Tadawul TASI",    "沙特TASI",    "SA", "Asia/Riyadh",      true),
+        GlobalIndexConfig("^TA125.TA","TA125",  "TA-125",          "以色列TA125", "IL", "Asia/Jerusalem",   true),
+        GlobalIndexConfig("^J203.JO", "TOP40",  "JSE Top 40",      "南非Top40",   "ZA", "Africa/Johannesburg", true),
+        GlobalIndexConfig("^EGX30.CA","EGX30",  "EGX 30",          "埃及EGX30",   "EG", "Africa/Cairo",     true),
     )
 
     private val SINA_SYMBOL_MAP = mapOf(
@@ -90,6 +111,23 @@ object MarketDataService {
             "TW" -> Triple(9*60,    13*60+30, null)
             "IN" -> Triple(9*60+15, 15*60+30, null)
             "BR" -> Triple(10*60,   17*60, null)
+            // ── "更多指数"扩展市场（时段为交易所常规连续交易时段，含午休） ──
+            "EU" -> Triple(9*60,    17*60+30, null)  // STOXX50 以欧元区主流时段近似
+            "CH" -> Triple(9*60,    17*60+30, null)
+            "NL" -> Triple(9*60,    17*60+30, null)
+            "SE" -> Triple(9*60,    17*60+30, null)
+            "ES" -> Triple(9*60,    17*60+30, null)
+            "CA" -> Triple(9*60+30, 16*60, null)
+            "AR" -> Triple(11*60,   17*60, null)
+            "SG" -> Triple(9*60,    17*60, 12*60 to 13*60)
+            "MY" -> Triple(9*60,    17*60, 12*60+30 to 14*60+30)
+            "ID" -> Triple(9*60,    16*60, 12*60 to 13*60+30)
+            "TH" -> Triple(10*60,   17*60, 12*60+30 to 14*60+30)
+            "VN" -> Triple(9*60,    15*60, 11*60+30 to 13*60)
+            "SA" -> Triple(10*60,   15*60, null)
+            "IL" -> Triple(10*60,   17*60, null)
+            "EG" -> Triple(10*60,   14*60+30, null)
+            "ZA" -> Triple(9*60,    17*60+30, null)
             else -> Triple(9*60,    16*60, null)
         }
     }
@@ -101,7 +139,9 @@ object MarketDataService {
     fun isMarketOpenByTimezone(market: String, timezone: String): Boolean {
         val now = ZonedDateTime.now(ZoneId.of(timezone))
         val dow = now.dayOfWeek.value  // 1=Mon..7=Sun
-        if (dow == 6 || dow == 7) return false
+        // 沙特/以色列/埃及周末为周五+周六（周日开盘），与通行的周六+周日相反
+        val weekend = if (market in FRIDAY_WEEKEND_MARKETS) setOf(5, 6) else setOf(6, 7)
+        if (dow in weekend) return false
         if (!isTodayTradingDay(market, timezone, System.currentTimeMillis())) return false
         val current = now.hour * 60 + now.minute
         val (start, end, lunch) = getSessionMinutes(market)
@@ -115,7 +155,14 @@ object MarketDataService {
         "US" to "^GSPC", "UK" to "^FTSE", "DE" to "^GDAXI", "FR" to "^FCHI",
         "JP" to "^N225", "KR" to "^KS11", "TW" to "^TWII", "IN" to "^BSESN",
         "HK" to "^HSI", "CN" to "000001.SS", "BR" to "^BVSP",
+        "EU" to "^STOXX50E", "CH" to "^SSMI", "NL" to "^AEX", "SE" to "^OMXSPI", "ES" to "^IBEX",
+        "CA" to "^GSPTSE", "AR" to "^MERV", "SG" to "^STI", "MY" to "^KLSE", "ID" to "^JKSE",
+        "TH" to "^SET.BK", "VN" to "^VNINDEX.VN", "SA" to "^TASI.SR", "IL" to "^TA125.TA",
+        "ZA" to "^J203.JO", "EG" to "^EGX30.CA",
     )
+
+    /** 周末是周五+周六的市场（周日开市） */
+    private val FRIDAY_WEEKEND_MARKETS = setOf("SA", "IL", "EG")
     private val marketTradingDayCache = mutableMapOf<String, Pair<Boolean, Long>>()
     private val MARKET_CALENDAR_CACHE_TTL = 30 * 60_000L  // 30 分钟；是否交易日只在日期边界变化
 
@@ -644,9 +691,17 @@ object MarketDataService {
         val rateLimited: Boolean = false
     )
 
-    /** 设置页可隐藏部分指数后的可见列表：被隐藏的不请求、不展示（省 Yahoo 配额） */
-    fun visibleGlobalIndexes(): List<GlobalIndexConfig> =
-        GLOBAL_INDEXES.filterNot { it.symbol in StockliteState.getInstance().hiddenGlobalIndexes }
+    /**
+     * 设置页可隐藏部分指数后的可见列表：被隐藏的不请求、不展示（省 Yahoo 配额）。
+     * 双轨规则：常用指数默认显示、可隐藏；扩展指数（optional）默认隐藏、需显式开启。
+     */
+    fun visibleGlobalIndexes(): List<GlobalIndexConfig> {
+        val state = StockliteState.getInstance()
+        return GLOBAL_INDEXES.filter {
+            if (it.optional) it.symbol in state.enabledOptionalIndexes
+            else it.symbol !in state.hiddenGlobalIndexes
+        }
+    }
 
     fun getGlobalIndexQuotes(): GlobalQuoteResult {
         val visibleIndexes = visibleGlobalIndexes()
@@ -781,7 +836,9 @@ object MarketDataService {
                 // 缓存
                 val cached = globalPrevCloseCache[symbol]
                 if (cached != null && now - cached.second < GLOBAL_CACHE_TTL) prevClose = cached.first
-                else prevClose = latestClose ?: return null
+                // 最终兜底：无分钟线、无官方前收的稀疏源（如埃及EGX30）以前收=现价显示，
+                // 至少保住价格，比整条行情缺失（0.00）更可用
+                else prevClose = latestClose ?: price
             }
             globalPrevCloseCache[symbol] = prevClose to now
             val pct = if (prevClose > 0) (price - prevClose) / prevClose * 100 else 0.0

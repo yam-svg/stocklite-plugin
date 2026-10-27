@@ -313,6 +313,8 @@ object L10n {
     val settingsGlobalIndexPicker get() = s("显示指数:", "Shown indices:")
     val btnChooseGlobalIndexes    get() = s("选择显示指数…", "Choose indices…")
     val globalIndexPickerTitle    get() = s("选择要显示的全球指数", "Select Global Indices to Display")
+    val globalIndexTabMain        get() = s("常用指数", "Common")
+    val globalIndexTabMore        get() = s("更多指数（默认关闭）", "More (off by default)")
     val btnSelectAll              get() = s("全选", "All")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")

@@ -105,6 +105,9 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // ── 全球板块隐藏的指数（存储 symbol；空 = 全部显示） ──
     var hiddenGlobalIndexes: MutableList<String> = ArrayList()
 
+    // ── 显式开启的扩展指数（"更多指数"tab；空 = 全部不显示） ──
+    var enabledOptionalIndexes: MutableList<String> = ArrayList()
+
     // ── 全球指数自定义显示名称（symbol -> 别名），为空/缺失时显示默认名称 ──
     var globalIndexAliases: MutableMap<String, String> = HashMap()
 
