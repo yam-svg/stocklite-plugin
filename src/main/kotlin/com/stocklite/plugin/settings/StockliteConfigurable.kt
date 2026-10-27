@@ -48,6 +48,9 @@ class StockliteConfigurable : Configurable {
     private val fundPanelCheckBox       = JBCheckBox(L10n.settingsFundPanel)
     private val futurePanelCheckBox     = JBCheckBox(L10n.settingsFuturePanel)
     private val globalPanelCheckBox     = JBCheckBox(L10n.settingsGlobalPanel)
+    // 全球指数显示选择（弹窗编辑，apply 前暂存；与 state.hiddenGlobalIndexes 对应）
+    private var pendingHiddenGlobalIndexes: MutableSet<String> = HashSet()
+    private val globalIndexPickerBtn    = JButton()
     private val cryptoPanelCheckBox     = JBCheckBox(L10n.settingsCryptoPanel)
     private val sectorPanelCheckBox     = JBCheckBox(L10n.settingsSectorPanel)
     private val ipoPanelCheckBox        = JBCheckBox(L10n.settingsIpoPanel)
@@ -264,6 +267,20 @@ class StockliteConfigurable : Configurable {
         listOf(fundPanelCheckBox, futurePanelCheckBox, globalPanelCheckBox, cryptoPanelCheckBox,
                sectorPanelCheckBox, ipoPanelCheckBox, usMarketPanelCheckBox,
                apiLogPanelCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        // 全球标签页的子选项：选择显示哪些全球指数（更深一级缩进表明从属关系）
+        gbc.gridy = row; gbc.insets = Insets(2, 44, 2, 8)
+        val globalIndexRow = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0)).apply {
+            add(JLabel(L10n.settingsGlobalIndexPicker))
+            add(globalIndexPickerBtn)
+        }
+        panel.add(globalIndexRow, gbc); row++
+        globalIndexPickerBtn.addActionListener {
+            val dlg = com.stocklite.plugin.ui.dialogs.GlobalIndexPickerDialog(pendingHiddenGlobalIndexes)
+            if (dlg.showAndGet()) {
+                pendingHiddenGlobalIndexes = dlg.hiddenSymbols().toMutableSet()
+                updateGlobalIndexPickerText()
+            }
+        }
         row = group(L10n.settingsGroupAlerts, row)
         listOf(alertsCheckBox, fundNavAlertCheckBox, sealShrinkCheckBox).forEach { cb -> row = cbRow(cb, row) }
         // 封单提醒的子选项：更深一级缩进表明从属关系
@@ -409,6 +426,14 @@ class StockliteConfigurable : Configurable {
         return JBScrollPane(panel).apply { border = null }
     }
 
+    /** 按钮文案：选择显示指数… (可见数/总数)，只统计仍存在于配置表中的 symbol */
+    private fun updateGlobalIndexPickerText() {
+        val total = com.stocklite.plugin.service.MarketDataService.GLOBAL_INDEXES.size
+        val hiddenValid = com.stocklite.plugin.service.MarketDataService.GLOBAL_INDEXES
+            .count { it.symbol in pendingHiddenGlobalIndexes }
+        globalIndexPickerBtn.text = "${L10n.btnChooseGlobalIndexes} (${total - hiddenValid}/${total})"
+    }
+
     override fun isModified(): Boolean {
         val state = StockliteState.getInstance()
         val sv = state.stockVisibleColumns.toSet()
@@ -426,6 +451,7 @@ class StockliteConfigurable : Configurable {
                fundPanelCheckBox.isSelected    != state.enableFundPanel   ||
                futurePanelCheckBox.isSelected  != state.enableFuturePanel ||
                globalPanelCheckBox.isSelected  != state.enableGlobalPanel ||
+               pendingHiddenGlobalIndexes != state.hiddenGlobalIndexes.toSet() ||
                cryptoPanelCheckBox.isSelected  != state.enableCryptoPanel ||
                sectorPanelCheckBox.isSelected  != state.enableSectorPanel ||
                ipoPanelCheckBox.isSelected     != state.enableIpoPanel   ||
@@ -463,6 +489,7 @@ class StockliteConfigurable : Configurable {
         state.enableFundPanel     = fundPanelCheckBox.isSelected
         state.enableFuturePanel   = futurePanelCheckBox.isSelected
         state.enableGlobalPanel   = globalPanelCheckBox.isSelected
+        state.hiddenGlobalIndexes = ArrayList(pendingHiddenGlobalIndexes.sorted())
         state.enableCryptoPanel   = cryptoPanelCheckBox.isSelected
         state.enableSectorPanel   = sectorPanelCheckBox.isSelected
         state.enableIpoPanel      = ipoPanelCheckBox.isSelected
@@ -507,6 +534,8 @@ class StockliteConfigurable : Configurable {
         fundPanelCheckBox.isSelected     = state.enableFundPanel
         futurePanelCheckBox.isSelected   = state.enableFuturePanel
         globalPanelCheckBox.isSelected   = state.enableGlobalPanel
+        pendingHiddenGlobalIndexes = state.hiddenGlobalIndexes.toHashSet()
+        updateGlobalIndexPickerText()
         cryptoPanelCheckBox.isSelected   = state.enableCryptoPanel
         sectorPanelCheckBox.isSelected   = state.enableSectorPanel
         ipoPanelCheckBox.isSelected      = state.enableIpoPanel

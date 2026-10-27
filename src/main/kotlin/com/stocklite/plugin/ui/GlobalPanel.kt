@@ -86,7 +86,7 @@ class GlobalPanel : JPanel(BorderLayout()),
     private var selectedMarket = ALL_MARKETS
     private val marketTabBtns = linkedMapOf<String, JButton>()
     private val otherMarketsSet: Set<String> by lazy {
-        MarketDataService.GLOBAL_INDEXES.map { it.market }.distinct().filterNot { it in MAIN_MARKETS }.toSet()
+        MarketDataService.visibleGlobalIndexes().map { it.market }.distinct().filterNot { it in MAIN_MARKETS }.toSet()
     }
 
     // ── A股大盘概览 ──────────────────────────────────────────────
@@ -349,7 +349,7 @@ class GlobalPanel : JPanel(BorderLayout()),
 
     /** 按市场快捷筛选的 tab 栏，"全部" + 各市场代码（如 CN/HK/US），默认选中"全部" */
     private fun buildMarketTabs(): JPanel {
-        val presentMarkets = MarketDataService.GLOBAL_INDEXES.map { it.market }.distinct()
+        val presentMarkets = MarketDataService.visibleGlobalIndexes().map { it.market }.distinct()
         val tabs = listOf(ALL_MARKETS) + MAIN_MARKETS.filter { it in presentMarkets } +
             (if (otherMarketsSet.isNotEmpty()) listOf(OTHER_MARKETS) else emptyList())
         val bar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {

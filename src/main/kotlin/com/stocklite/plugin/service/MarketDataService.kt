@@ -35,6 +35,7 @@ object MarketDataService {
         GlobalIndexConfig("^FTSE",    "FTSE",   "FTSE 100",        "英国富时100","UK", "Europe/London"),
         GlobalIndexConfig("^GDAXI",   "DAX",    "DAX",             "德国DAX",    "DE", "Europe/Berlin"),
         GlobalIndexConfig("^FCHI",    "CAC40",  "CAC 40",          "法国CAC40",  "FR", "Europe/Paris"),
+        GlobalIndexConfig("^BVSP",    "BVSP",   "Bovespa",         "巴西IBOVESPA","BR", "America/Sao_Paulo"),
         GlobalIndexConfig("^N225",    "N225",   "Nikkei 225",      "日经225",    "JP", "Asia/Tokyo"),
         GlobalIndexConfig("^KS11",    "KOSPI",  "KOSPI",           "韩国综合指数","KR", "Asia/Seoul"),
         GlobalIndexConfig("^TWII",    "TWII",   "TAIEX",           "台湾加权指数","TW", "Asia/Taipei"),
@@ -46,7 +47,6 @@ object MarketDataService {
         GlobalIndexConfig("399006.SZ","CYB",    "ChiNext",         "创业板指",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000300.SS","CSI300", "CSI 300",         "沪深300",    "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000688.SS","STAR50", "STAR 50",         "科创50",     "CN", "Asia/Shanghai"),
-        GlobalIndexConfig("^BVSP",    "BVSP",   "Bovespa",         "巴西IBOVESPA","BR", "America/Sao_Paulo"),
     )
 
     private val SINA_SYMBOL_MAP = mapOf(
@@ -644,7 +644,12 @@ object MarketDataService {
         val rateLimited: Boolean = false
     )
 
+    /** 设置页可隐藏部分指数后的可见列表：被隐藏的不请求、不展示（省 Yahoo 配额） */
+    fun visibleGlobalIndexes(): List<GlobalIndexConfig> =
+        GLOBAL_INDEXES.filterNot { it.symbol in StockliteState.getInstance().hiddenGlobalIndexes }
+
     fun getGlobalIndexQuotes(): GlobalQuoteResult {
+        val visibleIndexes = visibleGlobalIndexes()
         val quoteMap = mutableMapOf<String, Pair<Double, Double>>()
         val delayMap = mutableMapOf<String, Boolean>()  // 本次实际取值来源是否为延迟源
         val now = System.currentTimeMillis()
@@ -672,7 +677,7 @@ object MarketDataService {
             }
 
         // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
-        for (item in GLOBAL_INDEXES) {
+        for (item in visibleIndexes) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             if (!GLOBAL_FORCE_YAHOO.contains(item.symbol) && sinaKey != null && quoteMap.containsKey(sinaKey)) continue
 
@@ -697,7 +702,7 @@ object MarketDataService {
             }
         }
 
-        val quotes = GLOBAL_INDEXES.map { item ->
+        val quotes = visibleIndexes.map { item ->
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             val (price, pct) = (sinaKey?.let { quoteMap[it] } ?: quoteMap[item.symbol]) ?: (0.0 to 0.0)
             val isDelayed = (sinaKey?.let { delayMap[it] } ?: delayMap[item.symbol]) ?: true

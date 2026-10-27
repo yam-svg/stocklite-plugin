@@ -310,6 +310,10 @@ object L10n {
     val settingsFundPanel get() = s("显示基金标签页", "Show Funds tab")
     val settingsFuturePanel get() = s("显示期货标签页", "Show Futures tab")
     val settingsGlobalPanel get() = s("显示全球标签页（大盘概览与全球指数）", "Show Global tab (market breadth & world indices)")
+    val settingsGlobalIndexPicker get() = s("显示指数:", "Shown indices:")
+    val btnChooseGlobalIndexes    get() = s("选择显示指数…", "Choose indices…")
+    val globalIndexPickerTitle    get() = s("选择要显示的全球指数", "Select Global Indices to Display")
+    val btnSelectAll              get() = s("全选", "All")
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
