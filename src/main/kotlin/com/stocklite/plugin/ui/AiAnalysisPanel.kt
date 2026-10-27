@@ -128,6 +128,9 @@ class AiAnalysisPanel(
     }
 
     private fun doAnalyze() {
+        // 点击 ↻ 即自动展开对话区：提示（暂无数据/无 Key）、思考进度与回复
+        // 都渲染在折叠容器内，不展开时用户看不到任何反馈，表现为“点了没反应”
+        if (!isExpanded) toggle()
         if (latestContext.isBlank()) {
             chatPanel.showHint(L10n.aiNoData); return
         }

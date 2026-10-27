@@ -46,6 +46,7 @@ object MarketDataService {
         GlobalIndexConfig("399006.SZ","CYB",    "ChiNext",         "创业板指",   "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000300.SS","CSI300", "CSI 300",         "沪深300",    "CN", "Asia/Shanghai"),
         GlobalIndexConfig("000688.SS","STAR50", "STAR 50",         "科创50",     "CN", "Asia/Shanghai"),
+        GlobalIndexConfig("^BVSP",    "BVSP",   "Bovespa",         "巴西IBOVESPA","BR", "America/Sao_Paulo"),
     )
 
     private val SINA_SYMBOL_MAP = mapOf(
@@ -88,6 +89,7 @@ object MarketDataService {
             "FR" -> Triple(9*60,    17*60+30, null)
             "TW" -> Triple(9*60,    13*60+30, null)
             "IN" -> Triple(9*60+15, 15*60+30, null)
+            "BR" -> Triple(10*60,   17*60, null)
             else -> Triple(9*60,    16*60, null)
         }
     }
@@ -112,7 +114,7 @@ object MarketDataService {
     private val MARKET_CALENDAR_SYMBOL = mapOf(
         "US" to "^GSPC", "UK" to "^FTSE", "DE" to "^GDAXI", "FR" to "^FCHI",
         "JP" to "^N225", "KR" to "^KS11", "TW" to "^TWII", "IN" to "^BSESN",
-        "HK" to "^HSI", "CN" to "000001.SS",
+        "HK" to "^HSI", "CN" to "000001.SS", "BR" to "^BVSP",
     )
     private val marketTradingDayCache = mutableMapOf<String, Pair<Boolean, Long>>()
     private val MARKET_CALENDAR_CACHE_TTL = 30 * 60_000L  // 30 分钟；是否交易日只在日期边界变化

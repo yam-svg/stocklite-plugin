@@ -63,6 +63,9 @@ class StockliteConfigurable : Configurable {
     private val sealShrinkCheckBox      = JBCheckBox(L10n.settingsSealShrinkAlert)
     private val sealHoldingOnlyCheckBox = JBCheckBox(L10n.settingsSealAlertHoldingOnly)
 
+    // 支持作者（打赏）：无状态设置项，仅弹赞赏码对话框
+    private val donateButton = javax.swing.JButton(L10n.donateButton)
+
     // AI 分析
     private val apiKeyField    = JPasswordField(30)
     private val modelCombo     = JComboBox<String>()
@@ -391,6 +394,12 @@ class StockliteConfigurable : Configurable {
             feedbackRefreshBtn.addActionListener { loadFeedbackHistory() }
             feedbackDeleteBtn.addActionListener { deleteSelectedFeedback() }
         }
+
+        // ── 支持作者（打赏） ──
+        sep(L10n.settingsDonate, row); row += 2
+        gbc.gridy = row++; gbc.insets = Insets(2, 8, 8, 8)
+        panel.add(donateButton, gbc)
+        donateButton.addActionListener { com.stocklite.plugin.ui.dialogs.DonateDialog().show() }
 
         // 撑开底部
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
