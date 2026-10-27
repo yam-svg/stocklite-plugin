@@ -69,12 +69,17 @@ object ChartDataService {
 
     fun getGlobalIntraday(yahooSymbol: String): List<ChartPoint> {
         val sinaSymbol = CN_SINA_MAP[yahooSymbol]
-        return if (sinaSymbol != null) {
+        if (sinaSymbol != null) {
             val pts = fetchSinaKline(sinaSymbol, scale = 1, datalen = 600)
-            if (pts.isNotEmpty()) pts else fetchSinaKline(sinaSymbol, scale = 5, datalen = 288)
-        } else {
-            fetchYahooIntraday(yahooSymbol)
+            return if (pts.isNotEmpty()) pts else fetchSinaKline(sinaSymbol, scale = 5, datalen = 288)
         }
+        // 恒生科技：Yahoo 图表接口对 ^HSTECH 直接报 Not Found，HSTECH.HK 全天仅约十几个点，
+        // 改走腾讯港股分时源（与港股 ETF 同接口），失败再回退 Yahoo
+        if (yahooSymbol == "^HSTECH") {
+            val pts = fetchHkIntraday("HSTECH")
+            if (pts.isNotEmpty()) return pts
+        }
+        return fetchYahooIntraday(yahooSymbol)
     }
 
     /** 加密日内分时：Bitget 1 分钟 K → 备源 Gate.io，返回当日 UTC 分钟点 */
@@ -143,6 +148,12 @@ object ChartDataService {
             if (pts.isNotEmpty()) return pts
             val scale = when (period) { "daily" -> 240; "weekly" -> 1200; "monthly" -> 5000; else -> 240 }
             return fetchSinaKlineHistory(sinaSymbol, scale, count)
+        }
+        // 恒生科技：Yahoo HSTECH.HK 历史几乎无数据（5 年日K仅 1 条），
+        // 改走腾讯 hkHSTECH（日K可完整回溯 2020-07 指数发布），失败再回退 Yahoo
+        if (symbol == "^HSTECH") {
+            val pts = fetchHkHistory("HSTECH", period, count)
+            if (pts.isNotEmpty()) return pts
         }
         // 全球指数 → Yahoo Finance
         // 不能用 max：历史超长的指数超过 Yahoo 单次约 1000 条限制会静默降频
@@ -612,8 +623,9 @@ object ChartDataService {
     }
 
     /**
-     * 港股历史 K 线（日/周/月），用腾讯 newfqkline 接口。
-     * 字段顺序：[date, close, open, high, low, volume, {}, change, amount, ...]
+     * 港股历史 K 线（日/周/月），用腾讯 newfqkline 接口（个股与指数通用，如 07709 / HSTECH）。
+     * 字段顺序：[date, open, close, high, low, volume, {}, change, amount, ...]
+     * （open/close 顺序已用实时行情 qt.gtimg.cn 交叉验证，勿再调换）
      */
     private fun fetchHkHistory(code: String, period: String, count: Int): List<ChartPoint> {
         val periodParam = when (period) {
@@ -634,8 +646,8 @@ object ChartDataService {
                 val bar  = bars.getJSONArray(i)
                 val date = bar.optString(0, "")
                 if (date.isEmpty()) continue
-                val close  = bar.optString(1, "").toDoubleOrNull() ?: continue
-                val open   = bar.optString(2, "").toDoubleOrNull() ?: Double.NaN
+                val open   = bar.optString(1, "").toDoubleOrNull() ?: Double.NaN
+                val close  = bar.optString(2, "").toDoubleOrNull() ?: continue
                 val high   = bar.optString(3, "").toDoubleOrNull() ?: Double.NaN
                 val low    = bar.optString(4, "").toDoubleOrNull() ?: Double.NaN
                 val vol    = bar.optString(5, "").toDoubleOrNull() ?: Double.NaN
