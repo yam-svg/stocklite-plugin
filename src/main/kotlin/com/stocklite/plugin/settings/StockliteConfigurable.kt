@@ -58,6 +58,7 @@ class StockliteConfigurable : Configurable {
     private val portfolioBarCheckBox    = JBCheckBox(L10n.settingsPortfolioBar)
     private val chartMACheckBox         = JBCheckBox(L10n.settingsChartMA)
     private val chartVolumeCheckBox     = JBCheckBox(L10n.settingsChartVolume)
+    private val tradeMarkerCheckBox     = JBCheckBox(L10n.settingsChartTradeMarkers)
     private val sealLotsCheckBox        = JBCheckBox(L10n.settingsSealLots)
     private val sealShrinkCheckBox      = JBCheckBox(L10n.settingsSealShrinkAlert)
     private val sealHoldingOnlyCheckBox = JBCheckBox(L10n.settingsSealAlertHoldingOnly)
@@ -266,7 +267,7 @@ class StockliteConfigurable : Configurable {
         gbc.gridy = row; gbc.insets = Insets(2, 44, 2, 8)
         panel.add(sealHoldingOnlyCheckBox, gbc); row++
         row = group(L10n.settingsGroupDisplay, row)
-        listOf(chartMACheckBox, chartVolumeCheckBox, sealLotsCheckBox, portfolioBarCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        listOf(chartMACheckBox, chartVolumeCheckBox, tradeMarkerCheckBox, sealLotsCheckBox, portfolioBarCheckBox).forEach { cb -> row = cbRow(cb, row) }
         gbc.insets = Insets(2, 8, 2, 8)  // 恢复后续区块的默认缩进
 
         // ── AI 分析 ──
@@ -426,6 +427,7 @@ class StockliteConfigurable : Configurable {
                portfolioBarCheckBox.isSelected != state.enablePortfolioStatusBar ||
                chartMACheckBox.isSelected      != state.enableChartMA ||
                chartVolumeCheckBox.isSelected  != state.enableChartVolume ||
+               tradeMarkerCheckBox.isSelected  != state.showTradeMarkers ||
                sealLotsCheckBox.isSelected     != state.enableSealLots ||
                sealShrinkCheckBox.isSelected   != state.enableSealShrinkAlert ||
                sealHoldingOnlyCheckBox.isSelected != state.sealAlertHoldingOnly ||
@@ -463,6 +465,7 @@ class StockliteConfigurable : Configurable {
         if (!state.enablePortfolioStatusBar) PortfolioStatusWidget.update(0.0, 0.0, 0.0, emptyList())
         state.enableChartMA = chartMACheckBox.isSelected
         state.enableChartVolume = chartVolumeCheckBox.isSelected
+        state.showTradeMarkers = tradeMarkerCheckBox.isSelected
         state.enableSealLots = sealLotsCheckBox.isSelected
         state.enableSealShrinkAlert = sealShrinkCheckBox.isSelected
         state.sealAlertHoldingOnly  = sealHoldingOnlyCheckBox.isSelected
@@ -505,6 +508,7 @@ class StockliteConfigurable : Configurable {
         portfolioBarCheckBox.isSelected = state.enablePortfolioStatusBar
         chartMACheckBox.isSelected      = state.enableChartMA
         chartVolumeCheckBox.isSelected  = state.enableChartVolume
+        tradeMarkerCheckBox.isSelected  = state.showTradeMarkers
         sealLotsCheckBox.isSelected     = state.enableSealLots
         sealShrinkCheckBox.isSelected   = state.enableSealShrinkAlert
         sealHoldingOnlyCheckBox.isSelected = state.sealAlertHoldingOnly

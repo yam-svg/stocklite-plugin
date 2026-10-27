@@ -76,6 +76,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var hadPersistedConfig: Boolean = false  // loadState 时置位：本机曾持久化过配置=老用户。新安装不走 loadState，据此判定新装（不受播种时序影响）
     var enableChartMA: Boolean = false       // K线图均线（MA5/10/20），默认关闭
     var enableChartVolume: Boolean = true    // K线图底部成交量（红绿柱），默认开启
+    var showTradeMarkers: Boolean = true     // K线图标注买卖点（B/S），默认开启
 
     /** 反馈设备标识：匿名 UUID，用户不登录也能凭它查询自己反馈的回复；首次提交时生成 */
     var feedbackDeviceId: String = ""

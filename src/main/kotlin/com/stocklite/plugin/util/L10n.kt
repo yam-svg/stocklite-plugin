@@ -316,6 +316,7 @@ object L10n {
                                         "Show API log tab (request monitoring, for debugging)")
     val settingsChartMA     get() = s("K线图显示均线（MA5 / MA10 / MA20）", "Show moving averages on chart (MA5 / MA10 / MA20)")
     val settingsChartVolume get() = s("K线图底部显示成交量（红绿柱）", "Show volume bars at chart bottom (red/green)")
+    val settingsChartTradeMarkers get() = s("图表标注买卖点（B 买入 / S 卖出，来源：交易记录；日内仅显示当日交易）", "Mark buy/sell points on chart (B / S, from trade records; intraday shows today's only)")
     val settingsSealLots    get() = s("涨停/跌停时在涨跌幅旁显示封单手数", "Show sealed order lots at price limits")
     val settingsSealShrinkAlert get() = s("封单快速减少时通知提醒（涨停开板 / 跌停翘板信号）", "Notify when sealed orders drop rapidly (board opening / rebound signal)")
     val settingsSealAlertHoldingOnly get() = s("封单提醒仅覆盖持仓股票（关闭时全部自选股均提醒）", "Only alert on held stocks (off: all watchlist stocks)")

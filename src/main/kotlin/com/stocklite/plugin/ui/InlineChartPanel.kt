@@ -6,6 +6,7 @@ import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.CefChartBrowser
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.TradeMarkerUtil
 import java.awt.*
 import javax.swing.*
 
@@ -211,6 +212,15 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val prevClose = currentPrevClose
         val changePercent = currentChangePct
 
+        // 买卖点标记（B/S）：K 线标全部交易记录，日内只标当天交易。
+        // 记录快照在 EDT 取好，后台线程只做匹配计算，避免与交易记录增删并发。
+        val st = StockliteState.getInstance()
+        val tradesSnapshot: List<TradeMarkerUtil.TradeLite> =
+            if (!st.showTradeMarkers) emptyList()
+            else st.tradeRecords
+                .filter { it.symbol == sym && (it.tradeType == "BUY" || it.tradeType == "SELL") }
+                .map { TradeMarkerUtil.TradeLite(it.tradeAt, it.tradeType, it.price, it.quantity) }
+
         ApplicationManager.getApplication().executeOnPooledThread {
             val points = when (period) {
                 PERIOD_INTRADAY -> fetchIntraday?.invoke() ?: emptyList()
@@ -220,11 +230,15 @@ class InlineChartPanel : JPanel(BorderLayout()) {
                 else            -> fetchIntraday?.invoke() ?: emptyList()
             }
             val usePrevClose = period == PERIOD_INTRADAY  // only intraday uses prevClose baseline
+            // 日内无成交时刻信息，用价格反查曲线定位；K 线按交易日对齐
+            val tradeMarkers =
+                if (period == PERIOD_INTRADAY) TradeMarkerUtil.matchIntraday(tradesSnapshot, points.map { it.time to it.value })
+                else TradeMarkerUtil.match(tradesSnapshot, points.map { it.time })
             SwingUtilities.invokeLater {
                 if (loadId != id) return@invokeLater
                 b.loadHtml(
                     if (points.isEmpty()) errorHtml()
-                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period, market = market),
+                    else buildChartHtml(points, if (usePrevClose) prevClose else 0.0, changePercent, isIntraday = period == PERIOD_INTRADAY, period = period, market = market, tradeMarkers = tradeMarkers),
                     "http://stocklite.local/"
                 )
             }
@@ -289,7 +303,8 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         changePercent: Double,
         isIntraday: Boolean,
         period: String = PERIOD_INTRADAY,
-        market: String = ""
+        market: String = "",
+        tradeMarkers: List<TradeMarkerUtil.Marker> = emptyList()
     ): String {
         val scheme = StockliteState.getInstance().colorScheme
 
@@ -327,6 +342,28 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val lblClose = L10n.chartClose.replace("'", "\\'")
         val lblVol   = L10n.chartVol.replace("'", "\\'")
         val timeVisible = if (isIntraday) "true" else "false"
+
+        // ── 买卖点标记（B/S）：字母标签 + 竖直短线指向 K 线（同主流软件），+ 悬浮明细 ──
+        val BUY_COL  = "#ff5b5b"   // 买入：红色标签，置于柱下方
+        val SELL_COL = "#3fa7ff"   // 卖出：蓝色标签，置于柱上方
+        fun jsEsc(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+        val lblBuy  = L10n.tradeTypeBuy
+        val lblSell = L10n.tradeTypeSell
+        val markersJs = tradeMarkers.joinToString(",") { m ->
+            val text = (if (m.type == "BUY") "B" else "S") + if (m.trades.size > 1) "×${m.trades.size}" else ""
+            """{time:${m.time},type:'${m.type}',text:'$text'}"""
+        }
+        val tradeTipsJs = tradeMarkers.joinToString(",") { m ->
+            val buy = m.type == "BUY"
+            val col = if (buy) BUY_COL else SELL_COL
+            val tip = m.trades.joinToString("&nbsp;&nbsp;") { t ->
+                val priceTxt = if (t.price > 0) Fmt.price(t.price) else "--"
+                "${if (buy) lblBuy else lblSell} ${Fmt.qty(t.quantity)} @ $priceTxt"
+            }
+            val span = "<span style=\"color:$col\">$tip</span>"
+            "${m.time}:\"${jsEsc(span)}\""
+        }
+
         // 初始可见 K 线根数（滚动查看历史；日K显示半年，周K显示2年，月K显示5年）
         val initBars = when (period) {
             PERIOD_DAILY   -> 120
@@ -346,6 +383,9 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
 #chart{width:100%;flex:1;min-height:0;position:relative;}
 .hl-lbl{position:absolute;font:10px/1.4 system-ui,sans-serif;white-space:nowrap;
   padding:1px 4px;border-radius:2px;pointer-events:none;z-index:5;display:none;}
+.tm-lbl{position:absolute;font:bold 10px/14px system-ui,sans-serif;white-space:nowrap;
+  padding:0 3px;border-radius:2px;pointer-events:none;z-index:6;display:none;color:#fff;}
+.tm-line{position:absolute;width:1px;pointer-events:none;z-index:6;display:none;}
 </style>
 </head><body>
 <div id="infobar"></div><div id="chart"><div id="hi" class="hl-lbl"></div><div id="lo" class="hl-lbl"></div></div>
@@ -358,6 +398,10 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
   var ISINTRADAY=${if (isIntraday) "true" else "false"};
   var UP='${pal.upL}', DN='${pal.dnL}';
   var raw=[$rawJs];
+  var MARKERS=[$markersJs];
+  var TM_BUY='$BUY_COL', TM_SELL='$SELL_COL';
+  var TRADE_TIPS={$tradeTipsJs};
+  var barByTime={};raw.forEach(function(d){barByTime[d.time]=d;});
   var priceMap={};raw.forEach(function(d){priceMap[d.time]=d.price;});
   var volMap={};raw.forEach(function(d){if(d.vol!=null&&d.vol>0) volMap[d.time]=d.vol;});
   // 每根K线相对上一根收盘价的涨跌幅，用于蜡烛图悬浮提示
@@ -526,7 +570,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
         +'&nbsp;$lblLow <b style="color:'+col+'">'+sd.low.toFixed(3)+'</b>'
         +'&nbsp;$lblClose <b style="color:'+col+'">'+sd.close.toFixed(3)+'</b></span>'
         +maTxt
-        +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'');
+        +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'')
+        +(TRADE_TIPS[p.time]?'&nbsp;&nbsp;'+TRADE_TIPS[p.time]:'');
       return;
     }
     var val=sd.value!==undefined?sd.value:(sd.lowerValue!==undefined?sd.lowerValue:null);
@@ -541,7 +586,8 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
     tip.innerHTML='<span style="color:#888aaa">'+ts+'</span>'
       +(chgPct!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+sign+chgPct.toFixed(2)+'%</b>':'')
       +(priceTxt!=null?'&nbsp;&nbsp;<b style="color:'+col+'">'+priceTxt+'</b>':'')
-      +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'');
+      +(HAS_VOL&&volMap[p.time]?'&nbsp;&nbsp;<span style="color:#888aaa">$lblVol <b style="color:'+col+'">'+fmtVol(volMap[p.time])+'</b></span>':'')
+      +(TRADE_TIPS[p.time]?'&nbsp;&nbsp;'+TRADE_TIPS[p.time]:'');
   });
 
   // ── 可见区间最高/最低价标注 ──────────────────────────────────────────
@@ -585,9 +631,55 @@ body{background:#1e1e2e;overflow:hidden;display:flex;flex-direction:column;}
   chart.timeScale().subscribeVisibleLogicalRangeChange(updateHiLo);
   updateHiLo();
 
+  // ── 买卖点标记：字母标签 + 竖直短线指向对应 K 线（买入在下、卖出在上）──
+  var TM_GAP=2, TM_LEN=12;
+  var tmEls=MARKERS.map(function(m){
+    var col=m.type==='BUY'?TM_BUY:TM_SELL;
+    var ln=document.createElement('div');ln.className='tm-line';ln.style.background=col;
+    var lb=document.createElement('div');lb.className='tm-lbl';lb.style.background=col;lb.textContent=m.text;
+    el.appendChild(ln);el.appendChild(lb);
+    return {m:m,ln:ln,lb:lb};
+  });
+  function updateTradeMarkers(){
+    tmEls.forEach(function(o){
+      var m=o.m,d=barByTime[m.time];
+      var x=chart.timeScale().timeToCoordinate(m.time);
+      var hide=function(){o.ln.style.display='none';o.lb.style.display='none';};
+      if(!d||x==null){hide();return;}
+      // 可视范围外的 bar 返回的是视口外坐标（非 null），越界直接隐藏，避免标签贴边假显示
+      var priceAxisW=62;
+      if(x<2||x>el.clientWidth-priceAxisW-2){hide();return;}
+      var buy=m.type==='BUY';
+      var anchor=buy?(d.low!=null?d.low:d.price):(d.high!=null?d.high:d.price);
+      var coord=(HAS&&!HAS_OHLC)?((anchor-PREV)/PREV*100):anchor;
+      var y=series.priceToCoordinate(coord);
+      if(y==null){hide();return;}
+      o.lb.style.display='block';
+      var lw=o.lb.offsetWidth||16, lh=o.lb.offsetHeight||14;
+      var lx=Math.min(Math.max(x-lw/2,2),el.clientWidth-priceAxisW-lw-2);
+      var x2=Math.round(x), ly, lineTop, lineH;
+      if(buy){
+        ly=Math.min(y+TM_GAP+TM_LEN,el.clientHeight-lh-2);
+        lineTop=y+TM_GAP; lineH=Math.max(ly-lineTop,0);
+      }else{
+        ly=Math.max(y-TM_GAP-TM_LEN-lh,2);
+        lineTop=ly+lh; lineH=Math.max(y-TM_GAP-lineTop,0);
+      }
+      o.lb.style.left=lx+'px'; o.lb.style.top=ly+'px';
+      o.ln.style.left=x2+'px'; o.ln.style.top=lineTop+'px'; o.ln.style.height=lineH+'px';
+      o.ln.style.display=lineH>0?'block':'none';
+    });
+  }
+  chart.timeScale().subscribeVisibleLogicalRangeChange(updateTradeMarkers);
+  updateTradeMarkers();
+  // 结算兜底：加载初期的 range 事件可能落在布局过渡态（宽度未定/fitContent 前后），
+  // 若最后一个事件恰好把标记误判为视口外且再无后续事件，标记会一直隐藏；延迟重算一次消除该竞态
+  setTimeout(function(){ updateHiLo(); updateTradeMarkers(); }, 400);
+
   new ResizeObserver(function(){
     chart.applyOptions({width:el.clientWidth,height:el.clientHeight});
     updateHiLo();
+    updateTradeMarkers();
   }).observe(el);
 })();
 </script></body></html>"""
