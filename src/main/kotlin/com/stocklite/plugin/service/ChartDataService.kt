@@ -79,6 +79,11 @@ object ChartDataService {
             val pts = fetchHkIntraday("HSTECH")
             if (pts.isNotEmpty()) return pts
         }
+        // 全球指数东财主源（大陆网络 Yahoo 不可达）；东财无代码或失败仍落 Yahoo
+        MarketDataService.emIndexChartCode(yahooSymbol)?.let { code ->
+            val pts = fetchEmIndexIntraday(code)
+            if (pts.isNotEmpty()) return pts
+        }
         return fetchYahooIntraday(yahooSymbol)
     }
 
@@ -153,6 +158,11 @@ object ChartDataService {
         // 改走腾讯 hkHSTECH（日K可完整回溯 2020-07 指数发布），失败再回退 Yahoo
         if (symbol == "^HSTECH") {
             val pts = fetchHkHistory("HSTECH", period, count)
+            if (pts.isNotEmpty()) return pts
+        }
+        // 全球指数东财 K 线主源（日/周/月原生周期）；东财无代码或失败仍落 Yahoo
+        MarketDataService.emIndexChartCode(symbol)?.let { code ->
+            val pts = fetchEmIndexHistory(code, period, count)
             if (pts.isNotEmpty()) return pts
         }
         // 全球指数 → Yahoo Finance
@@ -520,6 +530,72 @@ object ChartDataService {
                 list.add(ChartPoint(t, c, o, h, l, v))
             }
             list.takeLast(maxCount)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    // ── 全球指数分时 & K 线（东财 push2his 接口）────────────────────────────
+    // Yahoo 域名在大陆网络不可达（雅虎系服务被长期阻断），大陆用户点全球指数图表全空，
+    // 改以东财为主源（数值与 Yahoo 逐分不差，实测见 MarketDataService.EM_INDEX_CODE 注释），Yahoo 兜底。
+
+    private val EM_UT = "bd1d9ddb04089700cf9c27f6f7426281"   // 与 MarketDataService 保持一致
+
+    /** push2 随机断连是常态，递增退避重试 */
+    private fun emGet(url: String, label: String, attempts: Int = 3): String? {
+        for (i in 1..attempts) {
+            HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = label)?.let { return it }
+            if (i < attempts) try { Thread.sleep((i * 300).toLong()) } catch (_: InterruptedException) { return null }
+        }
+        return null
+    }
+
+    /** 分钟分时：trends2 按北京时间返回 "yyyy-MM-dd HH:mm,价" */
+    private fun fetchEmIndexIntraday(code: String): List<ChartPoint> {
+        val url = "https://push2his.eastmoney.com/api/qt/stock/trends2/get?secid=100.$code" +
+                  "&fields1=f1&fields2=f51,f53&ndays=1&iscr=0&ut=$EM_UT"
+        val raw = emGet(url, "全球指数分时-东财($code)") ?: return emptyList()
+        return try {
+            val trends = JSONObject(raw).optJSONObject("data")?.optJSONArray("trends") ?: return emptyList()
+            val shZone = ZoneId.of("Asia/Shanghai")
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until trends.length()) {
+                val row   = trends.optString(i, "")
+                val comma = row.indexOf(',')
+                if (comma < 16) continue
+                val price = row.substringAfter(",").toDoubleOrNull() ?: continue
+                if (price <= 0) continue
+                val ts = java.time.LocalDateTime.parse(row.substring(0, comma),
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    .atZone(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, price))
+            }
+            list
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** 日(101)/周(102)/月(103)K，东财原生周期。行格式 "日期,开,收,高,低,量" */
+    private fun fetchEmIndexHistory(code: String, period: String, count: Int): List<ChartPoint> {
+        val klt = when (period) { "weekly" -> "102"; "monthly" -> "103"; else -> "101" }
+        val url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=100.$code" +
+                  "&klt=$klt&fqt=0&end=20500101&lmt=$count&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56&ut=$EM_UT"
+        val raw = emGet(url, "全球指数K线-东财($code)") ?: return emptyList()
+        return try {
+            val bars = JSONObject(raw).optJSONObject("data")?.optJSONArray("klines") ?: return emptyList()
+            val shZone = ZoneId.of("Asia/Shanghai")
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until bars.length()) {
+                val f = bars.optString(i, "").split(",")
+                if (f.size < 3 || f[0].length < 10) continue
+                val close = f[2].toDoubleOrNull() ?: continue
+                if (close <= 0) continue
+                val ts = java.time.LocalDate.parse(f[0]).atStartOfDay(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, close,
+                    f.getOrElse(1) { "" }.toDoubleOrNull() ?: Double.NaN,
+                    f.getOrElse(3) { "" }.toDoubleOrNull() ?: Double.NaN,
+                    f.getOrElse(4) { "" }.toDoubleOrNull() ?: Double.NaN,
+                    // 全球指数周/月K成交量返回 0，转 NaN 与原 Yahoo 口径一致（不渲染量柱）
+                    f.getOrElse(5) { "" }.toDoubleOrNull()?.takeIf { it > 0 } ?: Double.NaN))
+            }
+            list
         } catch (_: Exception) { emptyList() }
     }
 

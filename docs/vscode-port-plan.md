@@ -154,7 +154,7 @@ MVP（可先发一版攒安装量）= S0+S1(仅股票/全球)+S2+S3+S4+S5 精简
 
 ## 6. 进度看板（集成终检 2026-10-29）
 
-代码目录 `stocklite-vscode/`（git init 已建，全部改动留在工作区，提交归用户）。终检结果：`npm run compile` 零错误；六组自测全绿。
+代码目录 `stocklite-vscode/`（git init 已建，全部改动留在工作区，提交归用户）。终检结果：`npm run compile` 零错误；`npm run selftest:all` 七组自测全绿（S0 17 / S1 离线 116 / S2 45 / S3 31 / S4 57 / S5 25 / S6 35）。
 
 | 会话 | 范围 | 状态 | 自测 |
 |---|---|---|---|
@@ -164,13 +164,68 @@ MVP（可先发一版攒安装量）= S0+S1(仅股票/全球)+S2+S3+S4+S5 精简
 | S3 图表 | 图表 + 盈亏日历（klinecharts） | ✅ 完成 | 31/31 |
 | S4 提醒 | 状态栏轮播 + 提醒引擎（封单/宽度/到价） | ✅ 完成 | 57/57 |
 | S5 设置 | 设置页/导入导出/打赏/反馈/引导 | ✅ 完成 | 25/25 |
-| **S6 其余 Tab** | **src/features/tabs 基金/期货/全球/加密/板块/新股/美股** | ❌ **未实施**（仍是 S0 占位，`tabs/index.ts` 为 registerPlaceholderView×7） | — |
-| S7 集成发布 | contract-changes 落实 + 联调 + 打包 | ⏳ 待 S6 | — |
+| S6 其余 Tab | src/features/tabs 基金/期货/全球/加密/板块/新股/美股 | ✅ 完成（S7a 合流后终检 2026-10-29 复验） | 35/35 |
+| S7a 契约落实 | shared registry/globalIndexes + AlertType/StateKeys + activateData 接线 + package.json/.vscodeignore | ✅ 完成（七条全落实，未做可选项） | 全量回归绿 |
+| S7b 联调发布 | 双轮询定案 + 在线自测 + 发布材料 + vsce 打包 | ✅ 完成（2026-10-29）：vsix 15 文件 267.92 KB；F5 冒烟与上传归用户 | 在线 139/139 |
 
 ### 终检修复记录（S1 板块在线自测连败 → push2 限流）
 - 根因：东财 push2 边缘节点按"新建 TLS 连接速率/IP"限流，RST 概率随边缘 IP 与时间窗漂移（分钟级互换）；UA、ALPN、连接复用均非决定因素，高频探测本身会加剧限流。
 - 对策（已落地）：`src/data/util.ts` 新增 `emGetText`（node:https + 浏览器 UA，永不 reject）；`sectors.ts` 每页 4 镜像域名轮换 ×2 轮、递增退避 1.2s→8s 跨限流窗口，中途断连返回已取部分由 60s 轮询补全；`breadth.ts` 三处 push2 调用同改；自测板块项整项重试 3 次、间隔 15s。
 
-### S7 待办
-1. 落实 `docs/contract-changes.md` 两条 S2 申请：①shared 增加 provider registry（S2 已落过渡版 `src/ui/watchlist/providers.ts`，需上移）；②导入导出纳入 globalState 键 `watchlistDefaultsSeeded`。
-2. 补做 S6 后：真实 provider 全链路联调、F5 冒烟清单、README/LICENSE/图标、`vsce package` + Open VSX 发布（1.0.0 起独立版本号）。
+### S7 待办（更新 2026-10-29：S6 已补做，S7a 已落实全部契约申请）
+1. ✅ 已落实 `docs/contract-changes.md` 全部申请（不止 S2 两条）：shared/registry.ts + 上收 shared/globalIndexes.ts、4 处过渡层（watchlist providers / alerts+statusbar providerRef / chart dataSource）全切换、AlertType 扩 sealShrink/breadthJump 删降型、StateKeys 补 feedback 双键、extension.ts activateData 接线、package.json 挂全套 selftest 脚本 + klinecharts devDep + 版本 1.0.0 + .vscodeignore。可选项（rotationSeconds/alerts.enabled）按方案未做。
+2. ✅ S7b 收尾（2026-10-29 完成）：双轮询定案（tab 自持为唯一源，调度器休眠，见 contract-changes S7b 记录）；在线自测 139/139（板块 flaky 冷却后复检 496 条通过）；三枚 S6 键入导入导出白名单；128×128 图标零依赖生成入库 + icon 字段；LICENSE/README 定稿叙事/CHANGELOG；`stocklite-1.0.0.vsix` 已出（.vscodeignore 修 `*-DELIVERY.md` 通配防交付文档混包）；F5 冒烟清单 20 项 + 20 命令 + 上架步骤 → `stocklite-vscode/docs/release-checklist.md`。**S0~S7 全部完成，代码全部未提交（提交/推送/F5 验证/Marketplace 上传归用户）。**
+
+## 7. 下一步执行方案（2026-10-29 规划）
+
+剩余工作 = S6（7 个可选 tab）+ S7（集成发布）。拆成两个可并行的会话 + 一个收尾会话，目录所有权零冲突：
+
+### 会话 S6 —— 七个可选 Tab（独占 `src/features/tabs/`）
+复用 S2 TableTab 框架（传 handlers）+ S1 provider（可直接 import `../../data` 模块取数）。每个 tab 一个子文件，装配集中在 tabs/index.ts（本会话独占）。按价值排序，上下文不足按序交付、后面砍掉不心疼：
+1. **全球指数**：目录直接复用 `data/globalIndex.ts`（37 条 + `visibleGlobalIndexes` 双轨判据，勿再造一份）；列=名称/现价/涨跌幅；`addGlobalIndex` = MultiSelect 选未显示指数；显示过滤读写 S5 的 hidden/enabledOptional 双轨键。
+2. **期货**：列参照 Kotlin FuturesPanel；首用播种 hf_NQ/hf_OIL（照搬 watchlistDefaultsSeeded 判据模式、独立键）。
+3. **基金**：净值/日涨幅/净值日期（估值列 JetBrains 版已下线，不做）；持仓弹窗用 `data/funds.ts` 现成的腾讯 jj + 东财 F10 两级接口。
+4. **加密**：三源降级在 `data/cryptos.ts` 已备；连通状态异常时通知提示（徽章意图延续）。
+5. **板块**：行业/概念榜单切换（`data/sectors.ts` 已分页补全）；行内点选看成分股可选做。
+6. **美股**：主要指数 + 盘前盘后（`data/usMarket.ts`）。
+7. **新股**：只读列表（申购/上市日期），无添加命令。
+四个 stub 命令换真实现（addFund/addFuture/addCrypto/addGlobalIndex）；sector/ipo/us 的"+"走 viewAddRequested 广播路由。自测新建 `scripts/tabs.selftest.ts` ≥25 项（列格式化、播种判据、过滤判据），tabs 范围 tsc 零错误。
+
+### 会话 S7a —— 契约落实（与 S6 并行：独占 `shared/`、`extension.ts`、`package.json`、删各过渡层文件，不碰 tabs/）
+七条落实清单（细节见 `docs/contract-changes.md`）：
+1. 新建 `shared/registry.ts`（registerProvider/getProvider，未注册回落 mock）；切换 4 处过渡层：`ui/watchlist/providers.ts`、`features/alerts/providerRef.ts`、`features/statusbar/providerRef.ts`、`ui/chart/dataSource.ts`，删过渡代码。
+2. 新建 `shared/globalIndexes.ts`：上收 `data/globalIndex.ts` 目录，S1 与 settings/indexCatalog 改引用（S6 不受影响：它 import 的是 data 层入口）。
+3. `AlertType` 正式扩 `'sealShrink' | 'breadthJump'`，删 `engine.ts` 的 asContract 降型。
+4. `StateKeys` 补 `feedbackDeviceId`/`feedbackEmail`，替换 S5 裸键。
+5. `extension.ts` 接线 `activateData(DataDeps)`：字段接线按 S1 申请清单；`refreshRequested` 按 viewId 转 `bindRefresh`。
+6. `package.json`：挂 `selftest:data` 脚本；`klinecharts@^9` 入 devDependencies；新建 `.vscodeignore`（保 out+webview 含 donate png 与 chart 资产，排除 src/scripts/*.map）；版本升 1.0.0。
+7. 可选项默认不做：statusBar.rotationSeconds、alerts.enabled。
+
+### 会话 S7b —— 联调 + 发布（S6/S7a 合流后，串行）✅ 已完成（2026-10-29，结果见 §6 待办 2）
+1. 全量回归：compile + 七组自测（新增 tabs.selftest）。
+2. F5 冒烟：汇总 S2/S3 交付说明里的 F5 清单 + 20 命令逐条 + 导入导出回环 + 提醒触发 + 真实 provider 全链路。
+3. 发布材料：README（简短英文开场+中文详细介绍主体，沿用定稿叙事）、LICENSE、**扩展图标 128×128（当前缺，package.json 无 icon 字段；从 JetBrains 版图标导出或重绘）**、CHANGELOG。
+4. `vsce package` → 本地安装验证；Marketplace + Open VSX 上传归用户。
+
+**并行时序**：S6 ∥ S7a → S7b。S6 若先于 registry 落地，直接 import data 模块取数即可，注册表切换不触及 tabs/ 文件。
+
+## 8. 缺口补齐会话（2026-10-29 规划，S0~S7 收官后追加）
+
+对照 JetBrains 版核对出三个缺口，拆两个并行会话（G1 小、G2 大），目录所有权零重叠：
+
+### 会话 G1 —— 竞价标注 + 封单列（小，并入未发布的 1.0.0）
+独占 `src/ui/watchlist/`（含 table/ 与 stockTab.ts）。两件事：
+1. **竞价小字标注**：数据层已备（`data/stocks.ts` 竞价窗口内 `extra.isAuction=1`，9:25 后不带）；TableWebview 单元格协议已有 `sub` 同行小字字段（types.ts 注释即为此预留）。落实：股票 tab 把 `isAuction` 映射进价格单元格 `sub:'竞价'`。对照 Kotlin StockPanel 的标注时机（9:25 定格后即按正常行情，无标注）。
+2. **封单手数列**：`extra.sealLots`（带符号手数，涨为正跌为负）已在数据层产出且被提醒引擎消费。加列规则/显隐判据照抄 Kotlin StockPanel（仅涨跌停价位附近有值时显示；列名与格式对齐 JetBrains 1.18.0）。列是 TableSnapshot 动态协议的一部分，只动 stockTab.ts 的列装配与行映射，不动 webview 模板渲染协议；若确需动协议，走 contract-changes.md 申请。
+自测：watchlist.selftest 增补竞价映射/封单格式 ≥6 项；compile 零错误 + selftest:all 全绿。禁改：package.json、extension.ts、features/、shared/、data/。
+
+### 会话 G2 —— AI 研判移植（大，目标 1.1.0）
+独占 `src/data/forecast.ts`（新建）、`src/features/tabs/globalTab.ts`、`src/features/tabs/tabkit.ts`、`package.json`（研判开关设置项）、`extension.ts`（watcher 接线）。源实现：JetBrains `service/ForecastService.kt`（434 行：8:40 初版/9:15 终版两段卡、gap=0.025+0.171·A50+0.177·NDX+0.184·亚洲早盘、±1.5% 打满 ±35 分、评分方向、双账本）+ `ForecastWatcherService.kt`（80 行定时触发）+ `GlobalPanel.kt` 研判卡渲染（天气卡+研判卡两段、韩日早盘并入 r≈0.75 说明文案）。要求：
+1. 评分/gap/因子/双账本纯逻辑进 `data/forecast.ts`（无 vscode，node 直测，逐常量对照 Kotlin）；数据取用现有 data 层 provider（hf_CHA50CFD、NDX、亚洲指数），勿新建网络代码。
+2. 展示位与 JetBrains 一致：**全球 tab 顶部两段卡**（SimpleQuoteTab/tabkit 加可选 header 槽，不动七 tab 公共行为）。
+3. watcher 定时器在 extension.ts 接线（8:40/9:15 时点触发，盘后卡收盘后更新）；结果落 globalState（双账本续算）。
+4. 设置项 `stocklite.forecast.enabled`（默认开）+ tab 关闭时不触发。README 增补一句研判介绍（若 1.1.0 单独发版另写 CHANGELOG 段）。
+自测：新建 forecast.selftest ≥20 项（gap 公式各因子、打满/夹取、方向分档、双账本滚动、时段选卡）；compile + selftest:all 全绿。
+**版本策略**：G2 若与 G1 同期完成可并入 1.0.0 一起发；否则 1.0.0 先发（README 未承诺研判，无误导），G2 出 1.1.0。
+
+**守则同 §5**：不碰对方目录；契约变更追加 contract-changes.md；不 commit/push（归用户）；F5 与上传归用户。

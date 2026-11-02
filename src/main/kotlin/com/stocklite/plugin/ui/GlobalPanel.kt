@@ -106,6 +106,8 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val chipBreadth  = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipLimits   = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipTurnover = JLabel("--").apply { font = font.deriveFont(11f) }
+    /** 成交额同期变化（放量/缩量 ±增量 ±%）：独立 chip，宽度不足时最先被隐藏，保住金额本身 */
+    private val chipTurnoverDelta = JLabel("").apply { font = font.deriveFont(11f) }
     private val chipCapTier  = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFlow     = JLabel("--").apply { font = font.deriveFont(11f) }
     private val chipFuturesPosition = JLabel("--").apply { font = font.deriveFont(11f) }
@@ -118,12 +120,13 @@ class GlobalPanel : JPanel(BorderLayout()),
     private val topSectorsLbl    = JLabel(L10n.lblTopSector).apply    { font = font.deriveFont(10f); foreground = Color(0x888aaa) }
     private val bottomSectorsLbl = JLabel(L10n.lblBottomSector).apply { font = font.deriveFont(10f); foreground = Color(0x888aaa) }
 
-    // 固定行数/固定网格——不依赖 FlowLayout 自动换行（换行后高度不会正确撑开，会把后面内容截掉）
-    private val breadthRow1 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
-    private val breadthRow2 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
-    private val breadthRow3 = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    // 固定行数/固定网格——不依赖 FlowLayout 自动换行（换行后高度不会正确撑开，会把后面内容截掉）；
+    // SingleRowChipLayout：宽度不足时放不下的 chip 挨个隐藏，宽度恢复后再挨个显示
+    private val breadthRow1 = JPanel(SingleRowChipLayout(14, 2))
+    private val breadthRow2 = JPanel(SingleRowChipLayout(14, 2))
+    private val breadthRow3 = JPanel(SingleRowChipLayout(14, 2))
     /** 盘前研判单独一行：内容较长，与期指/情绪同行时在窄面板下会被裁切不可见 */
-    private val breadthRowForecast = JPanel(FlowLayout(FlowLayout.LEFT, 14, 2))
+    private val breadthRowForecast = JPanel(SingleRowChipLayout(14, 2))
     private val breadthPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
@@ -441,7 +444,10 @@ class GlobalPanel : JPanel(BorderLayout()),
                         .let { String.format("%02d:%02d:%02d", it.hour, it.minute, it.second) }
                     statusLabel.text = "${L10n.lblLastUpdate} $now   ${MarketTimeUtil.getMarketStatusText()}" +
                         if (currentIntervalMs > MIN_INTERVAL_MS)
-                            "   (${L10n.statusInterval(currentIntervalMs / 1000)})" else ""
+                            "   (${L10n.statusInterval(currentIntervalMs / 1000)})" else "" +
+                        // 网络不可达的指数已从表格隐藏，说明去向避免"指数怎么不见了"的困惑（设置弹窗可看各指数状态）
+                        if (result.offlineSymbols.isNotEmpty())
+                            "   ${L10n.hiddenOfflineNote(result.offlineSymbols.size)}" else ""
                     aiPanel.updateContext(buildAiContext())
                 }
             }
@@ -455,6 +461,7 @@ class GlobalPanel : JPanel(BorderLayout()),
         breadthRow1.add(chipBreadth)
         breadthRow1.add(chipLimits)
         breadthRow1.add(chipTurnover)
+        breadthRow1.add(chipTurnoverDelta)
         breadthRow2.add(chipCapTier)
         breadthRow2.add(chipFlow)
         breadthRow3.add(chipFuturesPosition)
@@ -664,23 +671,35 @@ class GlobalPanel : JPanel(BorderLayout()),
             else "${L10n.lblMainFlow} --"
         chipFlow.toolTipText = dataTimeTooltip(times.flow)
 
-        // 成交额 chip
+        // 成交额 chip：金额与同期变化拆成两颗 chip——宽度够放金额就显示金额，
+        // 够放变化再显示变化（与上一交易日截至同一时刻对比：增量=放量，缩量=缩量）
         if (d.totalTurnover != null) {
             val todayTxt = fmtYuanBig(d.totalTurnover)
             chipTurnover.text = "${L10n.lblTotalTurnover} $todayTxt"
-            // 与上一交易日截至同一时刻对比：增量=放量，缩量=缩量
-            val prevLine = d.prevTurnoverSameTime?.takeIf { it > 0 }?.let { prev ->
-                val delta = d.totalTurnover - prev
-                val pct   = delta / prev * 100
+            val prev = d.prevTurnoverSameTime?.takeIf { it > 0 }
+            val deltaHtml = prev?.let { p ->
+                val delta = d.totalTurnover - p
+                val pct   = delta / p * 100
                 val label = if (delta >= 0) L10n.ttVolUp else L10n.ttVolDown
-                "<br/>${L10n.ttPrevSameTime.replace("{0}", d.prevTurnoverDate ?: "")} ${fmtYuanBig(prev)}" +
-                "<br/>$label ${flowSpan(delta, up, dn)} ${pctSpan(pct, up, dn)}"
+                "$label ${flowSpan(delta, up, dn)} ${pctSpan(pct, up, dn)}"
             } ?: ""
+            chipTurnoverDelta.text = if (deltaHtml.isEmpty()) "" else "<html>$deltaHtml</html>"
+            chipTurnoverDelta.toolTipText = if (prev != null) {
+                "<html>${L10n.ttTodayCum} $todayTxt" +
+                    "<br/>${L10n.ttPrevSameTime.replace("{0}", d.prevTurnoverDate ?: "")} ${fmtYuanBig(prev)}" +
+                    "<br/>$deltaHtml</html>"
+            } else null
             chipTurnover.toolTipText =
-                "<html>${L10n.ttTodayCum} $todayTxt$prevLine<br/><span style='color:#888aaa'>${dataTimeTooltip(times.turnover)}</span></html>"
+                "<html>${L10n.ttTodayCum} $todayTxt" +
+                    (if (prev != null)
+                        "<br/>${L10n.ttPrevSameTime.replace("{0}", d.prevTurnoverDate ?: "")} ${fmtYuanBig(prev)}<br/>$deltaHtml"
+                     else "") +
+                    "<br/><span style='color:#888aaa'>${dataTimeTooltip(times.turnover)}</span></html>"
         } else {
             chipTurnover.text        = "${L10n.lblTotalTurnover} --"
             chipTurnover.toolTipText = null
+            chipTurnoverDelta.text   = ""
+            chipTurnoverDelta.toolTipText = null
         }
 
         // 只展示"当日净操作"（Δ空-Δ多，正=净加空）；持仓存量和分品种明细移到悬浮提示

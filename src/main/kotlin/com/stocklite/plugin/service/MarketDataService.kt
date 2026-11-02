@@ -88,10 +88,32 @@ object MarketDataService {
     private val YAHOO_SYMBOL_MAP = mapOf("^HSTECH" to "HSTECH.HK")
     private fun resolveYahooSymbol(symbol: String) = YAHOO_SYMBOL_MAP[symbol] ?: symbol
 
-    /** 强制使用 Yahoo（新浪数据不可靠的指数） */
+    /** 不信任新浪源数据的指数（优先东财批量，东财缺失再落 Yahoo） */
     private val GLOBAL_FORCE_YAHOO = setOf("^N225", "^KS11")
 
     private val TENCENT_HK_MAP = mapOf("^HSI" to "r_hkHSI", "^HSTECH" to "r_hkHSTECH")
+
+    /**
+     * 东财全球指数代码（secid = "100.<代码>"）。背景：query1.finance.yahoo.com 在中国大陆
+     * 网络不可达（雅虎系服务被长期阻断，HK 出口实测正常），富时/DAX/CAC40/巴西/日经/韩综合/
+     * 台加权/印度等无新浪、腾讯实时源的指数在大陆只能显示空值。改以东财为行情与图表主源
+     * （批量一次请求，实测数值与 Yahoo 逐分不差），Yahoo 保留为兜底。
+     * 东财确认没有代码、继续走 Yahoo 的指数：^VIX ^IXIC ^STOXX50E ^MERV ^NSEI ^TASI.SR
+     * ^TA125.TA ^J203.JO ^EGX30.CA（2026-11 ulist/suggest 双口径实测）。
+     * 美股常用指数行情已有新浪实时源，此处仅供图表使用。
+     */
+    private val EM_INDEX_CODE = mapOf(
+        "^GSPC" to "SPX",      "^DJI" to "DJIA",    "^NDX" to "NDX",   // 图表专用（行情走新浪）
+        "^FTSE" to "FTSE",     "^GDAXI" to "GDAXI", "^FCHI" to "FCHI", "^BVSP" to "BVSP",
+        "^N225" to "N225",     "^KS11" to "KS11",   "^TWII" to "TWII", "^BSESN" to "SENSEX",
+        "^SSMI" to "SSMI",     "^AEX" to "AEX",     "^OMXSPI" to "OMXSPI", "^IBEX" to "IBEX",
+        "^GSPTSE" to "TSX",    "^STI" to "STI",     "^KLSE" to "KLSE",  "^JKSE" to "JKSE",
+        "^SET.BK" to "SET",    "^VNINDEX.VN" to "VNINDEX",
+    )
+    /** 图表数据源分发（ChartDataService 共用）：有东财代码优先东财，否则落 Yahoo */
+    fun emIndexChartCode(symbol: String): String? = EM_INDEX_CODE[symbol]
+
+    private val EM_CODE_TO_SYMBOL = EM_INDEX_CODE.entries.associate { (k, v) -> v to k }
 
     // ══════════════════════════════════════════════════════════════
     // 市场开市判断（移植自 src/main/utils/index.ts）
@@ -685,10 +707,11 @@ object MarketDataService {
     private val yahooQuoteCache = mutableMapOf<String, Triple<Double, Double, Long>>()  // symbol -> (price, pct, time)
     private val YAHOO_QUOTE_FRESH_TTL = 60_000L
 
-    /** 全球指数行情结果，附带限流标志供面板自适应退避 */
+    /** 全球指数行情结果，附带限流标志供面板自适应退避；offlineSymbols = 因网络不可达被自动隐藏的指数 */
     data class GlobalQuoteResult(
         val quotes: List<GlobalIndexQuote>,
-        val rateLimited: Boolean = false
+        val rateLimited: Boolean = false,
+        val offlineSymbols: List<String> = emptyList()
     )
 
     /**
@@ -703,6 +726,141 @@ object MarketDataService {
         }
     }
 
+    // ── 东财批量行情（无新浪实时源指数的主源，Yahoo 兜底）─────────────────
+    // push2 随机断连是常态（见 A股大盘概览注释）：一次批量 + 递增退避重试；
+    // 整体失败后备退 120 秒不再尝试，避免网络异常时拖慢 5 秒一次的轮询（期间由 Yahoo 兜底）。
+    private val emQuoteCache = mutableMapOf<String, Pair<Double, Double>>()
+    private var emQuoteCacheAt  = 0L
+    private var emQuoteFailUntil = 0L
+    private var emQuoteLastSet   = ""
+    private val EM_QUOTE_FRESH_TTL    = 60_000L
+    private val EM_QUOTE_FAIL_BACKOFF = 120_000L
+
+    /** codes 为东财代码列表；返回 Yahoo symbol -> (price, pct%)。失败返回旧缓存（可能为空）。 */
+    private fun fetchEmGlobalQuotes(codes: List<String>, now: Long): Map<String, Pair<Double, Double>> {
+        val setKey = codes.joinToString(",")
+        if (codes.isEmpty()) return emptyMap()
+        if (setKey != emQuoteLastSet) emQuoteCacheAt = 0          // 显示/隐藏的指数集合变了，强制刷新
+        if (now - emQuoteCacheAt < EM_QUOTE_FRESH_TTL) return emQuoteCache
+        if (now < emQuoteFailUntil) return emQuoteCache
+        val url = "https://push2.eastmoney.com/api/qt/ulist.np/get?secids=" +
+            codes.joinToString(",") { "100.$it" } + "&fields=f1,f2,f4,f12&ut=$EM_UT"
+        var raw: String? = null
+        for (attempt in 1..3) {
+            raw = HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = "全球指数-东财批量")
+            if (raw != null) break
+            try { Thread.sleep((attempt * 300).toLong()) } catch (_: InterruptedException) { return emQuoteCache }
+        }
+        recordSourceResult(SRC_EM, raw != null)  // 三次重试仍取不到 = 网络层不通（push2 被墙/断网）
+        val parsed = try {
+            val diff = JSONObject(raw!!.trim()).optJSONObject("data")?.optJSONArray("diff")
+                ?: return emQuoteCache.also { emQuoteFailUntil = now + EM_QUOTE_FAIL_BACKOFF }
+            val m = mutableMapOf<String, Pair<Double, Double>>()
+            for (i in 0 until diff.length()) {
+                val row = diff.getJSONObject(i)
+                val sym = EM_CODE_TO_SYMBOL[row.optString("f12")] ?: continue
+                // f1=小数位数；f2=最新价(放大10^f1)；f4=涨跌额(同口径放大)；停牌/缺数据返回 "-" 解析为 NaN 跳过
+                val prec  = row.optInt("f1", 2).coerceIn(1, 4)
+                val raw2  = row.optDouble("f2", Double.NaN)
+                if (!raw2.isFinite() || raw2 <= 0) continue
+                val price = raw2 / Math.pow(10.0, prec.toDouble())
+                val chg   = row.optDouble("f4", Double.NaN)
+                val pct   = if (chg.isFinite()) chg / raw2 * 100 else 0.0
+                m[sym] = price to pct
+            }
+            m
+        } catch (_: Exception) { null }
+        if (parsed == null || parsed.isEmpty()) { emQuoteFailUntil = now + EM_QUOTE_FAIL_BACKOFF; return emQuoteCache }
+        emQuoteCache.clear(); emQuoteCache.putAll(parsed)
+        emQuoteCacheAt = now; emQuoteLastSet = setKey
+        return emQuoteCache
+    }
+
+    // ── 数据源网络健康度 ──────────────────────────────────────────────
+    // 背景：query1.finance.yahoo.com 在大陆网络整站不可达（见 EM_INDEX_CODE 注释），纯 Yahoo 源的指数
+    // （VIX/STOXX50/MERV/NIFTY/TASI/TA125/南非/埃及等）会一直显示 0.00 空行，且每轮刷新吃满连接超时拖慢面板。
+    // 这里给腾讯/新浪/东财/Yahoo 四个源维护可达性状态：优先采信真实流量的成败（零额外请求，
+    // 连续 2 次网络失败才拉黑 60 秒防抖）；没有近期真实信号时做一次轻量单标的探测（复用 5 分钟）。
+    // 用途：① 行情层跳过不可达源（Yahoo 循环整层短路）；② 候选源全不可达且持续缺值 → 面板自动隐藏该指数；
+    //       ③ 设置页"选择显示指数"逐个标注网络状态。网络环境变化（换出口/挂代理）后源恢复，指数自动回来。
+    const val SRC_TENCENT = "tencent"; const val SRC_SINA = "sina"; const val SRC_EM = "em"; const val SRC_YAHOO = "yahoo"
+    private val srcOkTs      = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 最近一次真实成功
+    private val srcDownUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 失败拉黑截止
+    private val srcProbeTs   = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 最近一次主动探测
+    private val srcProbeOk   = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val srcFailStreak = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val SRC_OK_FRESH     = 300_000L  // 真实成功信号 5 分钟内视为可用
+    private val SRC_PROBE_TTL    = 300_000L
+    private val SRC_DOWN_BACKOFF =  60_000L  // 判不可达后的重试间隔，也是 Yahoo 全阻断期的轮询保护窗口
+    private val globalMissingSince = mutableMapOf<String, Long>()  // symbol -> 首次取不到值的时刻（自动隐藏确认窗口）
+    private val OFFLINE_HIDE_AFTER = 20_000L
+
+    /** 真实流量回报源成败；连续 2 次网络失败才拉黑，防单点抖动（push2 随机断连是常态） */
+    private fun recordSourceResult(src: String, ok: Boolean) {
+        val now = System.currentTimeMillis()
+        if (ok) {
+            srcFailStreak[src] = 0; srcOkTs[src] = now; srcDownUntil.remove(src)
+        } else if ((srcFailStreak.merge(src, 1) { a, b -> a + b } ?: 1) >= 2) {
+            srcDownUntil[src] = now + SRC_DOWN_BACKOFF
+        }
+    }
+
+    private fun probeSource(src: String): Boolean = when (src) {
+        SRC_TENCENT -> HttpUtil.getGbk("https://qt.gtimg.cn/q=r_hkHSI", "https://gu.qq.com", label = "源探测-腾讯") != null
+        SRC_SINA    -> HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000001", "https://finance.sina.com.cn", label = "源探测-新浪") != null
+        // push2 随机断连是常态，探测给两次机会，避免把可用源误判不可达
+        SRC_EM -> {
+            val url = "https://push2.eastmoney.com/api/qt/ulist.np/get?secids=100.FTSE&fields=f1,f2,f12&ut=$EM_UT"
+            HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = "源探测-东财")
+                ?: HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = "源探测-东财2") != null
+        }
+        SRC_YAHOO -> HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1m&range=1d",
+            label = "源探测-Yahoo") != null
+        else -> true
+    }
+
+    private fun probeSourceOnce(src: String, now: Long): Boolean {
+        val ok = probeSource(src)
+        srcProbeTs[src] = now; srcProbeOk[src] = ok; srcFailStreak[src] = 0
+        if (ok) srcOkTs[src] = now else srcDownUntil[src] = now + SRC_DOWN_BACKOFF
+        return ok
+    }
+
+    /** 源当前是否可达：拉黑期内直接 false；有新鲜真实成功 true；否则查探测缓存、必要时实探 */
+    private fun sourceReachable(src: String, now: Long): Boolean {
+        if (now < (srcDownUntil[src] ?: 0L)) return false
+        if (now - (srcOkTs[src] ?: 0L) < SRC_OK_FRESH) return true
+        if (now - (srcProbeTs[src] ?: 0L) < SRC_PROBE_TTL) return srcProbeOk[src] ?: true
+        return probeSourceOnce(src, now)
+    }
+
+    /** 指数的候选数据源（与取数层优先级一致）：主源在前、Yahoo 兜底在最后；被拉黑的存疑新浪源（N225/KS11）不计入 */
+    fun indexSourceKeys(symbol: String): List<String> = when {
+        GLOBAL_FORCE_YAHOO.contains(symbol) -> listOf(SRC_EM, SRC_YAHOO)
+        TENCENT_HK_MAP.containsKey(symbol)  -> listOf(SRC_TENCENT, SRC_SINA, SRC_YAHOO)
+        SINA_SYMBOL_MAP.containsKey(symbol) -> listOf(SRC_SINA, SRC_YAHOO)
+        EM_INDEX_CODE.containsKey(symbol)   -> listOf(SRC_EM, SRC_YAHOO)
+        else                                -> listOf(SRC_YAHOO)
+    }
+
+    /** 指数网络状态：reachable=候选源里至少一个可达；okKey=按取数优先级第一个可达源（面板/设置页共用） */
+    data class IndexNetInfo(val reachable: Boolean, val sourceKeys: List<String>, val okKey: String?)
+
+    /**
+     * 设置页弹窗专用：涉及的源去重后各实探一次（否则 9 个纯 Yahoo 指数会串出 9 次 10 秒超时），
+     * 再按各指数候选源映射标注。必须在后台线程调用。
+     */
+    fun probeGlobalIndexNetwork(): Map<String, IndexNetInfo> {
+        val now0 = System.currentTimeMillis()
+        GLOBAL_INDEXES.flatMap { indexSourceKeys(it.symbol) }.distinct().forEach { probeSourceOnce(it, now0) }
+        val now = System.currentTimeMillis()
+        return GLOBAL_INDEXES.associate { cfg ->
+            val keys = indexSourceKeys(cfg.symbol)
+            val ok = keys.firstOrNull { (srcProbeOk[it] ?: false) && now - (srcProbeTs[it] ?: 0L) < SRC_PROBE_TTL }
+            cfg.symbol to IndexNetInfo(ok != null, keys, ok)
+        }
+    }
+
     fun getGlobalIndexQuotes(): GlobalQuoteResult {
         val visibleIndexes = visibleGlobalIndexes()
         val quoteMap = mutableMapOf<String, Pair<Double, Double>>()
@@ -712,7 +870,9 @@ object MarketDataService {
 
         // 1. 腾讯港股实时（HK 指数）——实时
         for (sym in listOf("^HSI", "^HSTECH")) {
-            fetchTencentHkQuote(sym)?.let { (price, pct, _) ->
+            val hk = fetchTencentHkQuote(sym)
+            recordSourceResult(SRC_TENCENT, hk != null)
+            hk?.let { (price, pct, _) ->
                 SINA_SYMBOL_MAP[sym]?.let { key -> quoteMap[key] = price to pct; delayMap[key] = false }
             }
         }
@@ -720,21 +880,36 @@ object MarketDataService {
         // 2. 新浪批量（A 股 / 美股粗行情）
         // 沪深（sh/sz）、港股新浪兜底（rt_hk）为实时行情；海外指数（gb_）新浪标明"至少延时15分钟"
         val sinaSymbols = SINA_SYMBOL_MAP.values.joinToString(",")
-        HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn",
+        val sinaRaw = HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn",
             label = "全球指数-新浪")
-            ?.let { text ->
-                parseSinaData(text).forEach { (k, v) ->
-                    if (!quoteMap.containsKey(k)) {
-                        quoteMap[k] = v
-                        delayMap[k] = k.startsWith("gb_")
-                    }
+        recordSourceResult(SRC_SINA, sinaRaw != null)
+        sinaRaw?.let { text ->
+            parseSinaData(text).forEach { (k, v) ->
+                if (!quoteMap.containsKey(k)) {
+                    quoteMap[k] = v
+                    delayMap[k] = k.startsWith("gb_")
                 }
             }
+        }
 
-        // 3. Yahoo 兜底（强制 Yahoo 的指数 + 新浪无数据的）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
+        // 2.5 东财批量（无新浪实时源 / 不信任新浪源的指数主源；大陆网络下 Yahoo 不可达，全靠这层）
+        val emSymbols = visibleIndexes.map { it.symbol }
+            .filter { EM_INDEX_CODE.containsKey(it) &&
+                      (SINA_SYMBOL_MAP[it] == null || GLOBAL_FORCE_YAHOO.contains(it)) }
+        val emBatch = fetchEmGlobalQuotes(emSymbols.mapNotNull { EM_INDEX_CODE[it] }, now)
+        for (sym in emSymbols) {
+            val v = emBatch[sym] ?: continue
+            quoteMap[sym] = v
+            delayMap[sym] = true
+            // 与新浪映射同键的指数（N225/KS11）覆盖新浪的存疑值（Yahoo 兜底分支同款处理）
+            SINA_SYMBOL_MAP[sym]?.let { sk -> quoteMap[sk] = v; delayMap[sk] = true }
+        }
+
+        // 3. Yahoo 兜底（东财没有代码的指数 + 东财失败时的后备）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
         for (item in visibleIndexes) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
             if (!GLOBAL_FORCE_YAHOO.contains(item.symbol) && sinaKey != null && quoteMap.containsKey(sinaKey)) continue
+            if (quoteMap.containsKey(item.symbol)) continue  // 东财批量层已有值
 
             val cached = yahooQuoteCache[item.symbol]
             if (cached != null && now - cached.third < YAHOO_QUOTE_FRESH_TTL) {
@@ -745,15 +920,22 @@ object MarketDataService {
                 continue
             }
 
+            // Yahoo 网络层不可达（大陆全阻断等）时整层短路：否则每个纯 Yahoo 指数每轮都要吃满 10 秒连接超时
+            if (!sourceReachable(SRC_YAHOO, now)) continue
+
             val (statusCode, body) = fetchYahooQuoteWithStatus(item.symbol, now)
             when {
-                statusCode == 429 -> { yahooRateLimited = true }
+                // 429/3xx/4xx/200 但无数据 = 网络通、只是限流或该标的无数据，不算源不可达
+                statusCode == 429 -> { yahooRateLimited = true; recordSourceResult(SRC_YAHOO, true) }
                 body != null -> {
+                    recordSourceResult(SRC_YAHOO, true)
                     yahooQuoteCache[item.symbol] = Triple(body.first, body.second, now)
                     if (sinaKey != null) { quoteMap[sinaKey] = body; delayMap[sinaKey] = true }
                     quoteMap[item.symbol] = body
                     delayMap[item.symbol] = true
                 }
+                statusCode == -1 || statusCode >= 500 -> recordSourceResult(SRC_YAHOO, false)
+                else -> recordSourceResult(SRC_YAHOO, true)
             }
         }
 
@@ -769,7 +951,22 @@ object MarketDataService {
                 isDelayed = isDelayed
             )
         }
-        return GlobalQuoteResult(quotes, yahooRateLimited)
+
+        // 4. 网络不可达自动隐藏：值取不到（0）且候选源全部不可达、持续超过阈值 → 不显示 0.00 空行。
+        //    阈值给真实缺值留确认窗口（防源瞬时抖动误隐藏）；源恢复（用户换网络出口/代理）后自动回来。
+        //    注意与"限流/数据缺失"区分：那种情况源仍可达（见上方 recordSourceResult），行保留显示。
+        val hiddenOffline = mutableListOf<String>()
+        val visibleQuotes = quotes.filter { q ->
+            when {
+                q.value > 0 -> { globalMissingSince.remove(q.symbol); true }
+                indexSourceKeys(q.symbol).any { sourceReachable(it, now) } -> { globalMissingSince.remove(q.symbol); true }
+                else -> {
+                    val since = globalMissingSince.getOrPut(q.symbol) { now }
+                    if (now - since < OFFLINE_HIDE_AFTER) true else { hiddenOffline += q.symbol; false }
+                }
+            }
+        }
+        return GlobalQuoteResult(visibleQuotes, yahooRateLimited, hiddenOffline)
     }
 
     private data class HkQuote(val price: Double, val changePct: Double, val prevClose: Double)

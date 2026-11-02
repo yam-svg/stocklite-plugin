@@ -316,6 +316,18 @@ object L10n {
     val globalIndexTabMain        get() = s("常用指数", "Common")
     val globalIndexTabMore        get() = s("更多指数（默认关闭）", "More (off by default)")
     val btnSelectAll              get() = s("全选", "All")
+    // ── 指数网络状态（选择指数弹窗逐个标注；key 与 MarketDataService.SRC_* 对应）──
+    val netStatusProbing          get() = s("检测中…", "Probing…")
+    fun netStatusOk(src: String)          = s("可用 · $src", "OK · $src")
+    fun netStatusOffline(src: String)     = s("不可达 · $src", "Unreachable · $src")
+    fun hiddenOfflineNote(n: Int)         = s("已隐藏 $n 个网络不可达指数", "$n offline index(es) hidden")
+    fun netSourceName(key: String) = when (key) {
+        "tencent" -> s("腾讯", "Tencent")
+        "sina"    -> s("新浪", "Sina")
+        "em"      -> s("东财", "EastMoney")
+        "yahoo"   -> "Yahoo"
+        else      -> key
+    }
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
                                        "Show US Sectors tab (ETF sector performance, can be hidden if unused)")
     val settingsApiLogPanel   get() = s("显示日志标签页（接口请求监控，调试用途）",
