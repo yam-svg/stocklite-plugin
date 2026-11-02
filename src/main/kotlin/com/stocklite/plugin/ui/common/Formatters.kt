@@ -17,6 +17,16 @@ fun centerTableHeader(table: JTable) {
     }
 }
 
+/**
+ * 按【模型】列序号取 TableColumn。
+ * columnModel.getColumn(i) 的参数是视图序号：用户拖动列头后视图顺序 ≠ 模型顺序，
+ * 若再按模型顺序套用渲染器/列宽就会挂错列（现象：拖拽涨跌幅列后刷新，单元格显示 ChangePctValue 源码）。
+ */
+fun JTable.viewColumn(modelIndex: Int): javax.swing.table.TableColumn? {
+    val view = convertColumnIndexToView(modelIndex)
+    return if (view >= 0) columnModel.getColumn(view) else null
+}
+
 object Fmt {
     private val price2  = DecimalFormat("#,##0.00")
     private val price3  = DecimalFormat("#,##0.000")

@@ -13,6 +13,7 @@ import com.stocklite.plugin.ui.dialogs.AddFundDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.*
@@ -181,22 +182,18 @@ class FundPanel : JPanel(BorderLayout()),
         installColumnWidthListener()
     }
 
+    // 用户拖动列头后视图顺序 ≠ 模型顺序，套用渲染器/列宽必须经 viewColumn 映射，否则挂错列
     private fun applyRenderers() {
         visibleCols.forEachIndexed { i, col ->
-            if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
-            }
+            table.viewColumn(i)?.cellRenderer = QuoteRenderer(col.type)
         }
-        if (table.columnModel.columnCount > 0)
-            table.columnModel.getColumn(0).preferredWidth = 140
+        table.viewColumn(0)?.preferredWidth = 140
     }
 
     private fun restoreColumnWidths() {
         visibleCols.forEachIndexed { i, col ->
             val saved = state.getColumnWidth("fund.${col.key}")
-            if (saved != null && i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).preferredWidth = saved
-            }
+            if (saved != null) table.viewColumn(i)?.preferredWidth = saved
         }
     }
 
@@ -204,10 +201,8 @@ class FundPanel : JPanel(BorderLayout()),
         table.columnModel.addColumnModelListener(object : TableColumnModelListener {
             override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
                 visibleCols.forEachIndexed { i, col ->
-                    if (i < table.columnModel.columnCount) {
-                        val w = table.columnModel.getColumn(i).width
-                        if (w > 0) state.setColumnWidth("fund.${col.key}", w)
-                    }
+                    val w = table.viewColumn(i)?.width ?: 0
+                    if (w > 0) state.setColumnWidth("fund.${col.key}", w)
                 }
             }
             override fun columnAdded(e: TableColumnModelEvent) {}

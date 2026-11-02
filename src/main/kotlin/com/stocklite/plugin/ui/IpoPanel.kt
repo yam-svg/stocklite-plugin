@@ -14,6 +14,7 @@ import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.TriStateRowSorter
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.AlertManager
 import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
@@ -471,18 +472,16 @@ class IpoPanel : JPanel(BorderLayout()),
         // 列标题来自 L10n：结构重建并重新挂渲染器/排序器
         calModel.fireTableStructureChanged()
         calTable.rowSorter = newCalSorter()
+        // 用户拖动列头后视图顺序 ≠ 模型顺序，套用渲染器必须经 viewColumn 映射，否则挂错列
         calCols.forEachIndexed { i, col ->
-            if (i < calTable.columnModel.columnCount) {
-                calTable.columnModel.getColumn(i).cellRenderer =
-                    if (col.first == "status") StatusRenderer()
-                    else QuoteRenderer(QuoteColumnType.PLAIN)
-            }
+            calTable.viewColumn(i)?.cellRenderer =
+                if (col.first == "status") StatusRenderer()
+                else QuoteRenderer(QuoteColumnType.PLAIN)
         }
         recModel.fireTableStructureChanged()
         recTable.rowSorter = newRecSorter()
         recCols.forEachIndexed { i, col ->
-            if (i < recTable.columnModel.columnCount)
-                recTable.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
+            recTable.viewColumn(i)?.cellRenderer = QuoteRenderer(col.type)
         }
         rebuildRows()
         revalidate(); repaint()

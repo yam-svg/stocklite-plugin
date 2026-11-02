@@ -14,6 +14,7 @@ import com.stocklite.plugin.state.*
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.ui.dialogs.AddCryptoDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.util.L10n
@@ -141,30 +142,24 @@ class CryptoPanel : JPanel(BorderLayout()),
         scheduleRefresh()
     }
 
+    // 用户拖动列头后视图顺序 ≠ 模型顺序，套用渲染器/列宽必须经 viewColumn 映射，否则挂错列
     private fun applyRenderers() {
         allCols.forEachIndexed { i, col ->
-            if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(col.type)
-            }
+            table.viewColumn(i)?.cellRenderer = QuoteRenderer(col.type)
         }
         allCols.forEachIndexed { i, col ->
             val saved = state.getColumnWidth("crypto.${col.key}")
-            if (saved != null && i < table.columnModel.columnCount)
-                table.columnModel.getColumn(i).preferredWidth = saved
+            if (saved != null) table.viewColumn(i)?.preferredWidth = saved
         }
-        if (table.columnModel.columnCount > 0)
-            table.columnModel.getColumn(0).preferredWidth =
-                state.getColumnWidth("crypto.name") ?: 120
+        table.viewColumn(0)?.preferredWidth = state.getColumnWidth("crypto.name") ?: 120
     }
 
     private fun installColumnWidthListener() {
         table.columnModel.addColumnModelListener(object : TableColumnModelListener {
             override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
                 allCols.forEachIndexed { i, col ->
-                    if (i < table.columnModel.columnCount) {
-                        val w = table.columnModel.getColumn(i).width
-                        if (w > 0) state.setColumnWidth("crypto.${col.key}", w)
-                    }
+                    val w = table.viewColumn(i)?.width ?: 0
+                    if (w > 0) state.setColumnWidth("crypto.${col.key}", w)
                 }
             }
             override fun columnAdded(e: TableColumnModelEvent) {}

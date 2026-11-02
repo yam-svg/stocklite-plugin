@@ -34,6 +34,13 @@ object ChartDataService {
         "000688.SS" to "sh000688"
     )
 
+    /**
+     * 腾讯美指源补齐的全球指数（symbol → 腾讯 us* 代码）：这批标的东财无指数码、
+     * Yahoo 图表在大陆网络不可达，而腾讯行情新鲜完整（bar 字段序已用响应内 qt 快照交叉验证）。
+     * 目前仅 ^IXIC——GSPC/DJIA/NDX 图表已有东财主源，usVIX 腾讯条目为冻结死数据不可用。
+     */
+    private val TC_GLOBAL_KLINE = mapOf("^IXIC" to "usIXIC")
+
     private val sdfShanghai: ThreadLocal<SimpleDateFormat> = ThreadLocal.withInitial {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss").also { it.timeZone = TimeZone.getTimeZone("Asia/Shanghai") }
     }
@@ -78,6 +85,12 @@ object ChartDataService {
         if (yahooSymbol == "^HSTECH") {
             val pts = fetchHkIntraday("HSTECH")
             if (pts.isNotEmpty()) return pts
+        }
+        // ^IXIC 纳斯达克综合分时 → 腾讯美指源（休市仅回 1 个点，<2 视为不可用继续落 Yahoo，
+        // 避免可达环境反而丢掉 Yahoo 全时段曲线）；大陆 Yahoo 不可达时盘至少盘中有图
+        TC_GLOBAL_KLINE[yahooSymbol]?.let { code ->
+            val pts = fetchTencentGlobalIndexIntraday(code)
+            if (pts.size >= 2) return pts
         }
         // 全球指数东财主源（大陆网络 Yahoo 不可达）；东财无代码或失败仍落 Yahoo
         MarketDataService.emIndexChartCode(yahooSymbol)?.let { code ->
@@ -158,6 +171,11 @@ object ChartDataService {
         // 改走腾讯 hkHSTECH（日K可完整回溯 2020-07 指数发布），失败再回退 Yahoo
         if (symbol == "^HSTECH") {
             val pts = fetchHkHistory("HSTECH", period, count)
+            if (pts.isNotEmpty()) return pts
+        }
+        // ^IXIC 纳斯达克综合：东财无指数码、Yahoo 图表大陆不可达 → 腾讯美指 K 线（日/周/月原生），失败落 Yahoo
+        TC_GLOBAL_KLINE[symbol]?.let { code ->
+            val pts = fetchTencentGlobalIndexHistory(code, period, count)
             if (pts.isNotEmpty()) return pts
         }
         // 全球指数东财 K 线主源（日/周/月原生周期）；东财无代码或失败仍落 Yahoo
@@ -732,6 +750,81 @@ object ChartDataService {
                 list.add(ChartPoint(ts, close, open, high, low, vol))
             }
             list.takeLast(count)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /**
+     * 腾讯美指历史 K 线（usIXIC 等），同 fetchHkHistory 接口，但美股指数数组无 qfq 前缀
+     * （实测响应为 data.usIXIC.day；保留 qfq 优先仅作防御）。
+     * 字段顺序：[date, open, close, high, low, volume, {}, change, amount, ...]，
+     * open/close 顺序已用响应内 qt 实时快照交叉验证。
+     */
+    private fun fetchTencentGlobalIndexHistory(code: String, period: String, count: Int): List<ChartPoint> {
+        val periodParam = when (period) {
+            "weekly"  -> "week"
+            "monthly" -> "month"
+            else      -> "day"
+        }
+        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get" +
+                  "?param=$code,$periodParam,,,$count,qfq&_var=kline_${periodParam}qfq"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val json   = raw.substringAfter("=").trim()
+            val symObj = JSONObject(json).getJSONObject("data").getJSONObject(code)
+            val bars   = symObj.optJSONArray("qfq$periodParam")?.takeIf { it.length() > 0 }
+                ?: symObj.optJSONArray(periodParam)
+                ?: return emptyList()
+            // 与 fetchEmIndexHistory 同口径：日K按上海日切取 ts，仅作排序/定位键
+            val shZone = ZoneId.of("Asia/Shanghai")
+            val list   = mutableListOf<ChartPoint>()
+            for (i in 0 until bars.length()) {
+                val bar  = bars.getJSONArray(i)
+                val date = bar.optString(0, "")
+                if (date.isEmpty()) continue
+                val close = bar.optString(2, "").toDoubleOrNull() ?: continue
+                val ts    = java.time.LocalDate.parse(date)
+                    .atStartOfDay(shZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, close,
+                    bar.optString(1, "").toDoubleOrNull() ?: Double.NaN,
+                    bar.optString(3, "").toDoubleOrNull() ?: Double.NaN,
+                    bar.optString(4, "").toDoubleOrNull() ?: Double.NaN,
+                    bar.optString(5, "").toDoubleOrNull() ?: Double.NaN))
+            }
+            list.takeLast(count)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /**
+     * 腾讯美指日内分时：与 fetchHkIntraday 同接口同格式（"HHMM price cumVol ..."），
+     * 行内时刻为美东盘面本地时间，日切与 ts 换算按 America/New_York。
+     */
+    private fun fetchTencentGlobalIndexIntraday(code: String): List<ChartPoint> {
+        val url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/minute/query" +
+                  "?code=$code&_var=min_data"
+        val raw = HttpUtil.get(url) ?: return emptyList()
+        return try {
+            val json = raw.substringAfter("=").trim()
+            val arr  = JSONObject(json).getJSONObject("data").getJSONObject(code)
+                .getJSONObject("data").getJSONArray("data")
+            val usZone = ZoneId.of("America/New_York")
+            val today  = java.time.LocalDate.now(usZone)
+            val list   = mutableListOf<ChartPoint>()
+            var prevCumVol = 0.0
+            for (i in 0 until arr.length()) {
+                val parts = arr.getString(i).split(" ")
+                if (parts.size < 2) continue
+                val price  = parts[1].toDoubleOrNull() ?: continue
+                if (price <= 0) continue
+                val cumVol = parts.getOrNull(2)?.toDoubleOrNull() ?: 0.0
+                val vol    = (cumVol - prevCumVol).coerceAtLeast(0.0)
+                prevCumVol = cumVol
+                val hh = parts[0].take(2).toIntOrNull() ?: continue
+                val mm = parts[0].takeLast(2).toIntOrNull() ?: continue
+                val ts = java.time.LocalDateTime.of(today, java.time.LocalTime.of(hh, mm))
+                    .atZone(usZone).toInstant().epochSecond
+                list.add(ChartPoint(ts, price, volume = vol))
+            }
+            list
         } catch (_: Exception) { emptyList() }
     }
 

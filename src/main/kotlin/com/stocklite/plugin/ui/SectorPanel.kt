@@ -11,6 +11,7 @@ import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.TriStateRowSorter
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.util.L10n
 import java.awt.BorderLayout
@@ -353,13 +354,12 @@ class SectorPanel : JPanel(BorderLayout()),
         rebuildCategoryCombo()
         model.fireTableStructureChanged()
         table.rowSorter = newSorter()
+        // 用户拖动列头后视图顺序 ≠ 模型顺序，套用渲染器必须经 viewColumn 映射，否则挂错列
         cols.forEachIndexed { i, col ->
-            if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = when (col.key) {
-                    "mainFlow" -> MainFlowRenderer()
-                    "turnover" -> TurnoverRenderer()
-                    else       -> QuoteRenderer(col.type)
-                }
+            table.viewColumn(i)?.cellRenderer = when (col.key) {
+                "mainFlow" -> MainFlowRenderer()
+                "turnover" -> TurnoverRenderer()
+                else       -> QuoteRenderer(col.type)
             }
         }
         model.fireTableDataChanged()

@@ -17,6 +17,7 @@ import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteColumnType
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.*
@@ -184,17 +185,14 @@ class GlobalPanel : JPanel(BorderLayout()),
         restartTimer()
     }
 
+    // 用户拖动列头后视图顺序 ≠ 模型顺序，套用渲染器/列宽必须经 viewColumn 映射，否则挂错列
     private fun applyRenderers() {
         colTypes.forEachIndexed { i, type ->
-            if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = QuoteRenderer(type)
-            }
+            table.viewColumn(i)?.cellRenderer = QuoteRenderer(type)
         }
-        if (table.columnModel.columnCount >= 3) {
-            table.columnModel.getColumn(0).preferredWidth = 120
-            table.columnModel.getColumn(1).preferredWidth = 100
-            table.columnModel.getColumn(2).preferredWidth = 80
-        }
+        table.viewColumn(0)?.preferredWidth = 120
+        table.viewColumn(1)?.preferredWidth = 100
+        table.viewColumn(2)?.preferredWidth = 80
     }
 
     private fun setupTable() {

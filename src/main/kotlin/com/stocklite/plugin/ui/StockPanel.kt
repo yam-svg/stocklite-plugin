@@ -21,6 +21,7 @@ import com.stocklite.plugin.ui.dialogs.PortfolioPnlDialog
 import com.stocklite.plugin.ui.dialogs.TradeHistoryDialog
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.centerTableHeader
+import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
 import java.awt.*
@@ -301,38 +302,35 @@ class StockPanel : JPanel(BorderLayout()),
         installColumnWidthListener()
     }
 
+    // 注意：columnModel.getColumn(i) 的 i 是视图序号，而 visibleCols 是模型序号；
+    // 用户拖动列头后两者不再一致，必须经 viewColumn 映射，
+    // 否则刷新数据时渲染器/列宽会挂错列（涨跌幅列显示 ChangePctValue 源码即此因）。
+    private fun viewColumnOf(modelIndex: Int) = table.viewColumn(modelIndex)
+
     private fun applyRenderers() {
         visibleCols.forEachIndexed { i, col ->
-            if (i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).cellRenderer = when (col.key) {
-                    "changePercent" -> ChangePctRenderer()
-                    "name"          -> EarningsNameRenderer()
-                    else            -> QuoteRenderer(col.type)
-                }
+            viewColumnOf(i)?.cellRenderer = when (col.key) {
+                "changePercent" -> ChangePctRenderer()
+                "name"          -> EarningsNameRenderer()
+                else            -> QuoteRenderer(col.type)
             }
         }
-        if (table.columnModel.columnCount > 0)
-            table.columnModel.getColumn(0).preferredWidth = 100
+        viewColumnOf(0)?.preferredWidth = 100
     }
 
     private fun restoreColumnWidths() {
         visibleCols.forEachIndexed { i, col ->
             val saved = state.getColumnWidth("stock.${col.key}")
-            if (saved != null && i < table.columnModel.columnCount) {
-                table.columnModel.getColumn(i).preferredWidth = saved
-            }
+            if (saved != null) viewColumnOf(i)?.preferredWidth = saved
         }
     }
 
     private fun installColumnWidthListener() {
-        // Remove existing listeners first (to avoid duplicates after rebuild)
         table.columnModel.addColumnModelListener(object : TableColumnModelListener {
             override fun columnMarginChanged(e: javax.swing.event.ChangeEvent) {
                 visibleCols.forEachIndexed { i, col ->
-                    if (i < table.columnModel.columnCount) {
-                        val w = table.columnModel.getColumn(i).width
-                        if (w > 0) state.setColumnWidth("stock.${col.key}", w)
-                    }
+                    val w = viewColumnOf(i)?.width ?: 0
+                    if (w > 0) state.setColumnWidth("stock.${col.key}", w)
                 }
             }
             override fun columnAdded(e: TableColumnModelEvent) {}
