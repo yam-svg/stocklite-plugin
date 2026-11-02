@@ -8,12 +8,15 @@
 
 📦 **官方插件页：https://plugins.jetbrains.com/plugin/32115-stocklite**（IDE 内 `Settings → Plugins → Marketplace` 搜索 "StockLite" 即可安装）
 
-**当前版本：1.18.3**
+**当前版本：1.19.0**
 
 ## 功能
 
 | 功能                        | 状态         |
 |---------------------------|------------|
+| **全球指数大陆网络原生可用（行情/图表改东财+腾讯美指主源，Yahoo 兜底）** | ✅ 1.19.0 优化 |
+| **指数网络可达性实时探测（不可达自动隐藏 + 选择弹窗逐项标注）** | ✅ 1.19.0 新增 |
+| **列头拖动后渲染错位修复（7 面板统一改按模型列索引映射）** | ✅ 1.19.0 修复 |
 | **盘前研判（8:40 初版 / 9:15 终版，隐含跳空 + 全天倾向，命中率双账本自动结算）** | ✅ 1.18.1 新增 |
 | **市场天气情绪分（涨跌家数 / 涨停生态 / 量能环比，冰点~过热五档）** | ✅ 1.18.1 新增 |
 | **新手指引（? 按钮功能直达 + 新装内置示例数据开箱即看）** | ✅ 1.18.1 新增 |
@@ -36,7 +39,7 @@
 | 期货持仓管理                    | ✅          |
 | 实时行情（新浪 API，GBK 解码）       | ✅          |
 | 基金净值（腾讯批量 + 东方财富 F10 官方净值，1.18.1 起估值接口下线改官方口径） | ✅          |
-| 全球指数（Yahoo Finance）       | ✅          |
+| 全球指数（东财批量主源 + 腾讯美指图表，Yahoo 兜底，1.19.0 起大陆网络可用） | ✅          |
 | 港股行情（腾讯 API）              | ✅          |
 | 美股行情（Yahoo Finance）       | ✅          |
 | **每日浮动盈亏计算口径统一（图表与主面板一致）** | ✅ 1.11.1 优化 |
@@ -98,6 +101,19 @@
 | 拖拽排序                      | ❌（已移除）     |
 | 资讯/新闻                     | ❌（已排除）     |
 | 系统托盘                      | ❌（插件架构不支持） |
+
+## v1.19.0 新功能说明
+
+### 全球指数大陆网络原生可用
+
+- 此前海外指数的行情与分时 / K线图只走 Yahoo Finance，大陆网络不可达时整表空白；现行情改走东方财富 `push2` 批量接口主源（一次请求拉取全部映射指数），分时走东财 `push2his` trends2、K线走东财 kline（日 / 周 / 月原生周期），Yahoo 降为兜底
+- 纳斯达克综合指数（东财无指数码、Yahoo 图表大陆不可达）另接腾讯美指分时 / K线源；VIX、欧洲等确认无国内源的指数维持 Yahoo，不可达时自动隐藏
+- 网络可达性感知：不可达指数不再占行，面板状态栏提示「已隐藏 N 个网络不可达指数」；设置页「选择显示指数」弹窗后台实时探测，逐项标注「可用 · 源名 / 不可达 · 源名」
+- 大盘概览两市成交额拆为「金额 + 放量 / 缩量 ±±%」两颗 chip；概览 chip 改单行自适应布局，面板宽度不足时挨个隐藏、宽度恢复自动还原
+
+### 列头拖动错位修复
+
+- 修复拖动表格列头后渲染器与列宽挂错列的问题（如涨跌幅涨跌色标错列）：股票 / 基金 / 期货 / 加密 / 全球 / 板块 / 新股 7 个面板统一改按模型列索引映射后再取视图列
 
 ## v1.18.3 新功能说明
 
@@ -257,7 +273,7 @@
 | A 股 / A股指数    | 新浪 `CN_MarketDataService.getKLineData`（scale=1，仅取当日）      | 同一接口（scale=240/1200/5000），含真实 OHLC                                          |
 | 国内期货（nf_）     | 新浪 `InnerFuturesNewService.getFewMinLine?type=1`（含真实 OHLC） | 新浪 `InnerFuturesNewService.getDailyKLine`；周K/月K 由日线本地聚合                        |
 | 国际期货（hf_）     | 新浪 `GlobalFuturesService.getGlobalFuturesMinLine`（仅有最新价，无 OHLC，图表回退折线） | 新浪 `GlobalFuturesService.getGlobalFuturesDailyKLine`（含真实 OHLC）；周K/月K 本地聚合 |
-| 全球指数 / 港美股    | Yahoo Finance `v8/finance/chart?interval=5m&range=1d`（含真实 OHLC） | 同一接口切换 `interval=1d/1wk/1mo`，含真实 OHLC                                       |
+| 全球指数 / 港美股    | 全球指数走东财 `push2his` trends2 主源，纳指综合另接腾讯美指分时（1.19.0 起大陆可用），Yahoo `v8/finance/chart` 兜底；港美股个股仍走 Yahoo（含真实 OHLC） | 指数走东财 kline / 腾讯美指 K线（日/周/月原生），Yahoo 兜底；港美股个股同一接口切换 `interval=1d/1wk/1mo`，含真实 OHLC                                       |
 
 ## 构建步骤
 
@@ -282,7 +298,7 @@ gradle wrapper --gradle-version 8.8
 ```bash
 ./gradlew buildPlugin
 ```
-输出路径：`build/distributions/stocklite-plugin-1.18.3.zip`
+输出路径：`build/distributions/stocklite-plugin-1.19.0.zip`
 
 > **注意：** `buildSearchableOptions` 已禁用（防止沙箱 JVM 崩溃，exit code 3）。
 > 签名默认关闭，仅在 `SIGN_PLUGIN=true` 时启用，本地构建无需证书文件。
