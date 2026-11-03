@@ -11,6 +11,7 @@ import com.stocklite.plugin.state.FundHoldingsResult
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.util.HttpUtil
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -90,7 +91,7 @@ class FundHoldingsDialog(
             return when (col) {
                 COL_RANK   -> h.rank.toDouble()
                 COL_CODE   -> h.stockCode
-                COL_NAME   -> h.stockName
+                COL_NAME   -> StealthName.display(h.stockName)
                 COL_PCT    -> h.navPercent
                 COL_SHARES -> h.holdShares
                 COL_VALUE  -> h.holdValue
@@ -109,7 +110,7 @@ class FundHoldingsDialog(
 
     // ── init ─────────────────────────────────────────────────────────────
     init {
-        title   = "基金持仓详情 — $fundName ($fundCode)"
+        title   = "基金持仓详情 — ${StealthName.display(fundName)} ($fundCode)"
         isModal = true
         init()
         setupTable()

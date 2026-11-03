@@ -16,6 +16,7 @@ import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
@@ -45,7 +46,7 @@ class FundPanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,       QuoteColumnType.PLAIN,  true) { f, _  -> f.alias.ifBlank { f.name } },
+        ColDef("name",         L10n.colName,       QuoteColumnType.PLAIN,  true) { f, _  -> StealthName.display(f.alias.ifBlank { f.name }) },
         ColDef("nav",          L10n.colNav,         QuoteColumnType.PRICE4, true) { _, q  -> q?.nav ?: 0.0 },
         ColDef("changePercent",L10n.colOfficialChg, QuoteColumnType.PCT,    true) { _, q  -> q?.changePercent ?: 0.0 },
         ColDef("navDate",      L10n.colNavDate,     QuoteColumnType.PLAIN,  true) { _, q  ->

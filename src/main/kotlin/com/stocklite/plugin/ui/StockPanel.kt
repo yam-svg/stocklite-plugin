@@ -24,6 +24,7 @@ import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
@@ -135,7 +136,7 @@ class StockPanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN, true)  { s, _  -> s.alias.ifBlank { s.name } },
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN, true)  { s, _  -> StealthName.display(s.alias.ifBlank { s.name }) },
         ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN)        { s, _  -> s.symbol },
         ColDef("quantity",     L10n.colQty,       QuoteColumnType.QTY)          { s, _  -> s.quantity },
         ColDef("cost",         L10n.colCost,      QuoteColumnType.PRICE)        { s, _  -> s.costPrice },

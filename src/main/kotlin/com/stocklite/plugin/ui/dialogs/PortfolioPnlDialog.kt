@@ -9,6 +9,7 @@ import com.stocklite.plugin.ui.DayStockRow
 import com.stocklite.plugin.ui.InlineChartPanel
 import com.stocklite.plugin.ui.PnlCalendarPanel
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.time.LocalDate
@@ -67,7 +68,7 @@ class PortfolioPnlDialog : DialogWrapper(true) {
                 if (kline.isEmpty()) return@mapNotNull null
                 PnlChartService.calcStockDayRows(stock, records, kline)
                     .takeIf { it.isNotEmpty() }
-                    ?.let { StockRows(stock.alias.ifBlank { stock.name }, it) }
+                    ?.let { StockRows(StealthName.display(stock.alias.ifBlank { stock.name }), it) }
             }
 
             val merged = PnlChartService.mergePortfolioPnl(perStock.map { s ->

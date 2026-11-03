@@ -18,6 +18,7 @@ import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.ui.dialogs.AddCryptoDialog
 import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
@@ -53,7 +54,7 @@ class CryptoPanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { c, _ -> c.alias.ifBlank { c.name } },
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { c, _ -> StealthName.display(c.alias.ifBlank { c.name }) },
         ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN) { c, _ -> c.symbol },
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE) { _, q -> q?.price ?: 0.0 },
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT)   { _, q -> q?.changePercent ?: 0.0 },

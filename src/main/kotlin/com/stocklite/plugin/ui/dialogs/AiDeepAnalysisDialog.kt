@@ -4,6 +4,7 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.stocklite.plugin.service.AiAnalysisService
 import com.stocklite.plugin.ui.AiChatPanel
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import javax.swing.*
 
@@ -36,7 +37,8 @@ class AiDeepAnalysisDialog(
     })
 
     init {
-        title   = "${L10n.btnAiDeepAnalysis} — $displayTitle"
+        // 窗口标题走展示层（隐秘模式转拼音）；AI 分析正文/上下文仍用真实名称不受影响
+        title   = "${L10n.btnAiDeepAnalysis} — ${StealthName.display(displayTitle)}"
         isModal = true
         init()
         startAnalysis()

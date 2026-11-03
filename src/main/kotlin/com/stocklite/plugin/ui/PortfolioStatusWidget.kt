@@ -9,6 +9,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.QuoteRenderer
+import com.stocklite.plugin.util.StealthName
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
@@ -60,7 +61,8 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
 
     override fun getText(): String {
         if (holdings.none { it.qty > 0 }) return ""
-        return "持仓  ${Fmt.sign(totalPnl)}${Fmt.value(totalPnl)}  今日 ${Fmt.sign(todayPnl)}${Fmt.value(todayPnl)}"
+        // 状态栏在工具窗口组件树之外，StealthChrome 遍历不到，读取时即时转换
+        return StealthName.uiText("持仓  ${Fmt.sign(totalPnl)}${Fmt.value(totalPnl)}  今日 ${Fmt.sign(todayPnl)}${Fmt.value(todayPnl)}")
     }
 
     override fun getTooltipText() = "StockLite 持仓概览，点击查看详情"
@@ -76,7 +78,7 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
         // ── 持仓汇总行 ──
         val summaryPanel = JPanel(FlowLayout(FlowLayout.LEFT, 12, 6))
         fun colorLabel(text: String, v: Double): JLabel {
-            val lbl = JLabel(text)
+            val lbl = JLabel(StealthName.uiText(text))  // 弹层每次点击重建，构建时取最新档位
             lbl.foreground = when {
                 v > 0 -> QuoteRenderer.positiveColor(scheme) ?: lbl.foreground
                 v < 0 -> QuoteRenderer.negativeColor(scheme) ?: lbl.foreground
@@ -93,7 +95,7 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
         summaryPanel.add(colorLabel("今日盈亏 ${Fmt.sign(todayPnl)}${Fmt.value(todayPnl)}", todayPnl))
 
         // ── 持仓明细表 ──
-        val cols = arrayOf("名称", "代码", "现价", "涨跌幅", "持仓盈亏", "收益率", "今日盈亏")
+        val cols = arrayOf("名称", "代码", "现价", "涨跌幅", "持仓盈亏", "收益率", "今日盈亏").map { StealthName.uiText(it) }.toTypedArray()
         val model = object : AbstractTableModel() {
             override fun getRowCount()    = h.size
             override fun getColumnCount() = cols.size
@@ -101,7 +103,7 @@ class PortfolioStatusWidget : StatusBarWidget, TextPresentation {
             override fun getColumnClass(c: Int) = if (c < 2) String::class.java else Double::class.java
             override fun getValueAt(row: Int, col: Int): Any = h[row].let { r ->
                 when (col) {
-                    0 -> r.name; 1 -> r.symbol
+                    0 -> StealthName.display(r.name); 1 -> r.symbol
                     2 -> r.price; 3 -> r.changePct; 4 -> r.pnl
                     5 -> if (r.cost > 0 && r.qty > 0) r.pnl / (r.cost * r.qty) * 100.0 else 0.0
                     6 -> r.todayPnl

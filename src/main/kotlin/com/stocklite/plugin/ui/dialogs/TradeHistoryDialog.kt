@@ -13,6 +13,7 @@ import com.stocklite.plugin.ui.InlineChartPanel
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -85,7 +86,7 @@ class TradeHistoryDialog(
     }
 
     init {
-        title = "${stock.alias.ifBlank { stock.name }}  ${L10n.dlgTradeHistory}"
+        title = "${StealthName.display(stock.alias.ifBlank { stock.name })}  ${L10n.dlgTradeHistory}"
         isModal = true
         init()
         loadRecords()

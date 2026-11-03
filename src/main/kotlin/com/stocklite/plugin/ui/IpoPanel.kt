@@ -17,6 +17,7 @@ import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.AlertManager
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -84,7 +85,7 @@ class IpoPanel : JPanel(BorderLayout()),
     private val calCols get() = listOf(
         Triple("applyDate",  L10n.colApplyDate)   { it: IpoInfo -> it.applyDate.ifEmpty { "--" } },
         Triple("applyCode",  L10n.colApplyCode)   { it: IpoInfo -> it.applyCode },
-        Triple("name",       L10n.colName)        { it: IpoInfo -> markPrefix(it) + it.name },
+        Triple("name",       L10n.colName)        { it: IpoInfo -> markPrefix(it) + StealthName.display(it.name) },
         Triple("symbol",     L10n.colSymbol)      { it: IpoInfo -> it.sinaSymbol },
         Triple("issuePrice", L10n.colIssuePrice)  { it: IpoInfo -> it.issuePrice?.let { p -> Fmt.price(p) } ?: "--" },
         Triple("issuePe",    L10n.colIssuePe)     { it: IpoInfo -> it.issuePe?.let { p -> "%.2f".format(p) } ?: "--" },
@@ -138,7 +139,7 @@ class IpoPanel : JPanel(BorderLayout()),
     }
 
     private val recCols get() = listOf(
-        RecCol("name",       L10n.colName,       QuoteColumnType.PLAIN) { it, _ -> markPrefix(it) + it.name },
+        RecCol("name",       L10n.colName,       QuoteColumnType.PLAIN) { it, _ -> markPrefix(it) + StealthName.display(it.name) },
         RecCol("symbol",     L10n.colSymbol,     QuoteColumnType.PLAIN) { it, _ -> it.sinaSymbol },
         RecCol("price",      L10n.colPrice,      QuoteColumnType.PRICE) { _, q -> q?.price ?: 0.0 },
         RecCol("changePct",  L10n.colChangePct,  QuoteColumnType.PCT)   { _, q -> q?.changePercent ?: 0.0 },
@@ -315,6 +316,9 @@ class IpoPanel : JPanel(BorderLayout()),
     }
 
     // ══════════════════ 数据 ══════════════════
+
+    /** 隐秘模式切换：两张表名称列取值含转换，重刷即可 */
+    fun stealthRefresh() { calModel.fireTableDataChanged(); recModel.fireTableDataChanged() }
 
     fun fetchAsync() {
         if (!panelActive || !state.enableIpoPanel || fetching) return

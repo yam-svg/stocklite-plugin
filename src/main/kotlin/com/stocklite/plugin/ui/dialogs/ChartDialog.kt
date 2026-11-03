@@ -6,6 +6,7 @@ import com.stocklite.plugin.service.ChartDataService
 import com.stocklite.plugin.ui.common.CefChartBrowser
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.Dimension
 import javax.swing.*
 
@@ -32,7 +33,7 @@ class ChartDialog(
     private var chartBrowser: CefChartBrowser? = null
 
     init {
-        title = "$displayName  ($displaySymbol)  —  日内走势"
+        title = "${StealthName.display(displayName)}  ($displaySymbol)  —  日内走势"
         init()
     }
 
@@ -146,7 +147,7 @@ body { background:#1e1e2e; color:#cdd6f4; font-family:system-ui,sans-serif; over
 </head>
 <body>
 <div id="hdr">
-  <span class="nm">$displayName</span>
+  <span class="nm">${StealthName.display(displayName)}</span>
   <span class="sym">$displaySymbol</span>
   <span class="pct">$pctStr</span>
 </div>

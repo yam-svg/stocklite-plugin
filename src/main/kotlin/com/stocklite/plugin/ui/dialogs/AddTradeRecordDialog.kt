@@ -3,6 +3,7 @@ package com.stocklite.plugin.ui.dialogs
 import com.intellij.openapi.ui.DialogWrapper
 import com.stocklite.plugin.state.StockData
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.time.LocalDate
 import java.time.ZoneId
@@ -66,7 +67,7 @@ class AddTradeRecordDialog(
         }
         // 标题行：股票名+代码
         gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.HORIZONTAL
-        form.add(JLabel("<html><b>${stock.alias.ifBlank { stock.name }}</b>  <span style='color:#888aaa'>${stock.symbol}</span></html>"), gbc)
+        form.add(JLabel("<html><b>${StealthName.display(stock.alias.ifBlank { stock.name })}</b>  <span style='color:#888aaa'>${stock.symbol}</span></html>"), gbc)
         gbc.gridwidth = 1
 
         row(L10n.dlgTradeTypeLbl,  typeCombo,  1)

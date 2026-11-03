@@ -33,6 +33,12 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     // ── 涨跌幅颜色方案 ──
     var colorScheme: String = "RED_UP"
 
+    // ── 隐秘模式（OFF=关闭 / FULL=名称全拼 / ABBR=拼音首字母；开启时涨跌配色抹平，见 StealthName）──
+    var stealthMode: String = "OFF"
+
+    // ── 隐秘模式加强：静态界面文字（标签页/表头/按钮）也转拼音，见 StealthName.uiText ──
+    var stealthUiText: Boolean = false
+
     // ── 界面语言 ──
     var language: String = "ZH"
 
@@ -168,6 +174,13 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     fun addColumnListener(l: ColumnSettingsListener) { columnListeners.add(l) }
     fun removeColumnListener(l: ColumnSettingsListener) { columnListeners.remove(l) }
     fun notifyColumnSettingsChanged() = columnListeners.forEach { it.onColumnSettingsChanged() }
+
+    // ── 隐秘模式变更通知（表格/图表/状态栏随之重绘） ──
+    interface StealthListener { fun onStealthChanged() }
+    @Transient private val stealthListeners = mutableListOf<StealthListener>()
+    fun addStealthListener(l: StealthListener) { stealthListeners.add(l) }
+    fun removeStealthListener(l: StealthListener) { stealthListeners.remove(l) }
+    fun notifyStealthChanged() = stealthListeners.forEach { it.onStealthChanged() }
 
     // ── 语言变更通知 ──
     interface LanguageListener { fun onLanguageChanged() }

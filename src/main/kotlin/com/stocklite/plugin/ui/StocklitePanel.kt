@@ -3,13 +3,16 @@ package com.stocklite.plugin.ui
 import com.intellij.ui.components.JBTabbedPane
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthChrome
+import com.stocklite.plugin.util.StealthName
 import java.awt.BorderLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
 class StocklitePanel : JPanel(BorderLayout()),
     StockliteState.LanguageListener,
-    StockliteState.FeatureToggleListener {
+    StockliteState.FeatureToggleListener,
+    StockliteState.StealthListener {
 
     val stockPanel    = StockPanel()
     val fundPanel     = FundPanel()
@@ -86,6 +89,31 @@ class StocklitePanel : JPanel(BorderLayout()),
         add(tabs, BorderLayout.CENTER)
         state.addLanguageListener(this)
         state.addFeatureToggleListener(this)
+        state.addStealthListener(this)
+        // 重开工具窗口时持久化的隐秘设置立即生效（构建期文案都是原文）
+        refreshTabTitles(); StealthChrome.refresh(this)
+    }
+
+    /** 隐秘模式切换：各页表格/卡片重刷（颜色由渲染器实时读取，重绘即生效） */
+    override fun onStealthChanged() {
+        stockPanel.refreshGroups();  fundPanel.refreshGroups()
+        futurePanel.refreshGroups(); cryptoPanel.refreshGroups()
+        globalPanel.stealthRefresh(); sectorPanel.stealthRefresh()
+        ipoPanel.stealthRefresh();    usMarketPanel.stealthRefresh()
+        refreshTabTitles(); StealthChrome.refresh(this)
+    }
+
+    /**
+     * 标签页标题刷新：始终从 L10n 取原文再按当前隐秘档位转换，
+     * 语言切换与隐秘切换共用（原文源唯一，不存在叠加转换）。
+     */
+    private fun refreshTabTitles() {
+        val titles = (listOf(stockPanel to L10n.tabStock) +
+            optionalTabs.map { it.component to it.label() })
+        titles.forEach { (comp, title) ->
+            val idx = tabs.indexOfComponent(comp)
+            if (idx >= 0) tabs.setTitleAt(idx, StealthName.uiText(title))
+        }
     }
 
     /**
@@ -111,15 +139,9 @@ class StocklitePanel : JPanel(BorderLayout()),
         ipoPanel.dispose();      usMarketPanel.dispose(); apiLogPanel.dispose()
         state.removeLanguageListener(this)
         state.removeFeatureToggleListener(this)
+        state.removeStealthListener(this)
     }
 
-    override fun onLanguageChanged() {
-        // 只改标题不动结构：增删/重建会导致工具窗口尺寸抖动
-        val titles = (listOf(stockPanel to L10n.tabStock) +
-            optionalTabs.map { it.component to it.label() })
-        titles.forEach { (comp, title) ->
-            val idx = tabs.indexOfComponent(comp)
-            if (idx >= 0) tabs.setTitleAt(idx, title)
-        }
-    }
+    // 只改标题不动结构：增删/重建会导致工具窗口尺寸抖动
+    override fun onLanguageChanged() { refreshTabTitles() }
 }

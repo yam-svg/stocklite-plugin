@@ -3,6 +3,7 @@ package com.stocklite.plugin.ui.dialogs
 import com.intellij.openapi.ui.DialogWrapper
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
@@ -39,7 +40,7 @@ class SetAlertDialog(
             gbc.fill = GridBagConstraints.NONE
         }
 
-        row(L10n.dlgAlertSymbol, JLabel("$name ($symbol)"), 0)
+        row(L10n.dlgAlertSymbol, JLabel("${StealthName.display(name)} ($symbol)"), 0)
         row(L10n.dlgAlertTarget, targetField, 1)
         row(L10n.dlgAlertType, JPanel().also {
             it.add(aboveRadio); it.add(belowRadio)

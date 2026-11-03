@@ -14,6 +14,7 @@ import com.stocklite.plugin.ui.common.TriStateRowSorter
 import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -98,13 +99,13 @@ class SectorPanel : JPanel(BorderLayout()),
     private fun num(v: Double): Double? = if (v.isFinite()) v else null
 
     private fun valueAt(row: AStockSector, key: String): Any? = when (key) {
-        "name"      -> row.name
+        "name"      -> StealthName.display(row.name)
         "changePct" -> num(row.changePct)
         "upCount"   -> row.upCount
         "downCount" -> row.downCount
         "mainFlow"  -> row.mainInflow
         "turnover"  -> num(row.turnoverRate)
-        "leader"    -> row.leaderName.ifEmpty { "--" }
+        "leader"    -> row.leaderName.ifEmpty { "--" }.let { StealthName.display(it) }
         "leaderPct" -> num(row.leaderPct)
         else        -> ""
     }
@@ -116,6 +117,9 @@ class SectorPanel : JPanel(BorderLayout()),
         override fun getValueAt(row: Int, col: Int) = valueAt(rows[row], cols[col].key)
     }
     private val table = JBTable(model)
+
+    /** 隐秘模式切换：表格取值含名称转换，重刷即可 */
+    fun stealthRefresh() { model.fireTableDataChanged() }
 
     /** 主力净流入：按 万亿/亿/万 自动换算（与大盘概览成交额口径一致），红涨绿跌着色 */
     private inner class MainFlowRenderer : QuoteRenderer(QuoteColumnType.PNL) {

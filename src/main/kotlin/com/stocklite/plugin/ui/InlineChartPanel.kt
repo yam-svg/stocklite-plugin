@@ -6,6 +6,7 @@ import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.CefChartBrowser
 import com.stocklite.plugin.ui.common.Fmt
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import com.stocklite.plugin.util.TradeMarkerUtil
 import java.awt.*
 import javax.swing.*
@@ -109,7 +110,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         closeBtn.toolTipText = L10n.chartCloseTip
         updatePeriodButtonTexts()
 
-        currentName          = displayName
+        currentName          = displayName   // 存原名，头部渲染时过隐秘模式（见 headerName）
         currentSymbol        = displaySymbol
         currentMarket        = market
         currentChangePct     = changePercent
@@ -120,7 +121,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val color  = pctHexColor(changePercent, scheme)
         val sign   = if (changePercent >= 0) "+" else ""
         val pct    = "%.2f".format(changePercent)
-        infoLabel.text = "<html><b>$displayName</b>&nbsp;&nbsp;" +
+        infoLabel.text = "<html><b>${headerName()}</b>&nbsp;&nbsp;" +
             "<span style='color:#888aaa;font-size:11px'>$displaySymbol</span>&nbsp;&nbsp;" +
             "<b style='color:$color'>$sign${pct}%</b></html>"
 
@@ -151,7 +152,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         closeBtn.toolTipText = L10n.chartCloseTip
         updatePeriodButtonTexts()
 
-        currentName      = displayName
+        currentName      = displayName   // 存原名，见 headerName()
         currentSymbol    = "__pnl__"
         currentChangePct = 0.0
         currentPrevClose = 0.0
@@ -160,7 +161,7 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         val scheme = StockliteState.getInstance().colorScheme
         val color  = pctHexColor(totalPnl, scheme)
         val sign   = if (totalPnl >= 0) "+" else ""
-        infoLabel.text = "<html><b>$displayName</b>&nbsp;&nbsp;" +
+        infoLabel.text = "<html><b>${headerName()}</b>&nbsp;&nbsp;" +
             "<b style='color:$color'>$sign${Fmt.value(totalPnl)}</b></html>"
 
         // 隐藏周期切换栏
@@ -282,8 +283,11 @@ class InlineChartPanel : JPanel(BorderLayout()) {
         browserHolder.revalidate()
     }
 
+    /** 头部展示名：图表头部名称过隐秘模式（K线本体配色不动，同 mns 只混淆展示文本的取舍） */
+    private fun headerName() = StealthName.display(currentName)
+
     private fun pctHexColor(pct: Double, scheme: String) = when {
-        scheme == "NONE" -> "#888888"
+        scheme == "NONE" || StealthName.active() -> "#888888"   // 隐秘模式抹平头部涨跌色
         pct >= 0 -> if (scheme == "RED_DOWN") "#26a69a" else "#ef5350"
         else     -> if (scheme == "RED_DOWN") "#ef5350" else "#26a69a"
     }

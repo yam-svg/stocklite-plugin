@@ -13,6 +13,9 @@ repositories {
 
 dependencies {
     implementation("org.json:json:20240303")
+    // 隐秘模式：中文标的名转拼音。原库 promeg/tinypinyin 只发布在 JitPack 不在 Central，
+    // 用 Central 上的同源码镜像 io.github.biezhi:TinyPinyin（同为 com.github.promeg.pinyinhelper.Pinyin API）
+    implementation("io.github.biezhi:TinyPinyin:2.0.3.RELEASE")
 }
 
 intellij {

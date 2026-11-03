@@ -19,17 +19,19 @@ open class QuoteRenderer(private val colType: QuoteColumnType = QuoteColumnType.
         val GREEN = JBColor(Color(0x2E9D4F), Color(0x66BB6A))
         val FLAT  = JBColor(Color(0x888888), Color(0xAAAAAA))
 
-        /** 根据当前颜色设置返回"正值"颜色 */
-        fun positiveColor(scheme: String) = when (scheme) {
-            "RED_UP"   -> RED
-            "RED_DOWN" -> GREEN
+        /** 根据当前颜色设置返回"正值"颜色；隐秘模式下强制不着色（抹平涨跌色，同 mns 做法） */
+        fun positiveColor(scheme: String) = when {
+            com.stocklite.plugin.util.StealthName.active() -> null
+            scheme == "RED_UP"   -> RED
+            scheme == "RED_DOWN" -> GREEN
             else       -> null   // NONE：不着色
         }
 
-        /** 根据当前颜色设置返回"负值"颜色 */
-        fun negativeColor(scheme: String) = when (scheme) {
-            "RED_UP"   -> GREEN
-            "RED_DOWN" -> RED
+        /** 根据当前颜色设置返回"负值"颜色；隐秘模式下强制不着色 */
+        fun negativeColor(scheme: String) = when {
+            com.stocklite.plugin.util.StealthName.active() -> null
+            scheme == "RED_UP"   -> GREEN
+            scheme == "RED_DOWN" -> RED
             else       -> null   // NONE：不着色
         }
     }

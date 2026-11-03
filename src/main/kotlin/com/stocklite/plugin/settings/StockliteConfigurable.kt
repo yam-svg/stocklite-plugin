@@ -38,6 +38,16 @@ class StockliteConfigurable : Configurable {
     )
     private val colorGroup = ButtonGroup().also { g -> colorRadios.values.forEach { g.add(it) } }
 
+    // 隐秘模式（防偷窥）：关闭 / 全拼 / 拼音首字母
+    private val stealthRadios = linkedMapOf(
+        "OFF"  to JRadioButton(L10n.settingsStealthOff),
+        "FULL" to JRadioButton(L10n.settingsStealthFull),
+        "ABBR" to JRadioButton(L10n.settingsStealthAbbrev)
+    )
+    private val stealthGroup = ButtonGroup().also { g -> stealthRadios.values.forEach { g.add(it) } }
+    // 隐秘模式子选项：标签页/表头/按钮等静态界面文字也转拼音（StealthChrome）
+    private val stealthUiCheckBox = JCheckBox(L10n.settingsStealthUi)
+
     // 刷新间隔 spinners
     private val stockIntervalSpinner  = JSpinner(SpinnerNumberModel(5, 3, 60, 1))
     private val fundIntervalSpinner   = JSpinner(SpinnerNumberModel(30, 10, 120, 5))
@@ -291,6 +301,16 @@ class StockliteConfigurable : Configurable {
         panel.add(sealHoldingOnlyCheckBox, gbc); row++
         row = group(L10n.settingsGroupDisplay, row)
         listOf(chartMACheckBox, chartVolumeCheckBox, tradeMarkerCheckBox, sealLotsCheckBox, portfolioBarCheckBox).forEach { cb -> row = cbRow(cb, row) }
+        // 隐秘模式三态单选（与复选框同缩进层级；说明文字里点明涨跌色抹平的联动行为）
+        gbc.gridy = row; gbc.insets = Insets(6, 24, 2, 8)
+        panel.add(JLabel(L10n.settingsStealth), gbc); row++
+        stealthRadios.values.forEach { rb ->
+            gbc.gridy = row; gbc.insets = Insets(2, 44, 2, 8)
+            panel.add(rb, gbc); row++
+        }
+        // 隐秘模式子选项：与三态单选对齐
+        gbc.gridy = row; gbc.insets = Insets(2, 44, 2, 8)
+        panel.add(stealthUiCheckBox, gbc); row++
         gbc.insets = Insets(2, 8, 2, 8)  // 恢复后续区块的默认缩进
 
         // ── AI 分析 ──
@@ -445,10 +465,13 @@ class StockliteConfigurable : Configurable {
         val fv = state.fundVisibleColumns.toSet()
         val selectedScheme = colorRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "RED_UP"
         val selectedLang   = langRadios.entries.firstOrNull  { it.value.isSelected }?.key ?: "ZH"
+        val selectedStealth = stealthRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "OFF"
         return stockBoxes.any { (k, cb) -> cb.isSelected != sv.contains(k) } ||
                fundBoxes.any  { (k, cb) -> cb.isSelected != fv.contains(k) } ||
                selectedScheme != state.colorScheme ||
                selectedLang   != state.language ||
+               selectedStealth != state.stealthMode ||
+               stealthUiCheckBox.isSelected != state.stealthUiText ||
                (stockIntervalSpinner.value as Int)  != state.refreshIntervalStock ||
                (fundIntervalSpinner.value as Int)   != state.refreshIntervalFund  ||
                (globalIntervalSpinner.value as Int) != state.refreshIntervalGlobal ||
@@ -484,10 +507,14 @@ class StockliteConfigurable : Configurable {
 
     override fun apply() {
         val state = StockliteState.getInstance()
+        val prevStealth = state.stealthMode
+        val prevStealthUi = state.stealthUiText
         state.stockVisibleColumns = ArrayList(stockBoxes.filter { it.value.isSelected }.keys.sorted())
         state.fundVisibleColumns  = ArrayList(fundBoxes.filter  { it.value.isSelected }.keys.sorted())
         state.colorScheme = colorRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "RED_UP"
         state.language    = langRadios.entries.firstOrNull  { it.value.isSelected }?.key ?: "ZH"
+        state.stealthMode = stealthRadios.entries.firstOrNull { it.value.isSelected }?.key ?: "OFF"
+        state.stealthUiText = stealthUiCheckBox.isSelected
         state.refreshIntervalStock  = stockIntervalSpinner.value  as Int
         state.refreshIntervalFund   = fundIntervalSpinner.value   as Int
         state.refreshIntervalGlobal = globalIntervalSpinner.value as Int
@@ -524,6 +551,8 @@ class StockliteConfigurable : Configurable {
         state.notifyLanguageChanged()
         state.notifyRefreshIntervalChanged()
         state.notifyFeatureToggleChanged()
+        // 档位或界面文字开关任一变化都要广播（StealthChrome 依赖事件重刷静态文案）
+        if (prevStealth != state.stealthMode || prevStealthUi != state.stealthUiText) state.notifyStealthChanged()
     }
 
     override fun reset() {
@@ -534,6 +563,8 @@ class StockliteConfigurable : Configurable {
         fundBoxes.forEach  { (k, cb) -> cb.isSelected = k in fv }
         (colorRadios[state.colorScheme] ?: colorRadios["RED_UP"])?.isSelected = true
         (langRadios[state.language]     ?: langRadios["ZH"])?.isSelected = true
+        (stealthRadios[state.stealthMode] ?: stealthRadios["OFF"])?.isSelected = true
+        stealthUiCheckBox.isSelected = state.stealthUiText
         stockIntervalSpinner.value  = state.refreshIntervalStock
         fundIntervalSpinner.value   = state.refreshIntervalFund
         globalIntervalSpinner.value = state.refreshIntervalGlobal

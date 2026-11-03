@@ -21,7 +21,7 @@ object AlertManager {
      */
     fun notifyFundNavUpdate(name: String, changePct: Double) {
         if (!StockliteState.getInstance().enableFundNavAlert) return
-        val msg = L10n.dlgFundNavAlertMsg(name, changePct)
+        val msg = L10n.dlgFundNavAlertMsg(StealthName.display(name), changePct)
         try {
             NotificationGroupManager.getInstance()
                 .getNotificationGroup("StockLite Alerts")
@@ -39,7 +39,7 @@ object AlertManager {
         try {
             NotificationGroupManager.getInstance()
                 .getNotificationGroup("StockLite Alerts")
-                .createNotification(L10n.ipoAlertTitle, L10n.ipoAlertMsg(name, applyCode, issuePrice),
+                .createNotification(L10n.ipoAlertTitle, L10n.ipoAlertMsg(StealthName.display(name), applyCode, issuePrice),
                     NotificationType.INFORMATION)
                 .notify(null)
         } catch (_: Exception) {}
@@ -78,7 +78,7 @@ object AlertManager {
 
             alert.triggered = true
 
-            val msg = L10n.dlgAlertTriggered(alert.name, price, alert.targetPrice)
+            val msg = L10n.dlgAlertTriggered(StealthName.display(alert.name), price, alert.targetPrice)
             try {
                 NotificationGroupManager.getInstance()
                     .getNotificationGroup("StockLite Alerts")
@@ -175,8 +175,9 @@ object AlertManager {
         val pct  = ((base - cur) * 100 / base).toInt()
         val from = L10n.lotsText(base)
         val to   = L10n.lotsText(cur)
-        val msg  = if (key.endsWith("U")) L10n.sealShrinkMsgUp(name, from, to, pct)
-                   else                  L10n.sealShrinkMsgDown(name, from, to, pct)
+        val shown = StealthName.display(name)   // 隐秘模式下通知里的标的名同样转拼音
+        val msg  = if (key.endsWith("U")) L10n.sealShrinkMsgUp(shown, from, to, pct)
+                   else                  L10n.sealShrinkMsgDown(shown, from, to, pct)
         try {
             NotificationGroupManager.getInstance()
                 .getNotificationGroup("StockLite Alerts")

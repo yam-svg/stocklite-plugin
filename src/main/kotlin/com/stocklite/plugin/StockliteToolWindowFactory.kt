@@ -35,6 +35,29 @@ class StockliteToolWindowFactory : ToolWindowFactory {
             }
         }
 
+        // 隐秘模式快捷开关（👁）：点击循环 关闭→全拼→首字母→关闭，配合设置页三态单选
+        fun stealthState() = com.stocklite.plugin.state.StockliteState.getInstance()
+        val stealthAction = object : AnAction(
+            "StockLite Stealth Mode",
+            "Cycle stealth mode: off -> full pinyin -> pinyin initials",
+            AllIcons.Actions.Show
+        ) {
+            override fun update(e: AnActionEvent) {
+                val tip = when (stealthState().stealthMode) {
+                    "FULL" -> "Stealth: FULL pinyin (click -> initials)"
+                    "ABBR" -> "Stealth: INITIALS (click -> off)"
+                    else   -> "Stealth: off (click -> full pinyin)"
+                }
+                e.presentation.description = tip
+                e.presentation.isEnabled = true
+            }
+            override fun actionPerformed(e: AnActionEvent) {
+                val st = stealthState()
+                st.stealthMode = com.stocklite.plugin.util.StealthName.cycle(st.stealthMode)
+                st.notifyStealthChanged()
+            }
+        }
+
         // 在工具窗口标题栏右侧添加设置齿轮按钮
         val settingsAction = object : AnAction(
             "StockLite Settings",
@@ -47,6 +70,6 @@ class StockliteToolWindowFactory : ToolWindowFactory {
             }
         }
 
-        (toolWindow as? ToolWindowEx)?.setTitleActions(listOf(guideAction, settingsAction))
+        (toolWindow as? ToolWindowEx)?.setTitleActions(listOf(guideAction, stealthAction, settingsAction))
     }
 }

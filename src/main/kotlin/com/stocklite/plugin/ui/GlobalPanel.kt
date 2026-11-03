@@ -20,6 +20,7 @@ import com.stocklite.plugin.ui.common.centerTableHeader
 import com.stocklite.plugin.ui.common.viewColumn
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
@@ -249,9 +250,9 @@ class GlobalPanel : JPanel(BorderLayout()),
         }
     }
 
-    /** 自定义别名优先，未设置时用默认名称；别名仅影响展示，复制/AI仍用真实名称 */
+    /** 自定义别名优先，未设置时用默认名称；别名仅影响展示，复制/AI仍用真实名称；隐秘模式再转拼音 */
     private fun displayName(q: GlobalIndexQuote): String =
-        StockliteState.getInstance().globalIndexAliases[q.symbol]?.takeIf { it.isNotBlank() } ?: q.name
+        StealthName.display(StockliteState.getInstance().globalIndexAliases[q.symbol]?.takeIf { it.isNotBlank() } ?: q.name)
 
     private fun showContextMenu(e: MouseEvent) {
         val viewRow = table.rowAtPoint(e.point).takeIf { it >= 0 } ?: return
@@ -414,6 +415,12 @@ class GlobalPanel : JPanel(BorderLayout()),
             filters.size == 1 -> filters[0]
             else -> RowFilter.andFilter(filters)
         }
+    }
+
+    /** 隐秘模式切换：指数表即时重刷；大盘概览板块名随下一轮 fetch 更新 */
+    fun stealthRefresh() {
+        tableModel.fireTableDataChanged()
+        fetchAsync()
     }
 
     fun fetchAsync() {
@@ -718,7 +725,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                     "<br/>${L10n.lblCitic}${L10n.tipVarietyDetail}：<br/>" +
                         fp.citicByVariety.joinToString("<br/>") { v ->
                             val label = if (v.netAddShort >= 0) "净加空" else "净加多"
-                            "${v.code} ${v.name}：$label${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                            "${v.code} ${StealthName.display(v.name)}：$label${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
                         }
                  else "") +
                 "<br/><span style='color:#888aaa'>${dataTimeTooltip(times.futures)}</span></html>"
@@ -733,7 +740,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                                    up: String, dn: String, timeTooltip: String = "") {
         cells.forEachIndexed { i, cell ->
             val s = sectors.getOrNull(i)
-            cell.text = if (s != null) "<html>${s.name} ${pctSpan(s.pct, up, dn)}</html>" else "--"
+            cell.text = if (s != null) "<html>${StealthName.display(s.name)} ${pctSpan(s.pct, up, dn)}</html>" else "--"
             cell.toolTipText = if (s != null && timeTooltip.isNotEmpty()) timeTooltip else null
         }
     }
@@ -790,9 +797,9 @@ class GlobalPanel : JPanel(BorderLayout()),
             if (d.largeCapPct != null && d.midCapPct != null && d.smallCapPct != null)
                 sb.append("大盘${"%.2f".format(d.largeCapPct)}%/中盘${"%.2f".format(d.midCapPct)}%/小盘${"%.2f".format(d.smallCapPct)}% ")
             if (d.topSectors.isNotEmpty())
-                sb.append("领涨板块TOP${d.topSectors.size}：${d.topSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
+                sb.append("领涨板块TOP${d.topSectors.size}：${d.topSectors.joinToString("、") { "${StealthName.display(it.name)}${"%.2f".format(it.pct)}%" }} ")
             if (d.bottomSectors.isNotEmpty())
-                sb.append("领跌板块TOP${d.bottomSectors.size}：${d.bottomSectors.joinToString("、") { "${it.name}${"%.2f".format(it.pct)}%" }} ")
+                sb.append("领跌板块TOP${d.bottomSectors.size}：${d.bottomSectors.joinToString("、") { "${StealthName.display(it.name)}${"%.2f".format(it.pct)}%" }} ")
             if (d.mainNetInflow != null) sb.append("主力资金净${if (d.mainNetInflow >= 0) "流入" else "流出"}${fmtYuanBig(kotlin.math.abs(d.mainNetInflow))} ")
             d.futuresPosition?.let { fp ->
                 val citicNet = fp.citicLong - fp.citicShort
@@ -806,7 +813,7 @@ class GlobalPanel : JPanel(BorderLayout()),
                     chg(fp.mainForceLongChange, fp.mainForceShortChange))
                 if (fp.citicByVariety.isNotEmpty()) {
                     sb.append("；中信分品种：" + fp.citicByVariety.joinToString("、") { v ->
-                        "${v.name}净加${if (v.netAddShort >= 0) "空" else "多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
+                        "${StealthName.display(v.name)}净加${if (v.netAddShort >= 0) "空" else "多"}${"%.0f".format(kotlin.math.abs(v.netAddShort))}手"
                     })
                 }
             }

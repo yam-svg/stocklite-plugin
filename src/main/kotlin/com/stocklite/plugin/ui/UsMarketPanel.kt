@@ -8,6 +8,7 @@ import com.stocklite.plugin.state.SectorQuote
 import com.stocklite.plugin.state.StockliteState
 import com.stocklite.plugin.ui.common.QuoteRenderer
 import com.stocklite.plugin.util.L10n
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
@@ -124,6 +125,12 @@ class UsMarketPanel : JPanel(BorderLayout()),
         addActionListener { action() }
     }
 
+    /** 隐秘模式切换：卡片中文名标签重新转写（原名从静态清单再取，不依赖已转写文本） */
+    fun stealthRefresh() {
+        val m = MarketDataService.US_SECTOR_ETFS.toMap()
+        nameLabels.forEach { (sym, lbl) -> lbl.text = StealthName.display(m[sym] ?: sym) }
+    }
+
     private fun buildGroups() {
         contentPanel.removeAll()
         grids.clear()
@@ -138,7 +145,7 @@ class UsMarketPanel : JPanel(BorderLayout()),
                 isOpaque = false
             }
             for (symbol in symbols) {
-                val nameCn = symbolToName[symbol] ?: symbol
+                val nameCn = StealthName.display(symbolToName[symbol] ?: symbol)
                 grid.add(buildCard(symbol, nameCn))
             }
             grids.add(grid)

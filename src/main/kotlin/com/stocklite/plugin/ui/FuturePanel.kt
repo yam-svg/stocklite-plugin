@@ -17,6 +17,7 @@ import com.stocklite.plugin.ui.dialogs.ManageGroupsDialog
 import com.intellij.ide.BrowserUtil
 import com.stocklite.plugin.util.L10n
 import com.stocklite.plugin.util.MarketTimeUtil
+import com.stocklite.plugin.util.StealthName
 import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
@@ -47,7 +48,7 @@ class FuturePanel : JPanel(BorderLayout()),
     )
 
     private val allCols get() = listOf(
-        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { f, _  -> f.alias.ifBlank { f.name } },
+        ColDef("name",         L10n.colName,      QuoteColumnType.PLAIN) { f, _  -> StealthName.display(f.alias.ifBlank { f.name }) },
         ColDef("symbol",       L10n.colSymbol,    QuoteColumnType.PLAIN) { f, _  -> f.symbol },
         ColDef("price",        L10n.colPrice,     QuoteColumnType.PRICE) { _, q  -> q?.price ?: 0.0 },
         ColDef("changePercent",L10n.colChangePct, QuoteColumnType.PCT)   { _, q  -> q?.changePercent ?: 0.0 },
