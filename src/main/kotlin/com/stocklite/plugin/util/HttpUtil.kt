@@ -2,8 +2,16 @@ package com.stocklite.plugin.util
 
 import com.stocklite.plugin.service.ApiLogger
 import java.net.HttpURLConnection
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.URI
 import java.net.URL
 import java.nio.charset.Charset
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SNIServerName
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 
 object HttpUtil {
 
@@ -12,6 +20,13 @@ object HttpUtil {
 
     fun get(url: String, referer: String? = null, charset: String = "UTF-8",
             label: String? = null): String? {
+        val body = getHttp(url, referer, charset, label)
+        if (body != null) return body
+        // 东财在部分网络下 IPv4 握手后被重置，而 IPv6 正常；Java 默认优先 IPv4，故失败后改走 IPv6 直连
+        return if (supportsIpv6Fallback(url)) getViaIpv6(url, referer, charset, label) else null
+    }
+
+    private fun getHttp(url: String, referer: String?, charset: String, label: String?): String? {
         val t0 = System.currentTimeMillis()
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
@@ -32,6 +47,79 @@ object HttpUtil {
                 false, -1, System.currentTimeMillis() - t0, e.message)
             null
         }
+    }
+
+    private fun supportsIpv6Fallback(url: String): Boolean = try {
+        URI(url).host?.endsWith("eastmoney.com") == true
+    } catch (_: Exception) { false }
+
+    /**
+     * 手动解析 IPv6 地址后用 SSLSocket 直连（SNI/Host 仍用域名，证书按域名校验）。
+     * HttpURLConnection 无法指定地址族，Java 优先取 IPv4 地址，这里绕过它。
+     */
+    private fun getViaIpv6(url: String, referer: String?, charset: String, label: String?): String? {
+        val t0 = System.currentTimeMillis()
+        var socket: SSLSocket? = null
+        return try {
+            val uri  = URI(url)
+            val host = uri.host ?: return null
+            val port = if (uri.port > 0) uri.port else 443
+            val addr = InetAddress.getAllByName(host).filterIsInstance<Inet6Address>().firstOrNull()
+                ?: return null
+            val path = uri.rawPath.ifEmpty { "/" } + (uri.rawQuery?.let { "?$it" } ?: "")
+            val s = SSLContext.getDefault().socketFactory.createSocket() as SSLSocket
+            socket = s
+            s.sslParameters = s.sslParameters.apply {
+                serverNames = listOf<SNIServerName>(SNIHostName(host))
+                endpointIdentificationAlgorithm = "HTTPS"
+            }
+            s.connect(InetSocketAddress(addr, port), TIMEOUT)
+            s.soTimeout = TIMEOUT
+            s.startHandshake()
+            val req = buildString {
+                append("GET $path HTTP/1.1\r\n")
+                append("Host: $host\r\n")
+                append("User-Agent: $UA\r\n")
+                if (referer != null) append("Referer: $referer\r\n")
+                append("Accept: */*\r\n")
+                append("Accept-Encoding: identity\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+            s.outputStream.write(req.toByteArray(Charsets.UTF_8))
+            s.outputStream.flush()
+            val raw  = String(s.inputStream.readBytes(), Charset.forName(charset))
+            val split = raw.indexOf("\r\n\r\n")
+            if (split < 0) return null
+            val head = raw.substring(0, split)
+            if (!head.startsWith("HTTP/1.1 200") && !head.startsWith("HTTP/1.0 200")) return null
+            var body = raw.substring(split + 4)
+            if (head.contains("Transfer-Encoding: chunked", ignoreCase = true)) body = decodeChunked(body)
+            ApiLogger.log(label ?: urlLabel(url), "GET(IPv6)", url, referer, null,
+                true, 200, System.currentTimeMillis() - t0, body)
+            body
+        } catch (e: Exception) {
+            ApiLogger.log(label ?: urlLabel(url), "GET(IPv6)", url, referer, null,
+                false, -1, System.currentTimeMillis() - t0, e.message)
+            null
+        } finally {
+            try { socket?.close() } catch (_: Exception) { }
+        }
+    }
+
+    private fun decodeChunked(body: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < body.length) {
+            val lineEnd = body.indexOf("\r\n", i)
+            if (lineEnd < 0) break
+            val size = body.substring(i, lineEnd).trim().substringBefore(';').toIntOrNull(16) ?: break
+            if (size == 0) break
+            val start = lineEnd + 2
+            val end   = minOf(start + size, body.length)
+            sb.append(body, start, end)
+            i = end + 2
+        }
+        return sb.toString()
     }
 
     /** 读取 GBK 编码响应（新浪 API 专用） */
