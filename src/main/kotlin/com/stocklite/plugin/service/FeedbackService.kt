@@ -22,9 +22,26 @@ object FeedbackService {
 
     private const val SUPABASE_URL      = "https://wudikstpbcpfkbonmfxp.supabase.co"   // 例：https://xxxxxxxx.supabase.co
     private const val SUPABASE_ANON_KEY = "sb_publishable_CBWJFeu3z8XtT2koZ-mvCw_MseWTReV"   // anon/public role key，可随插件公开
+    /**
+     * 自有域名反代根地址（例：https://feedback.fanshu.xyz/api），留空则只直连 Supabase。
+     * 大陆网络对 *.supabase.co 做 SNI 定向拦截：TCP 可连、TLS 握手被重置，直连必然失败。
+     * 反代部署方式见 feedback-relay/api/rest/v1/feedback.ts，指向同一个 Supabase 项目，
+     * 数据/密钥/RLS/回复查询均不变，只是出口域名换成自己的。
+     */
+    private const val SUPABASE_RELAY_URL = ""
 
     /** 是否已配置 Supabase 反馈后端 */
     val configured: Boolean get() = SUPABASE_URL.isNotBlank() && SUPABASE_ANON_KEY.isNotBlank()
+
+    /**
+     * 候选 API 根地址，按序尝试（反代优先，直连兜底，境外网络两者都能通）。
+     * -Dstocklite.feedback.baseUrl=... 可临时覆盖反代地址，免重新编译。
+     */
+    private fun baseUrls(): List<String> {
+        val override = System.getProperty("stocklite.feedback.baseUrl")?.trim()?.trimEnd('/')
+        val relay = (override ?: SUPABASE_RELAY_URL).trim().trimEnd('/')
+        return listOfNotNull(relay.takeIf { it.isNotBlank() }, SUPABASE_URL).distinct()
+    }
 
     /** 一条反馈及其回复 */
     data class FeedbackItem(
@@ -65,40 +82,45 @@ object FeedbackService {
             .put("email",     email)
             .put("content",   content)
             .toString()
-        val (code, _) = HttpUtil.post(
-            "$SUPABASE_URL/rest/v1/feedback", payload,
-            timeoutMs = 15_000, label = "feedback-submit",
-            headers = authHeaders(deviceId) + ("Prefer" to "return=minimal")
-        )
-        return code in 200..299
+        return baseUrls().any { base ->
+            HttpUtil.post(
+                "$base/rest/v1/feedback", payload,
+                timeoutMs = 15_000, label = "feedback-submit",
+                headers = authHeaders(deviceId) + ("Prefer" to "return=minimal")
+            ).first in 200..299
+        }
     }
 
     /** 查询本机的反馈历史（含开发者回复），按时间倒序；失败返回 null */
     fun fetchMine(): List<FeedbackItem>? {
         val deviceId = StockliteState.getInstance().feedbackDeviceId
         if (deviceId.isBlank()) return emptyList()   // 还没提交过，无需请求
-        val url = "$SUPABASE_URL/rest/v1/feedback" +
-            "?device_id=eq.$deviceId" +
+        val query = "?device_id=eq.$deviceId" +
             "&select=id,content,email,reply,replied_at,created_at" +
             "&order=created_at.desc&limit=50"
-        val (code, body) = HttpUtil.getWithStatus(url, label = "feedback-list", headers = authHeaders(deviceId))
-        if (code != 200 || body.isNullOrBlank()) return null
-        return try {
-            val arr = JSONArray(body)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                FeedbackItem(
-                    id          = o.optString("id"),
-                    time        = formatTime(o.optString("created_at")),
-                    content     = o.optString("content"),
-                    email       = o.optString("email"),
-                    reply       = o.optString("reply"),
-                    repliedTime = formatTime(o.optString("replied_at"))
-                )
+        for (base in baseUrls()) {
+            val (code, body) = HttpUtil.getWithStatus(
+                "$base/rest/v1/feedback$query", label = "feedback-list", headers = authHeaders(deviceId)
+            )
+            if (code != 200 || body.isNullOrBlank()) continue
+            return try {
+                val arr = JSONArray(body)
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    FeedbackItem(
+                        id          = o.optString("id"),
+                        time        = formatTime(o.optString("created_at")),
+                        content     = o.optString("content"),
+                        email       = o.optString("email"),
+                        reply       = o.optString("reply"),
+                        repliedTime = formatTime(o.optString("replied_at"))
+                    )
+                }
+            } catch (_: Exception) {
+                null
             }
-        } catch (_: Exception) {
-            null
         }
+        return null
     }
 
     /** 删除自己的一条反馈（id 必须属于本机 device_id，由服务端 RLS 保证）；成功返回 true */
@@ -106,12 +128,14 @@ object FeedbackService {
         val deviceId = StockliteState.getInstance().feedbackDeviceId
         if (deviceId.isBlank() || id.isBlank()) return false
         // return=representation：RLS 无删除权限时 DELETE 会静默删 0 行返回空数组，据此判定
-        val (code, body) = HttpUtil.delete(
-            "$SUPABASE_URL/rest/v1/feedback?id=eq.$id",
-            label = "feedback-delete",
-            headers = authHeaders(deviceId) + ("Prefer" to "return=representation")
-        )
-        return code in 200..299 && body?.contains("\"id\"") == true
+        return baseUrls().any { base ->
+            val (code, body) = HttpUtil.delete(
+                "$base/rest/v1/feedback?id=eq.$id",
+                label = "feedback-delete",
+                headers = authHeaders(deviceId) + ("Prefer" to "return=representation")
+            )
+            code in 200..299 && body?.contains("\"id\"") == true
+        }
     }
 
     /** Supabase timestamptz -> 本地时区 "MM-dd HH:mm"；解析失败时退回原文截断 */
