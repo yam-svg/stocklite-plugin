@@ -711,6 +711,14 @@ object MarketDataService {
     private val yahooQuoteCache = mutableMapOf<String, Triple<Double, Double, Long>>()  // symbol -> (price, pct, time)
     private val YAHOO_QUOTE_FRESH_TTL = 60_000L
 
+    // CBOE 官方延迟行情（约15分钟）：大陆 Yahoo 被阻断后 ^VIX 唯一的可用源。
+    // 腾讯 usVIX 是冻结死数据（2026-09 后不再更新），不可用。
+    // 用 cdn-api 直连（cdn.cboe.com 会 307 跳转，避免依赖 HttpURLConnection 的跳转行为）
+    private const val CBOE_VIX_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/quotes/_VIX.json"
+    private var vixQuoteCache: Pair<Double, Double>? = null   // (price, pct)
+    private var vixQuoteCacheAt = 0L
+    private val VIX_QUOTE_FRESH_TTL = 60_000L
+
     /** 全球指数行情结果，附带限流标志供面板自适应退避；offlineSymbols = 因网络不可达被自动隐藏的指数 */
     data class GlobalQuoteResult(
         val quotes: List<GlobalIndexQuote>,
@@ -787,7 +795,8 @@ object MarketDataService {
     // 连续 2 次网络失败才拉黑 60 秒防抖）；没有近期真实信号时做一次轻量单标的探测（复用 5 分钟）。
     // 用途：① 行情层跳过不可达源（Yahoo 循环整层短路）；② 候选源全不可达且持续缺值 → 面板自动隐藏该指数；
     //       ③ 设置页"选择显示指数"逐个标注网络状态。网络环境变化（换出口/挂代理）后源恢复，指数自动回来。
-    const val SRC_TENCENT = "tencent"; const val SRC_SINA = "sina"; const val SRC_EM = "em"; const val SRC_YAHOO = "yahoo"
+    const val SRC_TENCENT = "tencent"; const val SRC_SINA = "sina"; const val SRC_EM = "em"
+    const val SRC_YAHOO = "yahoo"; const val SRC_CBOE = "cboe"
     private val srcOkTs      = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 最近一次真实成功
     private val srcDownUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 失败拉黑截止
     private val srcProbeTs   = java.util.concurrent.ConcurrentHashMap<String, Long>()   // 最近一次主动探测
@@ -818,8 +827,18 @@ object MarketDataService {
             HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = "源探测-东财")
                 ?: HttpUtil.get(url, referer = "https://quote.eastmoney.com/", label = "源探测-东财2") != null
         }
-        SRC_YAHOO -> HttpUtil.get("https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1m&range=1d",
-            label = "源探测-Yahoo") != null
+        // 403 是大陆被阻断的典型响应；429 表示可达但限流。判定口径与行情层一致：
+        // 只有拿到 HTTP 响应（非 5xx）才算可达，403/4xx 与面板一样判不可达。
+        SRC_YAHOO -> {
+            val (code, _) = HttpUtil.getWithStatus(
+                "https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1m&range=1d",
+                label = "源探测-Yahoo")
+            code in 200..399 || code == 429
+        }
+        SRC_CBOE -> {
+            val (code, _) = HttpUtil.getWithStatus(CBOE_VIX_URL, label = "源探测-CBOE")
+            code in 200..399 || code == 429
+        }
         else -> true
     }
 
@@ -840,6 +859,7 @@ object MarketDataService {
 
     /** 指数的候选数据源（与取数层优先级一致）：主源在前、Yahoo 兜底在最后；被拉黑的存疑新浪源（N225/KS11）不计入 */
     fun indexSourceKeys(symbol: String): List<String> = when {
+        symbol == "^VIX"                    -> listOf(SRC_CBOE, SRC_YAHOO)
         GLOBAL_FORCE_YAHOO.contains(symbol) -> listOf(SRC_EM, SRC_YAHOO)
         TENCENT_HK_MAP.containsKey(symbol)  -> listOf(SRC_TENCENT, SRC_SINA, SRC_YAHOO)
         SINA_SYMBOL_MAP.containsKey(symbol) -> listOf(SRC_SINA, SRC_YAHOO)
@@ -909,6 +929,11 @@ object MarketDataService {
             SINA_SYMBOL_MAP[sym]?.let { sk -> quoteMap[sk] = v; delayMap[sk] = true }
         }
 
+        // 2.6 ^VIX：CBOE 官方延迟源（东财无代码、腾讯 usVIX 已冻结，Yahoo 大陆被阻断）
+        if (visibleIndexes.any { it.symbol == "^VIX" }) {
+            fetchCboeVixQuote(now)?.let { quoteMap["^VIX"] = it; delayMap["^VIX"] = true }
+        }
+
         // 3. Yahoo 兜底（东财没有代码的指数 + 东财失败时的后备）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
         for (item in visibleIndexes) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
@@ -971,6 +996,24 @@ object MarketDataService {
             }
         }
         return GlobalQuoteResult(visibleQuotes, yahooRateLimited, hiddenOffline)
+    }
+
+    /** CBOE 官方延迟 VIX 行情（约15分钟）：解析失败时复用最近一次缓存，避免 5 秒轮询打同一接口 */
+    private fun fetchCboeVixQuote(now: Long): Pair<Double, Double>? {
+        if (now - vixQuoteCacheAt < VIX_QUOTE_FRESH_TTL) return vixQuoteCache
+        val (code, raw) = HttpUtil.getWithStatus(CBOE_VIX_URL, label = "全球指数-CBOE(VIX)")
+        recordSourceResult(SRC_CBOE, code in 200..399 || code == 429)
+        val parsed = if (code == 200 && raw != null) {
+            try {
+                val d = JSONObject(raw).optJSONObject("data")
+                val price = d?.optDouble("current_price", Double.NaN) ?: Double.NaN
+                val pct   = d?.optDouble("price_change_percent", 0.0) ?: 0.0
+                if (price.isFinite() && price > 0) price to pct else null
+            } catch (_: Exception) { null }
+        } else null
+        if (parsed != null) { vixQuoteCache = parsed; vixQuoteCacheAt = now }
+        // 旧值最多沿用 10 分钟：再久宁可显示空值/自动隐藏，也不展示冻结数据
+        return parsed ?: vixQuoteCache.takeIf { now - vixQuoteCacheAt < 600_000L }
     }
 
     private data class HkQuote(val price: Double, val changePct: Double, val prevClose: Double)

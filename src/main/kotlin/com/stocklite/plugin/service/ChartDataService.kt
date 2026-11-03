@@ -86,6 +86,11 @@ object ChartDataService {
             val pts = fetchHkIntraday("HSTECH")
             if (pts.isNotEmpty()) return pts
         }
+        // ^VIX：CBOE 官方分时（东财无代码，Yahoo 大陆不可达，腾讯 usVIX 是冻结死数据）
+        if (yahooSymbol == "^VIX") {
+            val pts = fetchCboeVixIntraday()
+            if (pts.size >= 2) return pts
+        }
         // ^IXIC 纳斯达克综合分时 → 腾讯美指源（休市仅回 1 个点，<2 视为不可用继续落 Yahoo，
         // 避免可达环境反而丢掉 Yahoo 全时段曲线）；大陆 Yahoo 不可达时盘至少盘中有图
         TC_GLOBAL_KLINE[yahooSymbol]?.let { code ->
@@ -564,6 +569,38 @@ object ChartDataService {
             if (i < attempts) try { Thread.sleep((i * 300).toLong()) } catch (_: InterruptedException) { return null }
         }
         return null
+    }
+
+    /**
+     * CBOE VIX 官方分时（美东时间）。首条是开盘前的全 0 占位，需按价格 > 0 过滤；
+     * 返回 epoch 秒，与东财分时口径一致。
+     */
+    private fun fetchCboeVixIntraday(): List<ChartPoint> {
+        val raw = HttpUtil.get(
+            "https://cdn-api.cboe.com/api/global/delayed_quotes/charts/intraday/_VIX.json",
+            label = "全球指数分时-CBOE(VIX)") ?: return emptyList()
+        return try {
+            val arr = JSONObject(raw).optJSONArray("data") ?: return emptyList()
+            val nyZone = ZoneId.of("America/New_York")
+            val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
+            val list = mutableListOf<ChartPoint>()
+            for (i in 0 until arr.length()) {
+                val row   = arr.optJSONObject(i) ?: continue
+                val dt    = row.optString("datetime")
+                val price = row.optJSONObject("price") ?: continue
+                val close = price.optDouble("close", Double.NaN)
+                if (dt.length < 19 || !close.isFinite() || close <= 0) continue
+                val ts = java.time.LocalDateTime.parse(dt.substring(0, 19), fmt)
+                    .atZone(nyZone).toInstant().epochSecond
+                list.add(ChartPoint(
+                    ts, close,
+                    price.optDouble("open", Double.NaN).takeIf { it > 0 } ?: Double.NaN,
+                    price.optDouble("high", Double.NaN).takeIf { it > 0 } ?: Double.NaN,
+                    price.optDouble("low",  Double.NaN).takeIf { it > 0 } ?: Double.NaN
+                ))
+            }
+            list
+        } catch (_: Exception) { emptyList() }
     }
 
     /** 分钟分时：trends2 按北京时间返回 "yyyy-MM-dd HH:mm,价" */

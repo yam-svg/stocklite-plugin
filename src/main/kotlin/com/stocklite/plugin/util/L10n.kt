@@ -326,6 +326,7 @@ object L10n {
         "sina"    -> s("新浪", "Sina")
         "em"      -> s("东财", "EastMoney")
         "yahoo"   -> "Yahoo"
+        "cboe"    -> "CBOE"
         else      -> key
     }
     val settingsUsMarketPanel get() = s("显示美股板块标签页（ETF板块涨跌幅，使用频率低可关闭）",
