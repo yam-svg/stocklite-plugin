@@ -807,6 +807,9 @@ object MarketDataService {
     private val SRC_DOWN_BACKOFF =  60_000L  // 判不可达后的重试间隔，也是 Yahoo 全阻断期的轮询保护窗口
     private val globalMissingSince = mutableMapOf<String, Long>()  // symbol -> 首次取不到值的时刻（自动隐藏确认窗口）
     private val OFFLINE_HIDE_AFTER = 20_000L
+    // 最近一轮行情的结果快照：设置页据此判断"该指数到底有没有数据"，与面板展示口径一致
+    private val symbolQuoteTs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val symbolMissTs  = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     /** 真实流量回报源成败；连续 2 次网络失败才拉黑，防单点抖动（push2 随机断连是常态） */
     private fun recordSourceResult(src: String, ok: Boolean) {
@@ -845,7 +848,13 @@ object MarketDataService {
     private fun probeSourceOnce(src: String, now: Long): Boolean {
         val ok = probeSource(src)
         srcProbeTs[src] = now; srcProbeOk[src] = ok; srcFailStreak[src] = 0
-        if (ok) srcOkTs[src] = now else srcDownUntil[src] = now + SRC_DOWN_BACKOFF
+        if (ok) {
+            // 探测成功必须解除拉黑，否则面板会继续按旧的失败窗口隐藏最多 60 秒，
+            // 与设置页"可用"结论冲突
+            srcOkTs[src] = now; srcDownUntil.remove(src)
+        } else {
+            srcDownUntil[src] = now + SRC_DOWN_BACKOFF
+        }
         return ok
     }
 
@@ -867,12 +876,32 @@ object MarketDataService {
         else                                -> listOf(SRC_YAHOO)
     }
 
-    /** 指数网络状态：reachable=候选源里至少一个可达；okKey=按取数优先级第一个可达源（面板/设置页共用） */
-    data class IndexNetInfo(val reachable: Boolean, val sourceKeys: List<String>, val okKey: String?)
+    /**
+     * 指数网络状态：
+     * @param reachable 该指数当前是否有可用数据（源可达且最近一轮行情有值）
+     * @param okKey     按取数优先级第一个可达源
+     * @param hasData   最近一轮行情是否有值；null = 尚无行情数据可参考
+     */
+    data class IndexNetInfo(
+        val reachable: Boolean,
+        val sourceKeys: List<String>,
+        val okKey: String?,
+        val hasData: Boolean? = null
+    )
+
+    /** 最近一轮行情是否取到过该指数的值：true=有值，false=近期取过但为空，null=还没跑过行情 */
+    private fun lastQuoteHasData(symbol: String): Boolean? {
+        val now = System.currentTimeMillis()
+        if (now - (symbolQuoteTs[symbol] ?: 0L) < SRC_OK_FRESH) return true
+        if (now - (symbolMissTs[symbol]  ?: 0L) < SRC_OK_FRESH) return false
+        return null
+    }
 
     /**
      * 设置页弹窗专用：涉及的源去重后各实探一次（否则 9 个纯 Yahoo 指数会串出 9 次 10 秒超时），
-     * 再按各指数候选源映射标注。必须在后台线程调用。
+     * 再按各指数候选源映射标注。判定口径与面板一致：源可达 ≠ 该指数有数据，
+     * 最近一轮行情明确取不到值的指数直接判不可用（避免"设置里显示可用、面板一直是 0.00"）。
+     * 必须在后台线程调用。
      */
     fun probeGlobalIndexNetwork(): Map<String, IndexNetInfo> {
         val now0 = System.currentTimeMillis()
@@ -880,8 +909,14 @@ object MarketDataService {
         val now = System.currentTimeMillis()
         return GLOBAL_INDEXES.associate { cfg ->
             val keys = indexSourceKeys(cfg.symbol)
-            val ok = keys.firstOrNull { (srcProbeOk[it] ?: false) && now - (srcProbeTs[it] ?: 0L) < SRC_PROBE_TTL }
-            cfg.symbol to IndexNetInfo(ok != null, keys, ok)
+            // 探测成功与最近真实成功都算源可达（弹窗打开时可能刚好有行情刷新）
+            val ok = keys.firstOrNull {
+                ((srcProbeOk[it] ?: false) && now - (srcProbeTs[it] ?: 0L) < SRC_PROBE_TTL) ||
+                    now - (srcOkTs[it] ?: 0L) < SRC_OK_FRESH
+            }
+            val hasData = lastQuoteHasData(cfg.symbol)
+            val reachable = hasData != false && ok != null
+            cfg.symbol to IndexNetInfo(reachable, keys, ok, hasData)
         }
     }
 
@@ -964,7 +999,10 @@ object MarketDataService {
                     delayMap[item.symbol] = true
                 }
                 statusCode == -1 || statusCode >= 500 -> recordSourceResult(SRC_YAHOO, false)
-                else -> recordSourceResult(SRC_YAHOO, true)
+                // HTTP 200 但该标的无数据：源可达，保留 0.00 行；
+                // 403/404 等其余状态码判不可达（403 是大陆阻断的典型响应），与设置页探测口径一致
+                statusCode == 200 -> recordSourceResult(SRC_YAHOO, true)
+                else -> recordSourceResult(SRC_YAHOO, false)
             }
         }
 
@@ -979,6 +1017,12 @@ object MarketDataService {
                 market = item.market,
                 isDelayed = isDelayed
             )
+        }
+
+        // 记录本轮每个指数有没有拿到值，供设置页判断"源可达但该指数无数据"的情形
+        quotes.forEach { q ->
+            if (q.value > 0) { symbolQuoteTs[q.symbol] = now; symbolMissTs.remove(q.symbol) }
+            else symbolMissTs[q.symbol] = now
         }
 
         // 4. 网络不可达自动隐藏：值取不到（0）且候选源全部不可达、持续超过阈值 → 不显示 0.00 空行。

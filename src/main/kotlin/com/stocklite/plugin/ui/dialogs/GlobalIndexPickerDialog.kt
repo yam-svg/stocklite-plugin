@@ -10,6 +10,7 @@ import java.awt.FlowLayout
 import java.awt.GridLayout
 import javax.swing.JButton
 import javax.swing.JComponent
+import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTabbedPane
 import javax.swing.SwingUtilities
@@ -36,27 +37,44 @@ class GlobalIndexPickerDialog(hidden: Set<String>, enabledOptional: Set<String>)
     private val mainBoxes = boxesFor(MarketDataService.GLOBAL_INDEXES.filterNot { it.optional }) { it !in hidden }
     private val optBoxes  = boxesFor(MarketDataService.GLOBAL_INDEXES.filter     { it.optional }) { it in  enabledOptional }
     private val tabs      = JTabbedPane()
+    private val recheckBtn   = JButton(L10n.btnNetRecheck)
+    private val checkedAtLbl = JLabel("").apply {
+        font = font.deriveFont(11f)
+        foreground = java.awt.Color(0x888aaa)
+    }
+    private var probing = false
 
     init {
         title = L10n.globalIndexPickerTitle
         init()
+        recheckBtn.addActionListener { startNetProbe() }
         startNetProbe()
     }
 
     /** 后台线程对涉及的源各实探一次（Yahoo 被墙时最长 ~10s），回来按候选源逐个标注复选框 */
     private fun startNetProbe() {
+        if (probing) return
+        probing = true
+        recheckBtn.isEnabled = false
+        checkedAtLbl.text = L10n.netStatusProbing
         ApplicationManager.getApplication().executeOnPooledThread {
             val info = MarketDataService.probeGlobalIndexNetwork()
             SwingUtilities.invokeLater {
+                probing = false
+                recheckBtn.isEnabled = true
                 info.forEach { (sym, st) ->
                     val box = mainBoxes[sym] ?: optBoxes[sym] ?: return@forEach
                     val base = baseLabels[sym] ?: return@forEach
-                    val status = if (st.reachable && st.okKey != null)
-                        L10n.netStatusOk(L10n.netSourceName(st.okKey))
-                    else
-                        L10n.netStatusOffline(st.sourceKeys.joinToString("/") { L10n.netSourceName(it) })
+                    // 源可达 ≠ 该指数有数据：分开标注，避免"设置显示可用、面板一直是 0.00"
+                    val status = when {
+                        st.reachable && st.okKey != null -> L10n.netStatusOk(L10n.netSourceName(st.okKey))
+                        st.okKey != null                 -> L10n.netStatusNoData(L10n.netSourceName(st.okKey))
+                        else -> L10n.netStatusOffline(st.sourceKeys.joinToString("/") { L10n.netSourceName(it) })
+                    }
                     box.text = "$base  ·  $status"
                 }
+                checkedAtLbl.text = L10n.netCheckedAt(
+                    java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")))
             }
         }
     }
@@ -81,6 +99,8 @@ class GlobalIndexPickerDialog(hidden: Set<String>, enabledOptional: Set<String>)
         quick.add(JButton(L10n.biClearAll).apply {
             addActionListener { currentBoxes().values.forEach { it.isSelected = false } }
         })
+        quick.add(recheckBtn)
+        quick.add(checkedAtLbl)
         root.add(quick, BorderLayout.NORTH)
         root.add(tabs,  BorderLayout.CENTER)
         return root
