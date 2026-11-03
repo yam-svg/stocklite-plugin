@@ -98,17 +98,21 @@ object MarketDataService {
      * 网络不可达（雅虎系服务被长期阻断，HK 出口实测正常），富时/DAX/CAC40/巴西/日经/韩综合/
      * 台加权/印度等无新浪、腾讯实时源的指数在大陆只能显示空值。改以东财为行情与图表主源
      * （批量一次请求，实测数值与 Yahoo 逐分不差），Yahoo 保留为兜底。
-     * 东财确认没有代码、继续走 Yahoo 的指数：^VIX ^IXIC ^STOXX50E ^MERV ^NSEI ^TASI.SR
-     * ^TA125.TA ^J203.JO ^EGX30.CA（2026-11 ulist/suggest 双口径实测）。
+     * 东财确认没有代码、继续走 Yahoo 的指数：^VIX ^IXIC ^MERV ^NSEI ^TASI.SR
+     * ^TA125.TA ^J203.JO ^EGX30.CA（2026-11 ulist/suggest 双口径实测；^VIX 改由 CBOE 兜底）。
      * 美股常用指数行情已有新浪实时源，此处仅供图表使用。
+     * 注意 ^NDX 必须用 NDX100：东财 100.NDX 是纳斯达克综合指数（25164），100.NDX100 才是纳指100（27989）。
+     * 反过来 100.NDX 正好补上 ^IXIC（纳斯达克综合）：腾讯美指分时休市时只回 1 个点，需要东财兜底。
      */
     private val EM_INDEX_CODE = mapOf(
-        "^GSPC" to "SPX",      "^DJI" to "DJIA",    "^NDX" to "NDX",   // 图表专用（行情走新浪）
+        "^GSPC" to "SPX",      "^DJI" to "DJIA",    "^NDX" to "NDX100", // 图表专用（行情走新浪）
+        "^IXIC" to "NDX",      // 纳斯达克综合（图表兜底，行情走新浪 gb_ixic）
         "^FTSE" to "FTSE",     "^GDAXI" to "GDAXI", "^FCHI" to "FCHI", "^BVSP" to "BVSP",
         "^N225" to "N225",     "^KS11" to "KS11",   "^TWII" to "TWII", "^BSESN" to "SENSEX",
         "^SSMI" to "SSMI",     "^AEX" to "AEX",     "^OMXSPI" to "OMXSPI", "^IBEX" to "IBEX",
         "^GSPTSE" to "TSX",    "^STI" to "STI",     "^KLSE" to "KLSE",  "^JKSE" to "JKSE",
         "^SET.BK" to "SET",    "^VNINDEX.VN" to "VNINDEX",
+        "^STOXX50E" to "SX5E",   // 东财名称"欧洲斯托克50"，实测 6140.82
     )
     /** 图表数据源分发（ChartDataService 共用）：有东财代码优先东财，否则落 Yahoo */
     fun emIndexChartCode(symbol: String): String? = EM_INDEX_CODE[symbol]
