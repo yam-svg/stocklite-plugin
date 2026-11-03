@@ -46,13 +46,13 @@ object FeedbackService {
     }
 
     /**
-     * apikey/Authorization 为 Supabase anon key（可公开）；
+     * apikey 为 Supabase publishable key（可公开）。新版 sb_publishable_ 密钥不是 JWT，
+     * 只能放在 apikey 头；再发 Authorization: Bearer 会被判为 invalid JWT 直接 401。
      * x-device-id 供服务端 RLS 策略校验：匿名 role 只能插入/读取 device_id 等于该头的行，
-     * 拿到 anon key 但没有具体设备 UUID 的人无法遍历他人反馈。
+     * 拿到 key 但没有具体设备 UUID 的人无法遍历他人反馈。
      */
     private fun authHeaders(deviceId: String) = mapOf(
         "apikey"      to SUPABASE_ANON_KEY,
-        "Authorization" to "Bearer $SUPABASE_ANON_KEY",
         "x-device-id" to deviceId
     )
 

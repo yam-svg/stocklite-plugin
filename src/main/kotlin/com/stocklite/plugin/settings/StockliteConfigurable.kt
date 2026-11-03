@@ -625,44 +625,53 @@ class StockliteConfigurable : Configurable {
         val useSupabase = FeedbackService.configured
         com.intellij.openapi.application.ApplicationManager.getApplication()
             .executeOnPooledThread {
-                val ok: Boolean
+                var ok = false
+                var viaFallback = false
                 var failHint = ""
                 if (useSupabase) {
                     ok = FeedbackService.submit(content, FEEDBACK_EMAIL)
                     if (ok) {
-                        // 双通道：同时走旧留言接口触发邮箱通知，保证开发者及时收到；
-                        // 该调用失败不影响主流程（反馈已入库）
-                        val notify = org.json.JSONObject()
-                            .put("content", content)
-                            .put("email", FEEDBACK_EMAIL)
-                            .toString()
-                        HttpUtil.post(FEEDBACK_URL, notify, timeoutMs = 15_000, label = "feedback-mail-notify")
+                        // 双通道：同时走旧留言接口触发邮箱通知；失败不影响主流程（反馈已入库）
+                        postLegacyFeedback(content)
+                    } else {
+                        // Supabase 域名在大陆被阻断/密钥被拒时回落旧通道，避免反馈彻底发不出去
+                        val (legacyOk, code) = postLegacyFeedback(content)
+                        ok = legacyOk; viaFallback = legacyOk
+                        if (!legacyOk) failHint = "（HTTP $code）"
                     }
                 } else {
-                    // 旧单向留言通道（Supabase 未配置时兜底），仅支持提交不支持查回复
-                    val payload = org.json.JSONObject()
-                        .put("content", content)
-                        .put("email", FEEDBACK_EMAIL)
-                        .toString()
-                    val (code, raw) = HttpUtil.post(FEEDBACK_URL, payload, label = "feedback")
-                    ok = code == 200 && try {
-                        org.json.JSONObject(raw ?: "").optInt("code") == 20000
-                    } catch (_: Exception) { false }
-                    if (!ok) failHint = "（HTTP $code）"
+                    val (legacyOk, code) = postLegacyFeedback(content)
+                    ok = legacyOk
+                    if (!legacyOk) failHint = "（HTTP $code）"
                 }
                 javax.swing.SwingUtilities.invokeLater {
                     feedbackSendBtn.isEnabled = true
                     if (ok) {
                         feedbackArea.text = ""
-                        feedbackStatus.text = "发送成功，感谢你的反馈！"
+                        feedbackStatus.text =
+                            if (viaFallback) "已通过备用通道发送（暂不能查看回复），感谢你的反馈！"
+                            else "发送成功，感谢你的反馈！"
                         feedbackStatus.foreground = java.awt.Color.GRAY
-                        if (useSupabase) loadFeedbackHistory()
+                        if (useSupabase && !viaFallback) loadFeedbackHistory()
                     } else {
                         feedbackStatus.text = "发送失败$failHint，请稍后重试"
                         feedbackStatus.foreground = java.awt.Color(0xCC, 0x33, 0x33)
                     }
                 }
             }
+    }
+
+    /** 旧单向留言通道（Supabase 不可用/失败时降级），仅支持提交不支持查回复 */
+    private fun postLegacyFeedback(content: String): Pair<Boolean, Int> {
+        val payload = org.json.JSONObject()
+            .put("content", content)
+            .put("email", FEEDBACK_EMAIL)
+            .toString()
+        val (code, raw) = HttpUtil.post(FEEDBACK_URL, payload, timeoutMs = 15_000, label = "feedback-legacy")
+        val ok = code == 200 && try {
+            org.json.JSONObject(raw ?: "").optInt("code") == 20000
+        } catch (_: Exception) { false }
+        return ok to code
     }
 
     /** 后台拉取本机反馈历史填入表格；配置页打开/重置、发送成功及删除后调用。无数据时隐藏整个区块 */
