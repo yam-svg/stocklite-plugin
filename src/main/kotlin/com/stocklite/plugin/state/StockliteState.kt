@@ -187,6 +187,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     interface FeatureToggleListener { fun onFeatureToggleChanged() }
     @Transient private val featureToggleListeners = mutableListOf<FeatureToggleListener>()
     fun addFeatureToggleListener(l: FeatureToggleListener) { featureToggleListeners.add(l) }
+    fun removeFeatureToggleListener(l: FeatureToggleListener) { featureToggleListeners.remove(l) }
     fun notifyFeatureToggleChanged() = featureToggleListeners.forEach { it.onFeatureToggleChanged() }
 
     // ── 数据变更通知（股票/基金/期货增删改，用于跨 IDE 窗口同步） ──

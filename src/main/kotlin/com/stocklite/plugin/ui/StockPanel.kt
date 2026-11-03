@@ -949,4 +949,14 @@ class StockPanel : JPanel(BorderLayout()),
             it.isRepeats = true; it.start()
         }
     }
+
+    /** 工具窗口销毁时释放全部跨重建存活的注册与重资源（StocklitePanel.dispose 级联调用） */
+    fun dispose() {
+        refreshTimer?.stop()
+        chartPanel.disposeResources()
+        state.removeColumnListener(this)
+        state.removeLanguageListener(this)
+        state.removeRefreshIntervalListener(this)
+        state.removeDataChangeListener(this)
+    }
 }

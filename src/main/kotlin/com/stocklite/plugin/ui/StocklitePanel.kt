@@ -101,6 +101,18 @@ class StocklitePanel : JPanel(BorderLayout()),
 
     override fun onFeatureToggleChanged() = syncTabsFromToggles()
 
+    /**
+     * 工具窗口内容销毁时摘除一切跨重建存活的注册（ApiLogger 是 object、State 是服务，
+     * 不清理会让旧面板永久滞留并跟随每次日志/语言/开关事件空转重绘）。
+     */
+    fun dispose() {
+        stockPanel.dispose();    fundPanel.dispose();    futurePanel.dispose()
+        globalPanel.dispose();   sectorPanel.dispose();  cryptoPanel.dispose()
+        ipoPanel.dispose();      usMarketPanel.dispose(); apiLogPanel.dispose()
+        state.removeLanguageListener(this)
+        state.removeFeatureToggleListener(this)
+    }
+
     override fun onLanguageChanged() {
         // 只改标题不动结构：增删/重建会导致工具窗口尺寸抖动
         val titles = (listOf(stockPanel to L10n.tabStock) +

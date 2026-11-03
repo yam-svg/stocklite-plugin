@@ -382,4 +382,12 @@ class SectorPanel : JPanel(BorderLayout()),
     private fun scheduleRefresh() {
         refreshTimer = Timer(60_000) { fetchAsync() }.also { it.isRepeats = true; it.start() }
     }
+
+    /** 工具窗口销毁时释放全部跨重建存活的注册与重资源（StocklitePanel.dispose 级联调用） */
+    fun dispose() {
+        refreshTimer?.stop()
+        chartPanel.disposeResources()
+        state.removeLanguageListener(this)
+        state.removeFeatureToggleListener(this)
+    }
 }

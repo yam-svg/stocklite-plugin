@@ -843,4 +843,14 @@ class GlobalPanel : JPanel(BorderLayout()),
         refreshTimer?.stop()
         refreshTimer = Timer(currentIntervalMs) { fetchAsync() }.also { it.isRepeats = true; it.start() }
     }
+
+    /** 工具窗口销毁时释放全部跨重建存活的注册与重资源（StocklitePanel.dispose 级联调用） */
+    fun dispose() {
+        refreshTimer?.stop()
+        breadthTimer?.stop()
+        chartPanel.disposeResources()
+        val st = StockliteState.getInstance()
+        st.removeLanguageListener(this)
+        st.removeRefreshIntervalListener(this)
+    }
 }

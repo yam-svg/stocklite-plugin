@@ -340,4 +340,12 @@ class UsMarketPanel : JPanel(BorderLayout()),
                 tickCount++ % 5 == 0) fetchAsync()
         }.also { it.isRepeats = true; it.start() }
     }
+
+    /** 工具窗口销毁时释放全部跨重建存活的注册（StocklitePanel.dispose 级联调用） */
+    fun dispose() {
+        refreshTimer?.stop()
+        val st = StockliteState.getInstance()
+        st.removeLanguageListener(this)
+        st.removeFeatureToggleListener(this)
+    }
 }

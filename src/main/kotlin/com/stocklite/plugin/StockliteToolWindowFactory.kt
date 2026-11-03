@@ -3,8 +3,10 @@ package com.stocklite.plugin
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ex.ToolWindowEx
@@ -19,6 +21,8 @@ class StockliteToolWindowFactory : ToolWindowFactory {
         val panel = StocklitePanel()
         val content = ContentFactory.getInstance().createContent(panel, "", false)
         toolWindow.contentManager.addContent(content)
+        // 内容销毁时释放面板在 ApiLogger/State 里的监听，防止重开工具窗口后旧面板堆积空转
+        Disposer.register(content, Disposable { panel.dispose() })
 
         // 新手指引按钮（?）：常驻入口，随时可重看隐藏功能清单
         val guideAction = object : AnAction(

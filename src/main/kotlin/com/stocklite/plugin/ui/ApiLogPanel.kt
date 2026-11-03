@@ -47,18 +47,38 @@ class ApiLogPanel : JPanel(BorderLayout()) {
     private val visibleEntries get() =
         if (showFailOnly) allEntries.filter { !it.success } else allEntries
 
+    /**
+     * 性能护栏：日志 tab 不可见时完全不渲染（只记脏标记，切回可见再补画）；
+     * 可见时用一次性 Timer 合并突发日志，重建频率封顶约 2 次/秒。
+     * 行情轮询每次 HTTP 请求都会打日志，若不加护栏等于轮询频率 × 全量重建。
+     */
+    private var stale = false
+    private val renderTimer = Timer(500) {
+        if (isShowing) renderPage() else stale = true
+    }.apply { isRepeats = false }
+
+    private val visibilityWatcher = object : java.awt.event.ComponentAdapter() {
+        override fun componentShown(e: java.awt.event.ComponentEvent?) {
+            if (stale && !userEngaged) { stale = false; renderPage() }
+        }
+    }
+
+    private fun scheduleRender() {
+        if (!isShowing) { stale = true; return }
+        if (!renderTimer.isRunning) renderTimer.start()
+    }
+
     private val logListener: () -> Unit = {
         allEntries = ApiLogger.getAll()
-        if (userEngaged) {
-            val failCount = allEntries.count { !it.success }
-            countLabel.text = countText(allEntries.size, failCount)
-        } else {
-            renderPage()
-        }
+        // 计数标签很便宜，始终刷新；列表重建走节流
+        countLabel.text = countText(allEntries.size, allEntries.count { !it.success })
+        // 用户正在翻页/展开时不动列表，避免打断阅读
+        if (!userEngaged) scheduleRender()
     }
 
     init {
         buildUI()
+        addComponentListener(visibilityWatcher)
         ApiLogger.addListener(logListener)
         allEntries = ApiLogger.getAll()
         renderPage()
@@ -79,7 +99,8 @@ class ApiLogPanel : JPanel(BorderLayout()) {
             updateFailOnlyStyle()
             renderPage()
         }
-        clearBtn.addActionListener { ApiLogger.clear(); expandedIds.clear() }
+        // 清除是用户主动动作：立即补一次渲染（监听器走节流，不能保证即时）
+        clearBtn.addActionListener { ApiLogger.clear(); expandedIds.clear(); currentPage = 0; renderPage() }
 
         val pagerBar = JPanel(FlowLayout(FlowLayout.CENTER, 8, 4))
         pagerBar.add(prevBtn); pagerBar.add(pageLbl); pagerBar.add(nextBtn)
@@ -150,12 +171,19 @@ class ApiLogPanel : JPanel(BorderLayout()) {
 
     inner class LogItemPanel(private val entry: ApiLogEntry) : JPanel(BorderLayout()) {
 
-        private val formattedBody = formatBody(entry.responseBody)
+        /** JSON pretty-print 只在真正需要展示/复制时才做，且只做一次 */
+        private val formattedBody by lazy { formatBody(entry.responseBody) }
+
+        /** 详情区（多个 JScrollPane/JTextArea）延迟到首次展开才构建：折叠行只画头部 */
+        private var detail: JComponent? = null
 
         private val arrowLbl = JLabel("▸").apply {
             font      = font.deriveFont(10f)
             foreground = Color(0x6c7086)
         }
+
+        private fun ensureDetail(): JComponent =
+            detail ?: buildDetail().also { detail = it; add(it, BorderLayout.CENTER) }
 
         init {
             border     = MatteBorder(0, 0, 1, 0, Color(0x313244))
@@ -163,21 +191,19 @@ class ApiLogPanel : JPanel(BorderLayout()) {
             isOpaque   = true
 
             val header = buildHeader()
-            val detail = buildDetail()
             add(header, BorderLayout.NORTH)
-            add(detail, BorderLayout.CENTER)
 
             val expanded = entry.id in expandedIds
-            arrowLbl.text    = if (expanded) "▾" else "▸"
-            detail.isVisible = expanded
+            arrowLbl.text = if (expanded) "▾" else "▸"
+            if (expanded) ensureDetail()
 
             header.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             header.addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     val nowExpanded = entry.id !in expandedIds
                     if (nowExpanded) expandedIds.add(entry.id) else expandedIds.remove(entry.id)
-                    arrowLbl.text    = if (nowExpanded) "▾" else "▸"
-                    detail.isVisible = nowExpanded
+                    arrowLbl.text = if (nowExpanded) "▾" else "▸"
+                    if (nowExpanded) ensureDetail().isVisible = true else detail?.isVisible = false
                     revalidate(); repaint()
                     SwingUtilities.getAncestorOfClass(JScrollPane::class.java, this@LogItemPanel)
                         ?.let { it.revalidate(); it.repaint() }
@@ -304,7 +330,11 @@ class ApiLogPanel : JPanel(BorderLayout()) {
         }
     }
 
-    fun dispose() { ApiLogger.removeListener(logListener) }
+    fun dispose() {
+        renderTimer.stop()
+        removeComponentListener(visibilityWatcher)
+        ApiLogger.removeListener(logListener)
+    }
 
     companion object {
 

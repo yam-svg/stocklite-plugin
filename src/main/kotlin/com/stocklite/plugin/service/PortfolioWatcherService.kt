@@ -71,10 +71,28 @@ class PortfolioWatcherService : Disposable {
         }
     }
 
+    /**
+     * 纯 A 股持仓且处于休市静默时段时降频到 10 分钟一次（收盘后数据冻结，5 秒一轮纯属浪费）。
+     * 注意是降频而非跳过：重启 IDE / 夜间从设置页导入持仓后，状态栏仍能靠轮询自行恢复。
+     */
     private fun scheduleNext() {
-        val intervalMs = StockliteState.getInstance().refreshIntervalStock * 1000
-        pollTimer.initialDelay = intervalMs
+        val st = StockliteState.getInstance()
+        val holdings = st.stocks.filter { it.quantity > 0 }
+        val cnOnlyIdle = holdings.isNotEmpty() && holdings.all {
+            val s = it.symbol
+            s.startsWith("sh") || s.startsWith("sz") || s.startsWith("bj")
+        } && !inCnActiveWindow()
+        pollTimer.initialDelay = if (cnOnlyIdle) 600_000 else st.refreshIntervalStock * 1000
         pollTimer.restart()
+    }
+
+    /** A 股活跃时段（含开盘竞价与收盘结算缓冲）：工作日 09:10–11:35、13:00–15:05 */
+    private fun inCnActiveWindow(): Boolean {
+        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai"))
+        if (now.dayOfWeek.value !in 1..5) return false
+        val t = now.toLocalTime()
+        return (t >= java.time.LocalTime.of(9, 10)  && t <= java.time.LocalTime.of(11, 35)) ||
+               (t >= java.time.LocalTime.of(13, 0)  && t <= java.time.LocalTime.of(15, 5))
     }
 
     override fun dispose() {
