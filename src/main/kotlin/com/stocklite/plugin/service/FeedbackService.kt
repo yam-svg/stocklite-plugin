@@ -28,7 +28,7 @@ object FeedbackService {
      * 反代部署方式见 feedback-relay/api/rest/v1/feedback.ts，指向同一个 Supabase 项目，
      * 数据/密钥/RLS/回复查询均不变，只是出口域名换成自己的。
      */
-    private const val SUPABASE_RELAY_URL = ""
+    private const val SUPABASE_RELAY_URL = "https://fb.fanshu.xyz/api"
 
     /** 是否已配置 Supabase 反馈后端 */
     val configured: Boolean get() = SUPABASE_URL.isNotBlank() && SUPABASE_ANON_KEY.isNotBlank()
