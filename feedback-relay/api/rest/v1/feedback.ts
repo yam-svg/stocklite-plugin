@@ -14,7 +14,7 @@
  *        -H 'apikey: sb_publishable_CBWJFeu3z8XtT2koZ-mvCw_MseWTReV' \
  *        -H 'x-device-id: 00000000-0000-0000-0000-000000000000' \
  *        'https://feedback.example.com/api/rest/v1/feedback?select=id&limit=1'
- *      返回 200（空数组 []）即通；403 说明 RLS 未放行该 device_id，属正常。
+ *      返回 200（空数组 []）即通；403 说明 anon 角色缺少 select 权限，需要检查 RLS 策略。
  *   5. 把插件 FeedbackService.SUPABASE_RELAY_URL 填为
  *      https://feedback.example.com/api（或临时用 -Dstocklite.feedback.baseUrl=... 验证）。
  *
