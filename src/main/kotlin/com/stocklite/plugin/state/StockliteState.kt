@@ -246,7 +246,8 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.groupId = groupId
             this.costPrice = costPrice
             this.quantity = quantity
-            sortOrder = stocks.size
+            // 删除会留下 sortOrder 空洞，用 max+1 保证新增项始终排在末尾
+            sortOrder = (stocks.maxOfOrNull { it.sortOrder } ?: -1) + 1
             createdAt = now
             updatedAt = now
             snapshotQty = 0.0
@@ -339,7 +340,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.groupId = groupId
             this.costNav = costNav
             this.shares = shares
-            sortOrder = funds.size
+            sortOrder = (funds.maxOfOrNull { it.sortOrder } ?: -1) + 1
             createdAt = System.currentTimeMillis()
         }
         funds.add(f)
@@ -400,7 +401,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.symbol = symbol
             this.name = name
             this.groupId = groupId
-            sortOrder = futures.size
+            sortOrder = (futures.maxOfOrNull { it.sortOrder } ?: -1) + 1
             createdAt = System.currentTimeMillis()
         }
         futures.add(f)
@@ -456,7 +457,7 @@ class StockliteState : PersistentStateComponent<StockliteState> {
             this.symbol = symbol
             this.name = name
             this.groupId = groupId
-            sortOrder = cryptos.size
+            sortOrder = (cryptos.maxOfOrNull { it.sortOrder } ?: -1) + 1
             createdAt = System.currentTimeMillis()
         }
         cryptos.add(c)
