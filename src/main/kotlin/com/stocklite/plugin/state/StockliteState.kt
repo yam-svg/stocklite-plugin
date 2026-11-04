@@ -59,6 +59,10 @@ class StockliteState : PersistentStateComponent<StockliteState> {
     var sentimentJson: String = ""
     var sentimentDate: String = ""
 
+    // ── 两市成交额历史（"日期"→当日全天成交额/元）：插件每日收盘后自动记录新浪定型值，
+    //    东财分钟线取不到时（休市后其接口常断连）由此提供上一交易日全天额做量能环比 ──
+    var turnoverHistoryJson: String = ""
+
     // ── 功能开关 ──
     var enablePriceAlerts: Boolean = true
     var enableFundNavAlert: Boolean = true

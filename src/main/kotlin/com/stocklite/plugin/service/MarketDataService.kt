@@ -1299,6 +1299,71 @@ object MarketDataService {
         return if (total > 0) total to (prevDayStr ?: return null) else null
     }
 
+    // ── 两市成交额本地历史（东财分钟线取不到时的量能环比兜底）──────────────────
+    // 休市/盘前/收盘后，新浪两市成交额就是数据所属交易日的"全天定型值"，此时量能环比
+    // 退化为"当日全天 vs 上一交易日全天"，是稳定量、无需分钟线。插件每逢该时段成功取到
+    // 成交额就按日期记一笔（另在东财成功时顺手补记上一交易日全天额），东财断连时从这份
+    // 历史取上一交易日全天额，两端同源同口径。盘中累计口径阶段既不记录也不回退，
+    // 杜绝"半天 vs 全天"的误导对比。
+
+    /** 全天口径判据（纯函数便于自测）：数据日早于今天（休市/盘前），或当天已到 15:05 */
+    internal fun isFullDayTurnoverRegime(dataDate: String, today: String, hour: Int, minute: Int): Boolean =
+        dataDate < today || hour > 15 || (hour == 15 && minute >= 5)
+
+    /** 当前若处于"全天口径"时段，返回数据所属交易日；盘中返回 null */
+    private fun fullDayTurnoverDate(): String? {
+        val dataDate = barDateCache.getOrFetch { getAshareLastBarDate() } ?: return null
+        val now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
+        return if (isFullDayTurnoverRegime(dataDate, now.toLocalDate().toString(), now.hour, now.minute)) dataDate else null
+    }
+
+    /** 按日期写入两市全天成交额，只保留最近 15 个交易日 */
+    private fun recordTurnoverHistory(date: String, turnover: Double) {
+        try {
+            val state = StockliteState.getInstance()
+            val map = sortedMapOf<String, Double>()
+            if (state.turnoverHistoryJson.isNotBlank()) {
+                val o = JSONObject(state.turnoverHistoryJson)
+                o.keys().forEach { k -> val v = o.optDouble(k, Double.NaN); if (v > 0) map[k] = v }
+            }
+            map[date] = turnover
+            while (map.size > 15) map.remove(map.keys.first())
+            state.turnoverHistoryJson = JSONObject(map as Map<*, *>).toString()
+        } catch (_: Exception) { /* 记录失败不影响本次展示 */ }
+    }
+
+    /** 收盘后成功取到新浪两市成交额时记录当日全天额（仅全天口径时段，防盘中累计值污染） */
+    private fun recordDailyTurnover(turnover: Double) {
+        val dataDate = fullDayTurnoverDate() ?: return
+        recordTurnoverHistory(dataDate, turnover)
+    }
+
+    /** 东财同期对比在全端口径下成功时，顺手补记其返回的上一交易日全天额（bootstrap 历史） */
+    private fun seedPrevTurnoverHistory(prevDay: String, prevTotal: Double) {
+        val dataDate = fullDayTurnoverDate() ?: return
+        if (prevDay != dataDate) recordTurnoverHistory(prevDay, prevTotal)
+    }
+
+    /** 东财取不到时的回退：从本地历史取"数据日之前最近一个交易日"的全天成交额 */
+    private fun prevTurnoverFromHistory(): Pair<Double, String>? {
+        return try {
+            val state = StockliteState.getInstance()
+            if (state.turnoverHistoryJson.isBlank()) return null
+            val dataDate = fullDayTurnoverDate() ?: return null
+            val o = JSONObject(state.turnoverHistoryJson)
+            val days = o.keys().asSequence().toList()
+            val day = days.filter { it < dataDate }.maxOrNull() ?: return null
+            // 间隔护栏：长假（春节/国庆连休）前后两个交易日最多隔 10 来天；超过 12 天
+            // 只可能是长期没开插件造成的历史空洞，跨多天的对比配"环比"文案会误导，宁可不显示
+            if (java.time.temporal.ChronoUnit.DAYS.between(
+                    java.time.LocalDate.parse(day), java.time.LocalDate.parse(dataDate)) > 12) return null
+            val amt = o.optDouble(day, Double.NaN)
+            if (amt > 0) amt to day else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** 大/中/小盘代理：沪深300 / 中证500 / 中证1000 涨跌幅% */
     private fun fetchCapTierPct(): Triple<Double, Double, Double>? {
         val raw = HttpUtil.getGbk("http://hq.sinajs.cn/list=sh000300,sh000905,sh000852",
@@ -1574,6 +1639,8 @@ object MarketDataService {
     private val turnoverCache = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     // 同期成交额是随钟点增长的累计值，取不到就宁可不显示对比，沿用窗口只给 10 分钟
     private val prevTurnoverCache = StaleCache<Pair<Double, String>>(BREADTH_FRESH_TTL, 10 * 60_000L)
+    // 上证综指最后一根日K的日期（=新浪行情数据所属交易日）：成交额历史记录与回退的基准日
+    private val barDateCache = StaleCache<String>(5 * 60_000L, 12 * 60 * 60_000L)
     private val capTierCache  = StaleCache<Triple<Double, Double, Double>>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val flowCache     = StaleCache<Double>(BREADTH_FRESH_TTL, BREADTH_STALE_TTL)
     private val sectorCache   = StaleCache<Pair<List<SectorInfo>, List<SectorInfo>>>(2 * 60_000L, 5 * 60_000L)
@@ -1608,8 +1675,10 @@ object MarketDataService {
     fun getMarketBreadth(): MarketBreadthData {
         val breadth = advDecCache.getOrFetch { fetchAdvanceDecline() }
         val limits  = limitsCache.getOrFetch { fetchLimitCounts() }
-        val turnover = turnoverCache.getOrFetch { fetchTotalTurnover() }
-        val prevTurn = prevTurnoverCache.getOrFetch { fetchPrevDaySameTimeTurnover() }
+        val turnover = turnoverCache.getOrFetch { fetchTotalTurnover()?.also { recordDailyTurnover(it) } }
+        val prevTurn = prevTurnoverCache.getOrFetch {
+            fetchPrevDaySameTimeTurnover()?.also { (amt, day) -> seedPrevTurnoverHistory(day, amt) }
+        } ?: prevTurnoverFromHistory()
         val capTier = capTierCache.getOrFetch { fetchCapTierPct() }
         val sectors = sectorCache.getOrFetch { fetchSectorLeaders() }
         val flow    = flowCache.getOrFetch { fetchMainCapitalFlow() }
