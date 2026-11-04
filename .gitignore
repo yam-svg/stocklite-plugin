@@ -72,3 +72,6 @@ MARKETPLACE.md
 # settings.gradle.kts                → 保留
 # gradle.properties                  → 保留
 # README.md                          → 保留
+
+# 换机迁移暂存目录
+migration-20261104/
