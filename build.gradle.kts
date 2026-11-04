@@ -37,6 +37,12 @@ tasks {
         sinceBuild.set("233")
         untilBuild.set("")
     }
+    // 该任务仅做"检查插件新版本"等提示性检查：代理拦截 GitHub 302 导致 Location 头缺失时
+    // 直接抛 NPE（Cannot resolve the latest Gradle IntelliJ Plugin version）阻断构建。
+    // 对编译/打包/发布无任何影响，禁用。
+    initializeIntelliJPlugin {
+        enabled = false
+    }
     // buildSearchableOptions 会启动沙箱 IDE 扫描设置项，容易因内存/环境崩溃（exit 3）。
     // 该任务仅影响"设置搜索"功能，对插件核心功能无影响，禁用后可正常构建和发布。
     buildSearchableOptions {
