@@ -75,7 +75,6 @@ object MarketDataService {
         "^IXIC"     to "gb_ixic",
         "^NDX"      to "gb_\$ndx",
         "^GSPC"     to "gb_\$inx",
-        "^N225"     to "gb_nky",
         "^HSI"      to "rt_hkHSI",
         "^HSTECH"   to "rt_hkHSTECH",
         "000001.SS" to "sh000001",
@@ -88,8 +87,25 @@ object MarketDataService {
     private val YAHOO_SYMBOL_MAP = mapOf("^HSTECH" to "HSTECH.HK")
     private fun resolveYahooSymbol(symbol: String) = YAHOO_SYMBOL_MAP[symbol] ?: symbol
 
-    /** 不信任新浪源数据的指数（优先东财批量，东财缺失再落 Yahoo） */
-    private val GLOBAL_FORCE_YAHOO = setOf("^N225", "^KS11")
+    /**
+     * 新浪 b_ 全球指数行情：东财批量失败后的兜底（早于 Yahoo）。
+     * 背景：企业网络/出口白名单下 push2 与 Yahoo 可能同时不可达，而 hq.sinajs.cn 通常放行
+     * （2026-11 用户反馈，16 个代码逐个实测有数，另 9 个返回空串未收录：
+     *   BVSP/STOXX50/OMXSPI/KLSE/JKSE/MERV/TASI/TA125/EGX30，仍走东财/Yahoo）。
+     * 数值延迟明显（部分行带陈旧时间戳），取值一律标 isDelayed。
+     * 字段布局：f1=现价、f2=涨跌额、f3=涨跌%（与 gb_ 的 f2=涨跌% 不同，勿混用）。
+     * 注：原 ^N225 的新浪键 gb_nky 已死（实测返回空串），由 b_NKY 接管；
+     *     GLOBAL_FORCE_YAHOO（日经/韩综合"不信任新浪"旧集合）随 gb_nky 一并移除——
+     *     两者本就走东财批量主源，键删掉后语义由 SINA_B 兜底位自然承接。
+     */
+    private val SINA_B_MAP = mapOf(
+        "^N225" to "b_NKY",       "^KS11" to "b_KOSPI",   "^GDAXI" to "b_DAX",     "^FCHI" to "b_CAC",
+        "^FTSE" to "b_FTSE",      "^TWII" to "b_TWSE",    "^BSESN" to "b_SENSEX",  "^SSMI" to "b_SMI",
+        "^AEX"  to "b_AEX",       "^IBEX" to "b_IBEX",    "^GSPTSE" to "b_GSPTSE", "^STI"  to "b_STI",
+        "^SET.BK" to "b_SET",     "^VNINDEX.VN" to "b_VNINDEX",
+        "^NSEI" to "b_NIFTY",     "^J203.JO" to "b_TOP40",
+    )
+    private val SINA_B_TO_SYMBOL = SINA_B_MAP.entries.associate { (k, v) -> v to k }
 
     private val TENCENT_HK_MAP = mapOf("^HSI" to "r_hkHSI", "^HSTECH" to "r_hkHSTECH")
 
@@ -246,6 +262,11 @@ object MarketDataService {
                 sinaSymbol.startsWith("gb_") -> {
                     price     = arr.getOrElse(1) { "" }.toDoubleOrNull() ?: Double.NaN
                     changePct = arr.getOrElse(2) { "" }.toDoubleOrNull() ?: 0.0
+                }
+                sinaSymbol.startsWith("b_") -> {
+                    // 全球指数 b_：f1=现价、f3=涨跌%（f2 是涨跌额，与 gb_ 口径不同）；行尾字段数不固定，取前三即可
+                    price     = arr.getOrElse(1) { "" }.toDoubleOrNull() ?: Double.NaN
+                    changePct = arr.getOrElse(3) { "" }.toDoubleOrNull() ?: 0.0
                 }
                 sinaSymbol.startsWith("rt_hk") -> {
                     price = arr.getOrElse(2) { "" }.toDoubleOrNull() ?: Double.NaN
@@ -705,9 +726,9 @@ object MarketDataService {
     private val globalPrevCloseCache  = mutableMapOf<String, Pair<Double, Long>>()
     private val GLOBAL_CACHE_TTL       = 60_000L
 
-    // Yahoo 兜底行情缓存：这批指数（VIX/富时100/DAX/CAC40/台湾加权/SENSEX 等无新浪源的 + 强制走 Yahoo 的日经/韩国综指）
-    // 本身已确认约15分钟延迟，之前每次面板刷新（默认5秒一次）都逐个单独请求 Yahoo，等于5秒打8次接口、纯耗流量。
-    // 60秒内直接复用缓存，不发请求。
+    // Yahoo 兜底行情缓存：走到这层的都是东财/新浪 b_ 没给值的指数（纯 Yahoo 的巴西/STOXX50/沙特/以色列/埃及等
+    // + 上述源失败时的后备），本身已确认约15分钟延迟，之前每次面板刷新（默认5秒一次）都逐个单独请求 Yahoo，
+    // 等于5秒打8次接口、纯耗流量。60秒内直接复用缓存，不发请求。
     private val yahooQuoteCache = mutableMapOf<String, Triple<Double, Double, Long>>()  // symbol -> (price, pct, time)
     private val YAHOO_QUOTE_FRESH_TTL = 60_000L
 
@@ -866,12 +887,14 @@ object MarketDataService {
         return probeSourceOnce(src, now)
     }
 
-    /** 指数的候选数据源（与取数层优先级一致）：主源在前、Yahoo 兜底在最后；被拉黑的存疑新浪源（N225/KS11）不计入 */
+    /** 指数的候选数据源（与取数层优先级一致）：主源在前、Yahoo 兜底在最后 */
     fun indexSourceKeys(symbol: String): List<String> = when {
         symbol == "^VIX"                    -> listOf(SRC_CBOE, SRC_YAHOO)
-        GLOBAL_FORCE_YAHOO.contains(symbol) -> listOf(SRC_EM, SRC_YAHOO)
         TENCENT_HK_MAP.containsKey(symbol)  -> listOf(SRC_TENCENT, SRC_SINA, SRC_YAHOO)
         SINA_SYMBOL_MAP.containsKey(symbol) -> listOf(SRC_SINA, SRC_YAHOO)
+        SINA_B_MAP.containsKey(symbol) && EM_INDEX_CODE.containsKey(symbol) ->
+            listOf(SRC_EM, SRC_SINA, SRC_YAHOO)               // 东财主源，新浪 b_ 兜底
+        SINA_B_MAP.containsKey(symbol)      -> listOf(SRC_SINA, SRC_YAHOO)
         EM_INDEX_CODE.containsKey(symbol)   -> listOf(SRC_EM, SRC_YAHOO)
         else                                -> listOf(SRC_YAHOO)
     }
@@ -936,32 +959,32 @@ object MarketDataService {
             }
         }
 
-        // 2. 新浪批量（A 股 / 美股粗行情）
-        // 沪深（sh/sz）、港股新浪兜底（rt_hk）为实时行情；海外指数（gb_）新浪标明"至少延时15分钟"
-        val sinaSymbols = SINA_SYMBOL_MAP.values.joinToString(",")
+        // 2. 新浪批量（A 股 / 美股粗行情 / 全球指数 b_ 兜底位）
+        // 沪深（sh/sz）、港股新浪兜底（rt_hk）为实时行情；海外指数（gb_/b_）新浪标明"至少延时15分钟"
+        // b_ 码与常规批量合并为同一请求，不增加接口调用次数；数值先入表、由后面的东财批量覆盖
+        val bSymbols = SINA_B_MAP.filterKeys { s -> visibleIndexes.any { it.symbol == s } }.values
+        val sinaSymbols = (SINA_SYMBOL_MAP.values + bSymbols).joinToString(",")
         val sinaRaw = HttpUtil.getGbk("http://hq.sinajs.cn/list=$sinaSymbols", "https://finance.sina.com.cn",
             label = "全球指数-新浪")
         recordSourceResult(SRC_SINA, sinaRaw != null)
         sinaRaw?.let { text ->
             parseSinaData(text).forEach { (k, v) ->
-                if (!quoteMap.containsKey(k)) {
-                    quoteMap[k] = v
-                    delayMap[k] = k.startsWith("gb_")
+                val key = SINA_B_TO_SYMBOL[k] ?: k
+                if (!quoteMap.containsKey(key)) {
+                    quoteMap[key] = v
+                    delayMap[key] = k.startsWith("gb_") || k.startsWith("b_")
                 }
             }
         }
 
-        // 2.5 东财批量（无新浪实时源 / 不信任新浪源的指数主源；大陆网络下 Yahoo 不可达，全靠这层）
+        // 2.5 东财批量（无新浪实时源指数的行情主源，覆盖第 2 步的新浪 b_ 值；大陆网络下 Yahoo 不可达，全靠这层）
         val emSymbols = visibleIndexes.map { it.symbol }
-            .filter { EM_INDEX_CODE.containsKey(it) &&
-                      (SINA_SYMBOL_MAP[it] == null || GLOBAL_FORCE_YAHOO.contains(it)) }
+            .filter { EM_INDEX_CODE.containsKey(it) && SINA_SYMBOL_MAP[it] == null }
         val emBatch = fetchEmGlobalQuotes(emSymbols.mapNotNull { EM_INDEX_CODE[it] }, now)
         for (sym in emSymbols) {
             val v = emBatch[sym] ?: continue
             quoteMap[sym] = v
             delayMap[sym] = true
-            // 与新浪映射同键的指数（N225/KS11）覆盖新浪的存疑值（Yahoo 兜底分支同款处理）
-            SINA_SYMBOL_MAP[sym]?.let { sk -> quoteMap[sk] = v; delayMap[sk] = true }
         }
 
         // 2.6 ^VIX：CBOE 官方延迟源（东财无代码、腾讯 usVIX 已冻结，Yahoo 大陆被阻断）
@@ -972,8 +995,8 @@ object MarketDataService {
         // 3. Yahoo 兜底（东财没有代码的指数 + 东财失败时的后备）——免费接口，约15分钟延迟，本身没必要跟着5秒刷新
         for (item in visibleIndexes) {
             val sinaKey = SINA_SYMBOL_MAP[item.symbol]
-            if (!GLOBAL_FORCE_YAHOO.contains(item.symbol) && sinaKey != null && quoteMap.containsKey(sinaKey)) continue
-            if (quoteMap.containsKey(item.symbol)) continue  // 东财批量层已有值
+            if (sinaKey != null && quoteMap.containsKey(sinaKey)) continue
+            if (quoteMap.containsKey(item.symbol)) continue  // 新浪 b_ / 东财批量层已有值
 
             val cached = yahooQuoteCache[item.symbol]
             if (cached != null && now - cached.third < YAHOO_QUOTE_FRESH_TTL) {
